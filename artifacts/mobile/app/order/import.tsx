@@ -87,12 +87,25 @@ export default function ImportOrderScreen() {
       let workbook: XLSX.WorkBook;
 
       if (Platform.OS === "web") {
-        const response = await fetch(asset.uri);
-        const arrayBuffer = await response.arrayBuffer();
+        // On web, expo-document-picker gives a blob: URI — read via FileReader
+        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", asset.uri, true);
+          xhr.responseType = "arraybuffer";
+          xhr.onload = () => resolve(xhr.response as ArrayBuffer);
+          xhr.onerror = () => {
+            // Fallback: try fetch if XHR fails
+            fetch(asset.uri)
+              .then((r) => r.arrayBuffer())
+              .then(resolve)
+              .catch(reject);
+          };
+          xhr.send();
+        });
         workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
       } else {
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: "base64" as any,
         });
         workbook = XLSX.read(base64, { type: "base64" });
       }
@@ -153,7 +166,8 @@ export default function ImportOrderScreen() {
 
       setVendorGroups(groups);
     } catch (e: any) {
-      setErrors([`Failed to parse file: ${e?.message ?? "Unknown error"}`]);
+      const msg = e?.message ?? String(e) ?? "Unknown error";
+      setErrors([`Failed to parse file: ${msg}`]);
     } finally {
       setLoading(false);
     }
