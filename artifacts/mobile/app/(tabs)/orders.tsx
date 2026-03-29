@@ -42,12 +42,21 @@ export default function OrdersScreen() {
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Orders</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => router.push("/order/new")}
-        >
-          <Feather name="plus" size={20} color={Colors.textInverse} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.importBtn}
+            onPress={() => router.push("/order/import")}
+          >
+            <Feather name="upload" size={17} color={Colors.primary} />
+            <Text style={styles.importBtnText}>Import</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => router.push("/order/new")}
+          >
+            <Feather name="plus" size={20} color={Colors.textInverse} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -115,6 +124,19 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  importBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  importBtnText: { fontSize: 14, fontWeight: "700", color: Colors.primary },
   addBtn: {
     width: 42,
     height: 42,
