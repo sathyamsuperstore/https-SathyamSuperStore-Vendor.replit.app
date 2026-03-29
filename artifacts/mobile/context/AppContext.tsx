@@ -2,6 +2,20 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type OrderStatus = "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+export type UserType = "Admin" | "Vendor" | "Manager" | "Staff";
+
+export interface AppUser {
+  id: string;
+  userId: string;
+  password: string;
+  userType: UserType;
+  vendorCode: string;
+  vendorName: string;
+  vendorMobileNo1: string;
+  vendorMobileNo2: string;
+  vendorGstNo: string;
+  createdAt: string;
+}
 
 export interface Supplier {
   id: string;
@@ -39,6 +53,7 @@ export interface Order {
 interface AppContextType {
   suppliers: Supplier[];
   orders: Order[];
+  appUsers: AppUser[];
   addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => void;
   updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
@@ -46,12 +61,16 @@ interface AppContextType {
   updateOrder: (id: string, order: Partial<Order>) => void;
   deleteOrder: (id: string) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
+  addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
+  updateAppUser: (id: string, user: Partial<AppUser>) => void;
+  deleteAppUser: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
+const USERS_KEY = "@appUsers";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -164,6 +183,7 @@ const SEED_ORDERS: Order[] = [
 export function AppProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
   useEffect(() => {
     loadData();
@@ -171,9 +191,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData] = await Promise.all([
+      const [suppliersData, ordersData, usersData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
+        AsyncStorage.getItem(USERS_KEY),
       ]);
 
       if (suppliersData) {
@@ -189,6 +210,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setOrders(SEED_ORDERS);
         await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(SEED_ORDERS));
       }
+
+      if (usersData) {
+        setAppUsers(JSON.parse(usersData));
+      }
     } catch (e) {
       setSuppliers(SEED_SUPPLIERS);
       setOrders(SEED_ORDERS);
@@ -198,6 +223,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function saveSuppliers(data: Supplier[]) {
     setSuppliers(data);
     await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(data));
+  }
+
+  async function saveAppUsers(data: AppUser[]) {
+    setAppUsers(data);
+    await AsyncStorage.setItem(USERS_KEY, JSON.stringify(data));
+  }
+
+  function addAppUser(user: Omit<AppUser, "id" | "createdAt">) {
+    const newUser: AppUser = {
+      ...user,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+    };
+    saveAppUsers([...appUsers, newUser]);
+  }
+
+  function updateAppUser(id: string, data: Partial<AppUser>) {
+    saveAppUsers(appUsers.map((u) => (u.id === id ? { ...u, ...data } : u)));
+  }
+
+  function deleteAppUser(id: string) {
+    saveAppUsers(appUsers.filter((u) => u.id !== id));
   }
 
   async function saveOrders(data: Order[]) {
@@ -271,6 +318,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         suppliers,
         orders,
+        appUsers,
         addSupplier,
         updateSupplier,
         deleteSupplier,
@@ -278,6 +326,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateOrder,
         deleteOrder,
         updateOrderStatus,
+        addAppUser,
+        updateAppUser,
+        deleteAppUser,
       }}
     >
       {children}
