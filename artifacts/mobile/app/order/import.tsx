@@ -14,7 +14,7 @@ import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
@@ -107,6 +107,9 @@ export default function ImportOrderScreen() {
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
           encoding: "base64" as any,
         });
+        if (!base64 || base64.length === 0) {
+          throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
+        }
         workbook = XLSX.read(base64, { type: "base64" });
       }
 
