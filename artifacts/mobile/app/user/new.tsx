@@ -77,128 +77,133 @@ export default function NewUserScreen() {
         bottomOffset={20}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
-            <Field label="UserID *">
-              <TextInput
-                style={styles.input}
-                value={userId}
-                onChangeText={setUserId}
-                placeholder="Enter unique user ID"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
+        <Text style={styles.sectionHeader}>Account</Text>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>UserID *</Text>
+          <TextInput
+            style={styles.input}
+            value={userId}
+            onChangeText={setUserId}
+            placeholder="Enter unique user ID"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Password *</Text>
+          <View style={styles.passwordWrap}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter password"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword((v) => !v)}
+            >
+              <Feather
+                name={showPassword ? "eye-off" : "eye"}
+                size={20}
+                color={Colors.textMuted}
               />
-            </Field>
-            <Divider />
-            <Field label="Password *">
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={[styles.input, styles.passwordInput]}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Enter password"
-                  placeholderTextColor={Colors.textMuted}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={styles.eyeBtn}
-                  onPress={() => setShowPassword((v) => !v)}
-                >
-                  <Feather
-                    name={showPassword ? "eye-off" : "eye"}
-                    size={18}
-                    color={Colors.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
-            </Field>
-            <Divider />
-            <Field label="User Type">
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.typeOptions}
-              >
-                {USER_TYPES.map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.typeBtn, userType === t && styles.typeBtnActive]}
-                    onPress={() => setUserType(t)}
-                  >
-                    <Text
-                      style={[styles.typeBtnText, userType === t && styles.typeBtnTextActive]}
-                    >
-                      {t}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </Field>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vendor Details</Text>
-          <View style={styles.card}>
-            <Field label="Vendor Code">
-              <TextInput
-                style={styles.input}
-                value={vendorCode}
-                onChangeText={setVendorCode}
-                placeholder="e.g. VC001"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="characters"
-              />
-            </Field>
-            <Divider />
-            <Field label="Vendor Name">
-              <TextInput
-                style={styles.input}
-                value={vendorName}
-                onChangeText={setVendorName}
-                placeholder="Full vendor/company name"
-                placeholderTextColor={Colors.textMuted}
-              />
-            </Field>
-            <Divider />
-            <Field label="Mobile No 1">
-              <TextInput
-                style={styles.input}
-                value={vendorMobileNo1}
-                onChangeText={setVendorMobileNo1}
-                placeholder="+91 00000 00000"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="phone-pad"
-              />
-            </Field>
-            <Divider />
-            <Field label="Mobile No 2">
-              <TextInput
-                style={styles.input}
-                value={vendorMobileNo2}
-                onChangeText={setVendorMobileNo2}
-                placeholder="+91 00000 00000 (optional)"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="phone-pad"
-              />
-            </Field>
-            <Divider />
-            <Field label="GST No">
-              <TextInput
-                style={styles.input}
-                value={vendorGstNo}
-                onChangeText={setVendorGstNo}
-                placeholder="e.g. 27AAPFU0939F1ZV"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="characters"
-                autoCorrect={false}
-              />
-            </Field>
-          </View>
+        <View style={styles.formField}>
+          <Text style={styles.label}>User Type</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.typeOptions}
+          >
+            {USER_TYPES.map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.typeBtn, userType === t && styles.typeBtnActive]}
+                onPress={() => setUserType(t)}
+              >
+                <Text
+                  style={[
+                    styles.typeBtnText,
+                    userType === t && styles.typeBtnTextActive,
+                  ]}
+                >
+                  {t}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <Text style={[styles.sectionHeader, { marginTop: 8 }]}>Vendor Details</Text>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Code</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorCode}
+            onChangeText={setVendorCode}
+            placeholder="e.g. VC001"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Name</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorName}
+            onChangeText={setVendorName}
+            placeholder="Full vendor / company name"
+            placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Mobile No 1</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorMobileNo1}
+            onChangeText={setVendorMobileNo1}
+            placeholder="+91 00000 00000"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Mobile No 2</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorMobileNo2}
+            onChangeText={setVendorMobileNo2}
+            placeholder="+91 00000 00000 (optional)"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor GST No</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorGstNo}
+            onChangeText={setVendorGstNo}
+            placeholder="e.g. 27AAPFU0939F1ZV"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
         </View>
 
         <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
@@ -210,50 +215,45 @@ export default function NewUserScreen() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={fieldStyles.wrap}>
-      <Text style={fieldStyles.label}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: Colors.border }} />;
-}
-
-const fieldStyles = StyleSheet.create({
-  wrap: { paddingVertical: 12, paddingHorizontal: 16, gap: 6 },
-  label: { fontSize: 12, fontWeight: "600", color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
-});
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, gap: 20 },
-  section: { gap: 10 },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, paddingLeft: 4 },
-  card: {
+  content: { padding: 20, gap: 16 },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  formField: { gap: 8 },
+  label: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  input: {
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.border,
-    overflow: "hidden",
-  },
-  input: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
     color: Colors.text,
-    paddingVertical: 4,
   },
-  passwordRow: { flexDirection: "row", alignItems: "center" },
-  passwordInput: { flex: 1 },
-  eyeBtn: { padding: 4 },
+  passwordWrap: { position: "relative" },
+  passwordInput: { paddingRight: 48 },
+  eyeBtn: {
+    position: "absolute",
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 4,
+  },
   typeOptions: { gap: 8, paddingVertical: 4 },
   typeBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     borderRadius: 20,
-    backgroundColor: Colors.surfaceSecondary,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -268,6 +268,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    marginTop: 8,
   },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
 });
