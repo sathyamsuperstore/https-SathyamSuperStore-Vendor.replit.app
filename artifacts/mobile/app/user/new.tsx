@@ -66,15 +66,25 @@ export default function NewUserScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "New User", headerBackTitle: "Back" }} />
+      <Stack.Screen
+        options={{
+          title: "New User",
+          headerBackTitle: "Back",
+          headerRight: () => (
+            <TouchableOpacity onPress={handleSubmit} style={{ padding: 8 }}>
+              <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 16 }}>
+                Save
+              </Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <View style={styles.container}>
       <KeyboardAwareScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 },
-        ]}
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        bottomOffset={20}
+        bottomOffset={100}
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.sectionHeader}>Account</Text>
@@ -206,18 +216,22 @@ export default function NewUserScreen() {
           />
         </View>
 
+      </KeyboardAwareScrollView>
+
+      <View style={[styles.footer, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 16 : 12) }]}>
         <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
           <Feather name="user-plus" size={18} color={Colors.textInverse} />
           <Text style={styles.submitBtnText}>Create User</Text>
         </TouchableOpacity>
-      </KeyboardAwareScrollView>
+      </View>
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, gap: 16 },
+  content: { padding: 20, gap: 16, paddingBottom: 20 },
   sectionHeader: {
     fontSize: 13,
     fontWeight: "700",
@@ -260,6 +274,13 @@ const styles = StyleSheet.create({
   typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   typeBtnTextActive: { color: Colors.textInverse },
+  footer: {
+    backgroundColor: Colors.background,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 14,
@@ -268,7 +289,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    marginTop: 8,
   },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
 });
