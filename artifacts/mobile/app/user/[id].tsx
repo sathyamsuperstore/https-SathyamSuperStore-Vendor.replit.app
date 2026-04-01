@@ -7,13 +7,13 @@ import {
   TextInput,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Colors } from "@/constants/colors";
 import { useApp, AppUser, UserType } from "@/context/AppContext";
 
@@ -110,14 +110,15 @@ export default function UserDetailScreen() {
             ),
           }}
         />
-        <KeyboardAwareScrollView
+        <KeyboardAvoidingView
           style={styles.container}
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 },
-          ]}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 20 }]}
           showsVerticalScrollIndicator={false}
-          bottomOffset={20}
           keyboardShouldPersistTaps="handled"
         >
           <Text style={styles.sectionHeader}>Account</Text>
@@ -252,7 +253,8 @@ export default function UserDetailScreen() {
             <Feather name="trash-2" size={16} color={Colors.danger} />
             <Text style={styles.deleteBtnText}>Delete User</Text>
           </TouchableOpacity>
-        </KeyboardAwareScrollView>
+        </ScrollView>
+        </KeyboardAvoidingView>
       </>
     );
   }
