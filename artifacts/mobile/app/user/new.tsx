@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
@@ -64,8 +63,6 @@ export default function NewUserScreen() {
     router.back();
   }
 
-  const bottomPad = insets.bottom + (Platform.OS === "android" ? 16 : 12);
-
   return (
     <>
       <Stack.Screen
@@ -82,157 +79,152 @@ export default function NewUserScreen() {
         }}
       />
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 80 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.sectionHeader}>Account</Text>
+        <Text style={styles.sectionHeader}>Account</Text>
 
-          <View style={styles.formField}>
-            <Text style={styles.label}>UserID *</Text>
+        <View style={styles.formField}>
+          <Text style={styles.label}>UserID *</Text>
+          <TextInput
+            style={styles.input}
+            value={userId}
+            onChangeText={setUserId}
+            placeholder="Enter unique user ID"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Password *</Text>
+          <View style={styles.passwordWrap}>
             <TextInput
-              style={styles.input}
-              value={userId}
-              onChangeText={setUserId}
-              placeholder="Enter unique user ID"
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter password"
               placeholderTextColor={Colors.textMuted}
+              secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoCorrect={false}
             />
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Password *</Text>
-            <View style={styles.passwordWrap}>
-              <TextInput
-                style={[styles.input, styles.passwordInput]}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter password"
-                placeholderTextColor={Colors.textMuted}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowPassword((v) => !v)}
-              >
-                <Feather
-                  name={showPassword ? "eye-off" : "eye"}
-                  size={20}
-                  color={Colors.textMuted}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>User Type</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.typeOptions}
-              keyboardShouldPersistTaps="handled"
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword((v) => !v)}
             >
-              {USER_TYPES.map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typeBtn, userType === t && styles.typeBtnActive]}
-                  onPress={() => setUserType(t)}
-                >
-                  <Text style={[styles.typeBtnText, userType === t && styles.typeBtnTextActive]}>
-                    {t}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+              <Feather
+                name={showPassword ? "eye-off" : "eye"}
+                size={20}
+                color={Colors.textMuted}
+              />
+            </TouchableOpacity>
           </View>
-
-          <Text style={[styles.sectionHeader, { marginTop: 8 }]}>Vendor Details</Text>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Vendor Code</Text>
-            <TextInput
-              style={styles.input}
-              value={vendorCode}
-              onChangeText={setVendorCode}
-              placeholder="e.g. VC001"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="characters"
-            />
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Vendor Name</Text>
-            <TextInput
-              style={styles.input}
-              value={vendorName}
-              onChangeText={setVendorName}
-              placeholder="Full vendor / company name"
-              placeholderTextColor={Colors.textMuted}
-            />
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Vendor Mobile No 1</Text>
-            <TextInput
-              style={styles.input}
-              value={vendorMobileNo1}
-              onChangeText={setVendorMobileNo1}
-              placeholder="+91 00000 00000"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Vendor Mobile No 2</Text>
-            <TextInput
-              style={styles.input}
-              value={vendorMobileNo2}
-              onChangeText={setVendorMobileNo2}
-              placeholder="+91 00000 00000 (optional)"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.formField}>
-            <Text style={styles.label}>Vendor GST No</Text>
-            <TextInput
-              style={styles.input}
-              value={vendorGstNo}
-              onChangeText={setVendorGstNo}
-              placeholder="e.g. 27AAPFU0939F1ZV"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-          </View>
-        </ScrollView>
-
-        <View style={[styles.footer, { paddingBottom: bottomPad }]}>
-          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-            <Feather name="user-plus" size={18} color={Colors.textInverse} />
-            <Text style={styles.submitBtnText}>Create User</Text>
-          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>User Type</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.typeOptions}
+            keyboardShouldPersistTaps="handled"
+          >
+            {USER_TYPES.map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.typeBtn, userType === t && styles.typeBtnActive]}
+                onPress={() => setUserType(t)}
+              >
+                <Text style={[styles.typeBtnText, userType === t && styles.typeBtnTextActive]}>
+                  {t}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <Text style={[styles.sectionHeader, { marginTop: 8 }]}>Vendor Details</Text>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Code</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorCode}
+            onChangeText={setVendorCode}
+            placeholder="e.g. VC001"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Name</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorName}
+            onChangeText={setVendorName}
+            placeholder="Full vendor / company name"
+            placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Mobile No 1</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorMobileNo1}
+            onChangeText={setVendorMobileNo1}
+            placeholder="+91 00000 00000"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Mobile No 2</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorMobileNo2}
+            onChangeText={setVendorMobileNo2}
+            placeholder="+91 00000 00000 (optional)"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor GST No</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorGstNo}
+            onChangeText={setVendorGstNo}
+            placeholder="e.g. 27AAPFU0939F1ZV"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+        </View>
+
+        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} activeOpacity={0.8}>
+          <Feather name="user-plus" size={18} color="#fff" />
+          <Text style={styles.submitBtnText}>Create User</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, gap: 16, paddingBottom: 20 },
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 20, gap: 16 },
   sectionHeader: {
     fontSize: 13,
     fontWeight: "700",
@@ -248,7 +240,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === "android" ? 10 : 12,
     fontSize: 15,
     color: Colors.text,
   },
@@ -274,22 +266,17 @@ const styles = StyleSheet.create({
   },
   typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
-  typeBtnTextActive: { color: Colors.textInverse },
-  footer: {
-    backgroundColor: Colors.background,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
+  typeBtnTextActive: { color: "#fff" },
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 14,
-    padding: 18,
+    paddingVertical: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    marginTop: 8,
+    elevation: 3,
   },
-  submitBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
+  submitBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 });
