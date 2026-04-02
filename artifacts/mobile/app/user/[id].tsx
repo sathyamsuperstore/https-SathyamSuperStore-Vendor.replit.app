@@ -21,7 +21,7 @@ const USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
 export default function UserDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { appUsers, updateAppUser, deleteAppUser } = useApp();
+  const { appUsers, suppliers, updateAppUser, deleteAppUser } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -165,12 +165,49 @@ export default function UserDetailScreen() {
             </View>
 
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Vendor Code</Text>
-              <TextInput style={styles.input} value={form.vendorCode} onChangeText={(v) => setForm((p) => ({ ...p, vendorCode: v }))} placeholder="e.g. VC001" placeholderTextColor={Colors.textMuted} autoCapitalize="characters" />
-            </View>
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Vendor Name</Text>
-              <TextInput style={styles.input} value={form.vendorName} onChangeText={(v) => setForm((p) => ({ ...p, vendorName: v }))} placeholder="Full vendor name" placeholderTextColor={Colors.textMuted} />
+              <Text style={styles.fieldLabel}>Linked Supplier</Text>
+              {suppliers.length === 0 ? (
+                <View style={styles.noSuppliers}>
+                  <Feather name="info" size={14} color={Colors.textMuted} />
+                  <Text style={styles.noSuppliersText}>No suppliers added yet</Text>
+                </View>
+              ) : (
+                <View style={styles.supplierList}>
+                  {suppliers.map((s) => {
+                    const selected = form.vendorCode === s.vendorCode;
+                    return (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[styles.supplierRow, selected && styles.supplierRowActive]}
+                        onPress={() => setForm((p) => ({
+                          ...p,
+                          vendorCode: selected ? "" : s.vendorCode,
+                          vendorName: selected ? "" : s.name,
+                        }))}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.supplierCodeBadge, selected && styles.supplierCodeBadgeActive]}>
+                          <Text style={[styles.supplierCodeText, selected && styles.supplierCodeTextActive]}>
+                            {s.vendorCode || "—"}
+                          </Text>
+                        </View>
+                        <Text style={[styles.supplierName, selected && styles.supplierNameActive]} numberOfLines={1}>
+                          {s.name}
+                        </Text>
+                        {selected && <Feather name="check-circle" size={18} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+              {form.vendorCode ? (
+                <View style={styles.selectedInfo}>
+                  <Feather name="link" size={13} color={Colors.primary} />
+                  <Text style={styles.selectedInfoText}>
+                    Linked to <Text style={{ fontWeight: "700" }}>{form.vendorCode}</Text> — {form.vendorName}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <View style={styles.formField}>
               <Text style={styles.fieldLabel}>Mobile No 1</Text>
@@ -287,6 +324,46 @@ const styles = StyleSheet.create({
   typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   typeBtnTextActive: { color: Colors.textInverse },
+  supplierList: { borderRadius: 12, borderWidth: 1, borderColor: Colors.border, overflow: "hidden" },
+  supplierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: 10,
+  },
+  supplierRowActive: { backgroundColor: Colors.primaryMuted },
+  supplierCodeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 52,
+    alignItems: "center",
+  },
+  supplierCodeBadgeActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  supplierCodeText: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary },
+  supplierCodeTextActive: { color: Colors.textInverse },
+  supplierName: { flex: 1, fontSize: 14, fontWeight: "500", color: Colors.text },
+  supplierNameActive: { color: Colors.primary, fontWeight: "700" },
+  selectedInfo: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 4 },
+  selectedInfoText: { fontSize: 13, color: Colors.primary },
+  noSuppliers: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  noSuppliersText: { fontSize: 14, color: Colors.textMuted },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",

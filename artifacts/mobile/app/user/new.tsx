@@ -19,7 +19,7 @@ import { useApp, UserType } from "@/context/AppContext";
 const USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
 export default function NewUserScreen() {
-  const { appUsers, addAppUser } = useApp();
+  const { appUsers, suppliers, addAppUser } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -31,6 +31,16 @@ export default function NewUserScreen() {
   const [vendorName, setVendorName] = useState("");
   const [vendorMobileNo1, setVendorMobileNo1] = useState("");
   const [vendorMobileNo2, setVendorMobileNo2] = useState("");
+
+  function selectSupplier(code: string, name: string) {
+    if (vendorCode === code) {
+      setVendorCode("");
+      setVendorName("");
+    } else {
+      setVendorCode(code);
+      setVendorName(name);
+    }
+  }
 
   function handleSubmit() {
     if (!userId.trim()) {
@@ -79,10 +89,7 @@ export default function NewUserScreen() {
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + 80 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -114,15 +121,8 @@ export default function NewUserScreen() {
               autoCapitalize="none"
               autoCorrect={false}
             />
-            <TouchableOpacity
-              style={styles.eyeBtn}
-              onPress={() => setShowPassword((v) => !v)}
-            >
-              <Feather
-                name={showPassword ? "eye-off" : "eye"}
-                size={20}
-                color={Colors.textMuted}
-              />
+            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword((v) => !v)}>
+              <Feather name={showPassword ? "eye-off" : "eye"} size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           </View>
         </View>
@@ -141,9 +141,7 @@ export default function NewUserScreen() {
                 style={[styles.typeBtn, userType === t && styles.typeBtnActive]}
                 onPress={() => setUserType(t)}
               >
-                <Text style={[styles.typeBtnText, userType === t && styles.typeBtnTextActive]}>
-                  {t}
-                </Text>
+                <Text style={[styles.typeBtnText, userType === t && styles.typeBtnTextActive]}>{t}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -152,26 +150,45 @@ export default function NewUserScreen() {
         <Text style={[styles.sectionHeader, { marginTop: 8 }]}>Vendor Details</Text>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>Vendor Code</Text>
-          <TextInput
-            style={styles.input}
-            value={vendorCode}
-            onChangeText={setVendorCode}
-            placeholder="e.g. VC001"
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="characters"
-          />
-        </View>
-
-        <View style={styles.formField}>
-          <Text style={styles.label}>Vendor Name</Text>
-          <TextInput
-            style={styles.input}
-            value={vendorName}
-            onChangeText={setVendorName}
-            placeholder="Full vendor / company name"
-            placeholderTextColor={Colors.textMuted}
-          />
+          <Text style={styles.label}>Linked Supplier</Text>
+          {suppliers.length === 0 ? (
+            <View style={styles.noSuppliers}>
+              <Feather name="info" size={14} color={Colors.textMuted} />
+              <Text style={styles.noSuppliersText}>No suppliers added yet</Text>
+            </View>
+          ) : (
+            <View style={styles.supplierList}>
+              {suppliers.map((s) => {
+                const selected = vendorCode === s.vendorCode;
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.supplierRow, selected && styles.supplierRowActive]}
+                    onPress={() => selectSupplier(s.vendorCode, s.name)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.supplierCodeBadge, selected && styles.supplierCodeBadgeActive]}>
+                      <Text style={[styles.supplierCodeText, selected && styles.supplierCodeTextActive]}>
+                        {s.vendorCode || "—"}
+                      </Text>
+                    </View>
+                    <Text style={[styles.supplierName, selected && styles.supplierNameActive]} numberOfLines={1}>
+                      {s.name}
+                    </Text>
+                    {selected && <Feather name="check-circle" size={18} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          {vendorCode ? (
+            <View style={styles.selectedInfo}>
+              <Feather name="link" size={13} color={Colors.primary} />
+              <Text style={styles.selectedInfoText}>
+                Linked to <Text style={{ fontWeight: "700" }}>{vendorCode}</Text> — {vendorName}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.formField}>
@@ -252,6 +269,51 @@ const styles = StyleSheet.create({
   typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   typeBtnTextActive: { color: "#fff" },
+  supplierList: { borderRadius: 12, borderWidth: 1, borderColor: Colors.border, overflow: "hidden" },
+  supplierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: 10,
+  },
+  supplierRowActive: { backgroundColor: Colors.primaryMuted },
+  supplierCodeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 52,
+    alignItems: "center",
+  },
+  supplierCodeBadgeActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  supplierCodeText: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary },
+  supplierCodeTextActive: { color: Colors.textInverse },
+  supplierName: { flex: 1, fontSize: 14, fontWeight: "500", color: Colors.text },
+  supplierNameActive: { color: Colors.primary, fontWeight: "700" },
+  selectedInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  selectedInfoText: { fontSize: 13, color: Colors.primary },
+  noSuppliers: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  noSuppliersText: { fontSize: 14, color: Colors.textMuted },
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 14,
