@@ -20,6 +20,7 @@ export interface AppUser {
 export interface Supplier {
   id: string;
   name: string;
+  vendorCode: string;
   contactName: string;
   email: string;
   phone: string;
@@ -86,6 +87,7 @@ const SEED_SUPPLIERS: Supplier[] = [
   {
     id: "s1",
     name: "TechParts Global",
+    vendorCode: "VC001",
     contactName: "Sarah Johnson",
     email: "sarah@techparts.com",
     phone: "+1 (555) 234-5678",
@@ -96,6 +98,7 @@ const SEED_SUPPLIERS: Supplier[] = [
   {
     id: "s2",
     name: "RawMat Industries",
+    vendorCode: "VC002",
     contactName: "Michael Chen",
     email: "m.chen@rawmat.com",
     phone: "+1 (555) 987-6543",
@@ -106,6 +109,7 @@ const SEED_SUPPLIERS: Supplier[] = [
   {
     id: "s3",
     name: "PackRight Solutions",
+    vendorCode: "VC003",
     contactName: "Emma Davis",
     email: "emma@packright.com",
     phone: "+1 (555) 345-6789",

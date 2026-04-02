@@ -43,6 +43,7 @@ export default function SupplierDetailScreen() {
   function startEdit() {
     setForm({
       name: supplier!.name,
+      vendorCode: supplier!.vendorCode,
       contactName: supplier!.contactName,
       email: supplier!.email,
       phone: supplier!.phone,
@@ -113,6 +114,18 @@ export default function SupplierDetailScreen() {
               />
             </View>
             <View style={styles.formField}>
+              <Text style={styles.fieldLabel}>Vendor Code</Text>
+              <TextInput
+                style={styles.input}
+                value={form.vendorCode}
+                onChangeText={(v) => setForm((p) => ({ ...p, vendorCode: v }))}
+                placeholder="e.g. VC001"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.formField}>
               <Text style={styles.fieldLabel}>Contact Name</Text>
               <TextInput
                 style={styles.input}
@@ -173,11 +186,12 @@ export default function SupplierDetailScreen() {
         ) : (
           <>
             <View style={styles.infoCard}>
+              <InfoRow icon="tag" label="Vendor Code" value={supplier.vendorCode} />
               <InfoRow icon="user" label="Contact" value={supplier.contactName} />
               <InfoRow icon="mail" label="Email" value={supplier.email} />
               <InfoRow icon="phone" label="Phone" value={supplier.phone} />
               <InfoRow icon="map-pin" label="Address" value={supplier.address} />
-              <InfoRow icon="tag" label="Category" value={supplier.category} last />
+              <InfoRow icon="layers" label="Category" value={supplier.category} last />
             </View>
 
             <View style={styles.ordersSection}>

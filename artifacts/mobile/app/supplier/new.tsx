@@ -25,6 +25,7 @@ export default function NewSupplierScreen() {
   const insets = useSafeAreaInsets();
 
   const [name, setName] = useState("");
+  const [vendorCode, setVendorCode] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -36,7 +37,7 @@ export default function NewSupplierScreen() {
       Alert.alert("Missing Name", "Supplier name is required.");
       return;
     }
-    addSupplier({ name, contactName, email, phone, address, category });
+    addSupplier({ name, vendorCode: vendorCode.trim(), contactName, email, phone, address, category });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }
@@ -59,6 +60,19 @@ export default function NewSupplierScreen() {
             onChangeText={setName}
             placeholder="e.g. TechParts Global"
             placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor Code</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorCode}
+            onChangeText={setVendorCode}
+            placeholder="e.g. VC001"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
           />
         </View>
 

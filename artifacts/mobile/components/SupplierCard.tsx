@@ -48,6 +48,12 @@ export function SupplierCard({ supplier, orderCount }: Props) {
           <View style={[styles.categoryBadge, { backgroundColor: color + "15" }]}>
             <Text style={[styles.categoryText, { color }]}>{supplier.category}</Text>
           </View>
+          {supplier.vendorCode ? (
+            <View style={styles.codeBadge}>
+              <Feather name="tag" size={11} color={Colors.textMuted} />
+              <Text style={styles.codeText}>{supplier.vendorCode}</Text>
+            </View>
+          ) : null}
           <View style={styles.ordersBadge}>
             <Feather name="file-text" size={11} color={Colors.textMuted} />
             <Text style={styles.ordersText}>{orderCount} order{orderCount !== 1 ? "s" : ""}</Text>
@@ -89,6 +95,8 @@ const styles = StyleSheet.create({
   meta: { flexDirection: "row", alignItems: "center", gap: 8 },
   categoryBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   categoryText: { fontSize: 11, fontWeight: "600" },
+  codeBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
+  codeText: { fontSize: 11, color: Colors.textMuted },
   ordersBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   ordersText: { fontSize: 11, color: Colors.textMuted },
 });
