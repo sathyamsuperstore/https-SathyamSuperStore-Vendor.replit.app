@@ -56,7 +56,11 @@ export default function SupplierDetailScreen() {
 
   function handleSave() {
     if (!form.name?.trim()) {
-      Alert.alert("Missing Name", "Supplier name is required.");
+      Alert.alert("Missing Field", "Company name is required.");
+      return;
+    }
+    if (!form.vendorCode?.trim()) {
+      Alert.alert("Missing Field", "Vendor code is required.");
       return;
     }
     updateSupplier(supplier!.id, form);
@@ -115,7 +119,7 @@ export default function SupplierDetailScreen() {
               />
             </View>
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Vendor Code</Text>
+              <Text style={styles.fieldLabel}>Vendor Code *</Text>
               <TextInput
                 style={styles.input}
                 value={form.vendorCode}

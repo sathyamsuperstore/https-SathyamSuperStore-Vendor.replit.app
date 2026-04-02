@@ -35,7 +35,11 @@ export default function NewSupplierScreen() {
 
   function handleSubmit() {
     if (!name.trim()) {
-      Alert.alert("Missing Name", "Supplier name is required.");
+      Alert.alert("Missing Field", "Company name is required.");
+      return;
+    }
+    if (!vendorCode.trim()) {
+      Alert.alert("Missing Field", "Vendor code is required.");
       return;
     }
     addSupplier({ name, vendorCode: vendorCode.trim(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
@@ -65,7 +69,7 @@ export default function NewSupplierScreen() {
         </View>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>Vendor Code</Text>
+          <Text style={styles.label}>Vendor Code *</Text>
           <TextInput
             style={styles.input}
             value={vendorCode}
