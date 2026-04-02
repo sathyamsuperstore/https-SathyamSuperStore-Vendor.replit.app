@@ -26,6 +26,7 @@ export default function NewSupplierScreen() {
 
   const [name, setName] = useState("");
   const [vendorCode, setVendorCode] = useState("");
+  const [vendorGstNo, setVendorGstNo] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -37,7 +38,7 @@ export default function NewSupplierScreen() {
       Alert.alert("Missing Name", "Supplier name is required.");
       return;
     }
-    addSupplier({ name, vendorCode: vendorCode.trim(), contactName, email, phone, address, category });
+    addSupplier({ name, vendorCode: vendorCode.trim(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }
@@ -70,6 +71,19 @@ export default function NewSupplierScreen() {
             value={vendorCode}
             onChangeText={setVendorCode}
             placeholder="e.g. VC001"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Vendor GST No</Text>
+          <TextInput
+            style={styles.input}
+            value={vendorGstNo}
+            onChangeText={setVendorGstNo}
+            placeholder="e.g. 27AAPFU0939F1ZV"
             placeholderTextColor={Colors.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}

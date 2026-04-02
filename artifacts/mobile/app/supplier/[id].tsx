@@ -44,6 +44,7 @@ export default function SupplierDetailScreen() {
     setForm({
       name: supplier!.name,
       vendorCode: supplier!.vendorCode,
+      vendorGstNo: supplier!.vendorGstNo,
       contactName: supplier!.contactName,
       email: supplier!.email,
       phone: supplier!.phone,
@@ -126,6 +127,18 @@ export default function SupplierDetailScreen() {
               />
             </View>
             <View style={styles.formField}>
+              <Text style={styles.fieldLabel}>Vendor GST No</Text>
+              <TextInput
+                style={styles.input}
+                value={form.vendorGstNo}
+                onChangeText={(v) => setForm((p) => ({ ...p, vendorGstNo: v }))}
+                placeholder="e.g. 27AAPFU0939F1ZV"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.formField}>
               <Text style={styles.fieldLabel}>Contact Name</Text>
               <TextInput
                 style={styles.input}
@@ -187,6 +200,7 @@ export default function SupplierDetailScreen() {
           <>
             <View style={styles.infoCard}>
               <InfoRow icon="tag" label="Vendor Code" value={supplier.vendorCode} />
+              <InfoRow icon="file-text" label="Vendor GST No" value={supplier.vendorGstNo} />
               <InfoRow icon="user" label="Contact" value={supplier.contactName} />
               <InfoRow icon="mail" label="Email" value={supplier.email} />
               <InfoRow icon="phone" label="Phone" value={supplier.phone} />

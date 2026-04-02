@@ -21,6 +21,7 @@ export interface Supplier {
   id: string;
   name: string;
   vendorCode: string;
+  vendorGstNo: string;
   contactName: string;
   email: string;
   phone: string;
@@ -88,6 +89,7 @@ const SEED_SUPPLIERS: Supplier[] = [
     id: "s1",
     name: "TechParts Global",
     vendorCode: "VC001",
+    vendorGstNo: "27AAPFU0939F1ZV",
     contactName: "Sarah Johnson",
     email: "sarah@techparts.com",
     phone: "+1 (555) 234-5678",
@@ -99,6 +101,7 @@ const SEED_SUPPLIERS: Supplier[] = [
     id: "s2",
     name: "RawMat Industries",
     vendorCode: "VC002",
+    vendorGstNo: "27AABCR1234D1ZM",
     contactName: "Michael Chen",
     email: "m.chen@rawmat.com",
     phone: "+1 (555) 987-6543",
@@ -110,6 +113,7 @@ const SEED_SUPPLIERS: Supplier[] = [
     id: "s3",
     name: "PackRight Solutions",
     vendorCode: "VC003",
+    vendorGstNo: "29AAACK2930K1ZK",
     contactName: "Emma Davis",
     email: "emma@packright.com",
     phone: "+1 (555) 345-6789",
