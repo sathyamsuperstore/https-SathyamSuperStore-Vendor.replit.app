@@ -72,8 +72,6 @@ const AppContext = createContext<AppContextType | null>(null);
 const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
-const ORDERS_CLEARED_KEY = "@orders_cleared_v1";
-const SUPPLIERS_CLEARED_KEY = "@suppliers_cleared_v1";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -85,9 +83,6 @@ function generateOrderNumber(): string {
   return `${prefix}-${num}`;
 }
 
-const SEED_SUPPLIERS: Supplier[] = [];
-
-const SEED_ORDERS: Order[] = [];
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -100,39 +95,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, ordersCleared, suppliersCleared] = await Promise.all([
+      const [suppliersData, ordersData, usersData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
-        AsyncStorage.getItem(ORDERS_CLEARED_KEY),
-        AsyncStorage.getItem(SUPPLIERS_CLEARED_KEY),
       ]);
 
-      if (!suppliersCleared) {
-        setSuppliers([]);
-        await Promise.all([
-          AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify([])),
-          AsyncStorage.setItem(SUPPLIERS_CLEARED_KEY, "1"),
-        ]);
-      } else if (suppliersData) {
-        setSuppliers(JSON.parse(suppliersData));
-      }
-
-      if (!ordersCleared) {
-        setOrders([]);
-        await Promise.all([
-          AsyncStorage.setItem(ORDERS_KEY, JSON.stringify([])),
-          AsyncStorage.setItem(ORDERS_CLEARED_KEY, "1"),
-        ]);
-      } else if (ordersData) {
-        setOrders(JSON.parse(ordersData));
-      }
-
-      if (usersData) {
-        setAppUsers(JSON.parse(usersData));
-      }
+      setSuppliers(suppliersData ? JSON.parse(suppliersData) : []);
+      setOrders(ordersData ? JSON.parse(ordersData) : []);
+      if (usersData) setAppUsers(JSON.parse(usersData));
     } catch (e) {
-      setSuppliers(SEED_SUPPLIERS);
+      setSuppliers([]);
       setOrders([]);
     }
   }
