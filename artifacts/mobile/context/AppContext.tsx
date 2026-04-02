@@ -13,7 +13,6 @@ export interface AppUser {
   vendorName: string;
   vendorMobileNo1: string;
   vendorMobileNo2: string;
-  vendorGstNo: string;
   createdAt: string;
 }
 

@@ -66,7 +66,6 @@ export default function UserDetailScreen() {
       vendorName: form.vendorName?.trim() ?? "",
       vendorMobileNo1: form.vendorMobileNo1?.trim() ?? "",
       vendorMobileNo2: form.vendorMobileNo2?.trim() ?? "",
-      vendorGstNo: form.vendorGstNo?.trim() ?? "",
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEditing(false);
@@ -181,11 +180,6 @@ export default function UserDetailScreen() {
               <Text style={styles.fieldLabel}>Mobile No 2</Text>
               <TextInput style={styles.input} value={form.vendorMobileNo2} onChangeText={(v) => setForm((p) => ({ ...p, vendorMobileNo2: v }))} placeholder="Optional" placeholderTextColor={Colors.textMuted} keyboardType="phone-pad" />
             </View>
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>GST No</Text>
-              <TextInput style={styles.input} value={form.vendorGstNo} onChangeText={(v) => setForm((p) => ({ ...p, vendorGstNo: v }))} placeholder="e.g. 27AAPFU0939F1ZV" placeholderTextColor={Colors.textMuted} autoCapitalize="characters" autoCorrect={false} />
-            </View>
-
             <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
               <Feather name="trash-2" size={16} color={Colors.danger} />
               <Text style={styles.deleteBtnText}>Delete User</Text>
@@ -200,8 +194,7 @@ export default function UserDetailScreen() {
               <InfoRow icon="tag" label="Vendor Code" value={user.vendorCode} />
               <InfoRow icon="briefcase" label="Vendor Name" value={user.vendorName} />
               <InfoRow icon="phone" label="Mobile No 1" value={user.vendorMobileNo1} />
-              <InfoRow icon="phone" label="Mobile No 2" value={user.vendorMobileNo2} />
-              <InfoRow icon="file-text" label="GST No" value={user.vendorGstNo} last />
+              <InfoRow icon="phone" label="Mobile No 2" value={user.vendorMobileNo2} last />
             </View>
 
             <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>

@@ -31,7 +31,6 @@ export default function NewUserScreen() {
   const [vendorName, setVendorName] = useState("");
   const [vendorMobileNo1, setVendorMobileNo1] = useState("");
   const [vendorMobileNo2, setVendorMobileNo2] = useState("");
-  const [vendorGstNo, setVendorGstNo] = useState("");
 
   function handleSubmit() {
     if (!userId.trim()) {
@@ -57,7 +56,6 @@ export default function NewUserScreen() {
       vendorName: vendorName.trim(),
       vendorMobileNo1: vendorMobileNo1.trim(),
       vendorMobileNo2: vendorMobileNo2.trim(),
-      vendorGstNo: vendorGstNo.trim(),
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
@@ -197,19 +195,6 @@ export default function NewUserScreen() {
             placeholder="+91 00000 00000 (optional)"
             placeholderTextColor={Colors.textMuted}
             keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={styles.formField}>
-          <Text style={styles.label}>Vendor GST No</Text>
-          <TextInput
-            style={styles.input}
-            value={vendorGstNo}
-            onChangeText={setVendorGstNo}
-            placeholder="e.g. 27AAPFU0939F1ZV"
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="characters"
-            autoCorrect={false}
           />
         </View>
 
