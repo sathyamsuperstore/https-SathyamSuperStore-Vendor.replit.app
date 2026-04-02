@@ -73,6 +73,7 @@ const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
 const ORDERS_CLEARED_KEY = "@orders_cleared_v1";
+const SUPPLIERS_CLEARED_KEY = "@suppliers_cleared_v1";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -84,44 +85,7 @@ function generateOrderNumber(): string {
   return `${prefix}-${num}`;
 }
 
-const SEED_SUPPLIERS: Supplier[] = [
-  {
-    id: "s1",
-    name: "TechParts Global",
-    vendorCode: "VC001",
-    vendorGstNo: "27AAPFU0939F1ZV",
-    contactName: "Sarah Johnson",
-    email: "sarah@techparts.com",
-    phone: "+1 (555) 234-5678",
-    address: "123 Industrial Blvd, Chicago, IL 60601",
-    category: "Electronics",
-    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-  },
-  {
-    id: "s2",
-    name: "RawMat Industries",
-    vendorCode: "VC002",
-    vendorGstNo: "27AABCR1234D1ZM",
-    contactName: "Michael Chen",
-    email: "m.chen@rawmat.com",
-    phone: "+1 (555) 987-6543",
-    address: "456 Materials Ave, Houston, TX 77001",
-    category: "Raw Materials",
-    createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
-  },
-  {
-    id: "s3",
-    name: "PackRight Solutions",
-    vendorCode: "VC003",
-    vendorGstNo: "29AAACK2930K1ZK",
-    contactName: "Emma Davis",
-    email: "emma@packright.com",
-    phone: "+1 (555) 345-6789",
-    address: "789 Packaging St, Atlanta, GA 30301",
-    category: "Packaging",
-    createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
-  },
-];
+const SEED_SUPPLIERS: Supplier[] = [];
 
 const SEED_ORDERS: Order[] = [];
 
@@ -136,18 +100,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, ordersCleared] = await Promise.all([
+      const [suppliersData, ordersData, usersData, ordersCleared, suppliersCleared] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
         AsyncStorage.getItem(ORDERS_CLEARED_KEY),
+        AsyncStorage.getItem(SUPPLIERS_CLEARED_KEY),
       ]);
 
-      if (suppliersData) {
+      if (!suppliersCleared) {
+        setSuppliers([]);
+        await Promise.all([
+          AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify([])),
+          AsyncStorage.setItem(SUPPLIERS_CLEARED_KEY, "1"),
+        ]);
+      } else if (suppliersData) {
         setSuppliers(JSON.parse(suppliersData));
-      } else {
-        setSuppliers(SEED_SUPPLIERS);
-        await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(SEED_SUPPLIERS));
       }
 
       if (!ordersCleared) {
