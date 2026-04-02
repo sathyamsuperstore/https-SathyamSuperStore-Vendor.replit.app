@@ -72,6 +72,7 @@ const AppContext = createContext<AppContextType | null>(null);
 const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
+const ORDERS_CLEARED_KEY = "@orders_cleared_v1";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -122,70 +123,7 @@ const SEED_SUPPLIERS: Supplier[] = [
   },
 ];
 
-const SEED_ORDERS: Order[] = [
-  {
-    id: "o1",
-    orderNumber: "ORD-10234",
-    supplierId: "s1",
-    supplierName: "TechParts Global",
-    status: "delivered",
-    items: [
-      { id: "i1", name: "Circuit Board A", quantity: 100, unit: "pcs", unitPrice: 12.5 },
-      { id: "i2", name: "Connector Set B", quantity: 50, unit: "sets", unitPrice: 8.0 },
-    ],
-    totalAmount: 1650,
-    notes: "Urgent order for Q1 production",
-    expectedDelivery: new Date(Date.now() - 86400000 * 2).toISOString(),
-    createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: "o2",
-    orderNumber: "ORD-10235",
-    supplierId: "s2",
-    supplierName: "RawMat Industries",
-    status: "shipped",
-    items: [
-      { id: "i3", name: "Aluminum Sheet 2mm", quantity: 200, unit: "kg", unitPrice: 3.75 },
-    ],
-    totalAmount: 750,
-    notes: "",
-    expectedDelivery: new Date(Date.now() + 86400000 * 2).toISOString(),
-    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-  {
-    id: "o3",
-    orderNumber: "ORD-10236",
-    supplierId: "s3",
-    supplierName: "PackRight Solutions",
-    status: "confirmed",
-    items: [
-      { id: "i4", name: "Cardboard Box M", quantity: 500, unit: "pcs", unitPrice: 0.85 },
-      { id: "i5", name: "Bubble Wrap Roll", quantity: 10, unit: "rolls", unitPrice: 15.0 },
-    ],
-    totalAmount: 575,
-    notes: "Standard packaging for March batch",
-    expectedDelivery: new Date(Date.now() + 86400000 * 5).toISOString(),
-    createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-  {
-    id: "o4",
-    orderNumber: "ORD-10237",
-    supplierId: "s1",
-    supplierName: "TechParts Global",
-    status: "pending",
-    items: [
-      { id: "i6", name: "Microcontroller X7", quantity: 200, unit: "pcs", unitPrice: 22.0 },
-    ],
-    totalAmount: 4400,
-    notes: "New product launch component",
-    expectedDelivery: new Date(Date.now() + 86400000 * 10).toISOString(),
-    createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-];
+const SEED_ORDERS: Order[] = [];
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -198,10 +136,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, ordersCleared] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
+        AsyncStorage.getItem(ORDERS_CLEARED_KEY),
       ]);
 
       if (suppliersData) {
@@ -211,11 +150,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(SEED_SUPPLIERS));
       }
 
-      if (ordersData) {
+      if (!ordersCleared) {
+        setOrders([]);
+        await Promise.all([
+          AsyncStorage.setItem(ORDERS_KEY, JSON.stringify([])),
+          AsyncStorage.setItem(ORDERS_CLEARED_KEY, "1"),
+        ]);
+      } else if (ordersData) {
         setOrders(JSON.parse(ordersData));
-      } else {
-        setOrders(SEED_ORDERS);
-        await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(SEED_ORDERS));
       }
 
       if (usersData) {
@@ -223,7 +165,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       setSuppliers(SEED_SUPPLIERS);
-      setOrders(SEED_ORDERS);
+      setOrders([]);
     }
   }
 
