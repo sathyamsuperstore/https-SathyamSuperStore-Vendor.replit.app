@@ -43,6 +43,12 @@ export default function UserDetailScreen() {
     setEditing(true);
   }
 
+  const userIdDuplicate =
+    (form.userId?.trim().length ?? 0) > 0 &&
+    appUsers.some(
+      (u) => u.id !== id && u.userId.toLowerCase() === form.userId!.trim().toLowerCase()
+    );
+
   function handleSave() {
     if (!form.userId?.trim()) {
       Alert.alert("Missing Field", "UserID is required.");
@@ -116,9 +122,15 @@ export default function UserDetailScreen() {
         {editing ? (
           <View style={styles.form}>
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>UserID *</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>UserID *</Text>
+                <View style={styles.pkBadge}>
+                  <Feather name="key" size={10} color={Colors.primary} />
+                  <Text style={styles.pkBadgeText}>Primary Key</Text>
+                </View>
+              </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, userIdDuplicate && styles.inputError]}
                 value={form.userId}
                 onChangeText={(v) => setForm((p) => ({ ...p, userId: v }))}
                 placeholder="User ID"
@@ -126,6 +138,12 @@ export default function UserDetailScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {userIdDuplicate ? (
+                <View style={styles.errorRow}>
+                  <Feather name="alert-circle" size={13} color={Colors.danger} />
+                  <Text style={styles.errorText}>This UserID is already taken</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.formField}>
@@ -291,6 +309,22 @@ const styles = StyleSheet.create({
   form: { gap: 16 },
   formField: { gap: 6 },
   fieldLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  pkBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
+  inputError: { borderColor: Colors.danger, borderWidth: 1.5 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  errorText: { fontSize: 12, color: Colors.danger, fontWeight: "500" },
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 10,

@@ -26,11 +26,16 @@ export default function NewUserScreen() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
   const [userType, setUserType] = useState<UserType>("Vendor");
   const [vendorCode, setVendorCode] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [vendorMobileNo1, setVendorMobileNo1] = useState("");
   const [vendorMobileNo2, setVendorMobileNo2] = useState("");
+
+  const userIdDuplicate =
+    userId.trim().length > 0 &&
+    appUsers.some((u) => u.userId.toLowerCase() === userId.trim().toLowerCase());
 
   function selectSupplier(code: string, name: string) {
     if (vendorCode === code) {
@@ -96,9 +101,15 @@ export default function NewUserScreen() {
         <Text style={styles.sectionHeader}>Account</Text>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>UserID *</Text>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>UserID *</Text>
+            <View style={styles.pkBadge}>
+              <Feather name="key" size={10} color={Colors.primary} />
+              <Text style={styles.pkBadgeText}>Primary Key</Text>
+            </View>
+          </View>
           <TextInput
-            style={styles.input}
+            style={[styles.input, userIdDuplicate && styles.inputError]}
             value={userId}
             onChangeText={setUserId}
             placeholder="Enter unique user ID"
@@ -106,6 +117,17 @@ export default function NewUserScreen() {
             autoCapitalize="none"
             autoCorrect={false}
           />
+          {userIdDuplicate ? (
+            <View style={styles.errorRow}>
+              <Feather name="alert-circle" size={13} color={Colors.danger} />
+              <Text style={styles.errorText}>This UserID is already taken</Text>
+            </View>
+          ) : userId.trim().length > 0 ? (
+            <View style={styles.successRow}>
+              <Feather name="check-circle" size={13} color={Colors.success} />
+              <Text style={styles.successText}>UserID is available</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.formField}>
@@ -257,6 +279,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 4,
   },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  pkBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
+  inputError: { borderColor: Colors.danger, borderWidth: 1.5 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  errorText: { fontSize: 12, color: Colors.danger, fontWeight: "500" },
+  successRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  successText: { fontSize: 12, color: Colors.success, fontWeight: "500" },
   typeOptions: { gap: 8, paddingVertical: 4 },
   typeBtn: {
     paddingHorizontal: 18,
