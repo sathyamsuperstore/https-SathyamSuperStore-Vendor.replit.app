@@ -7,13 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  Platform,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 
@@ -57,11 +55,10 @@ export default function NewSupplierScreen() {
   return (
     <>
       <Stack.Screen options={{ title: "New Supplier", headerBackTitle: "Back" }} />
-      <KeyboardAwareScrollView
+      <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
-        bottomOffset={20}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.formField}>
@@ -184,7 +181,7 @@ export default function NewSupplierScreen() {
           <Feather name="user-plus" size={18} color={Colors.textInverse} />
           <Text style={styles.submitBtnText}>Add Supplier</Text>
         </TouchableOpacity>
-      </KeyboardAwareScrollView>
+      </ScrollView>
     </>
   );
 }
