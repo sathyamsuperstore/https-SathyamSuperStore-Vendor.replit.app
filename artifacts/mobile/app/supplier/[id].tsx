@@ -54,6 +54,14 @@ export default function SupplierDetailScreen() {
     setEditing(true);
   }
 
+  const vendorCodeDuplicate =
+    (form.vendorCode?.trim().length ?? 0) > 0 &&
+    suppliers.some(
+      (s) =>
+        s.id !== supplier!.id &&
+        s.vendorCode.toUpperCase() === form.vendorCode!.trim().toUpperCase()
+    );
+
   function handleSave() {
     if (!form.name?.trim()) {
       Alert.alert("Missing Field", "Company name is required.");
@@ -63,7 +71,11 @@ export default function SupplierDetailScreen() {
       Alert.alert("Missing Field", "Vendor code is required.");
       return;
     }
-    updateSupplier(supplier!.id, form);
+    if (vendorCodeDuplicate) {
+      Alert.alert("Duplicate Vendor Code", `"${form.vendorCode!.trim().toUpperCase()}" is already assigned to another supplier. Vendor Code must be unique.`);
+      return;
+    }
+    updateSupplier(supplier!.id, { ...form, vendorCode: form.vendorCode!.trim().toUpperCase() });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEditing(false);
   }
@@ -119,16 +131,28 @@ export default function SupplierDetailScreen() {
               />
             </View>
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Vendor Code *</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>Vendor Code *</Text>
+                <View style={styles.pkBadge}>
+                  <Feather name="key" size={10} color={Colors.primary} />
+                  <Text style={styles.pkBadgeText}>Primary Key</Text>
+                </View>
+              </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, vendorCodeDuplicate && styles.inputError]}
                 value={form.vendorCode}
-                onChangeText={(v) => setForm((p) => ({ ...p, vendorCode: v }))}
+                onChangeText={(v) => setForm((p) => ({ ...p, vendorCode: v.toUpperCase() }))}
                 placeholder="e.g. VC001"
                 placeholderTextColor={Colors.textMuted}
                 autoCapitalize="characters"
                 autoCorrect={false}
               />
+              {vendorCodeDuplicate ? (
+                <View style={styles.errorRow}>
+                  <Feather name="alert-circle" size={13} color={Colors.danger} />
+                  <Text style={styles.errorText}>This vendor code is already taken</Text>
+                </View>
+              ) : null}
             </View>
             <View style={styles.formField}>
               <Text style={styles.fieldLabel}>Vendor GST No</Text>
@@ -304,6 +328,22 @@ const styles = StyleSheet.create({
   form: { gap: 16 },
   formField: { gap: 6 },
   fieldLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  pkBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
+  inputError: { borderColor: Colors.danger, borderWidth: 1.5 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  errorText: { fontSize: 12, color: Colors.danger, fontWeight: "500" },
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 10,

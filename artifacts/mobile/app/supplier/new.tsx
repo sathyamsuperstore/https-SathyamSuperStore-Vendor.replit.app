@@ -20,7 +20,7 @@ import { useApp } from "@/context/AppContext";
 const CATEGORIES = ["Electronics", "Raw Materials", "Packaging", "Logistics", "Services", "Other"];
 
 export default function NewSupplierScreen() {
-  const { addSupplier } = useApp();
+  const { suppliers, addSupplier } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -33,6 +33,9 @@ export default function NewSupplierScreen() {
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState("Other");
 
+  const vendorCodeDuplicate = vendorCode.trim().length > 0 &&
+    suppliers.some((s) => s.vendorCode.toUpperCase() === vendorCode.trim().toUpperCase());
+
   function handleSubmit() {
     if (!name.trim()) {
       Alert.alert("Missing Field", "Company name is required.");
@@ -42,7 +45,11 @@ export default function NewSupplierScreen() {
       Alert.alert("Missing Field", "Vendor code is required.");
       return;
     }
-    addSupplier({ name, vendorCode: vendorCode.trim(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
+    if (vendorCodeDuplicate) {
+      Alert.alert("Duplicate Vendor Code", `"${vendorCode.trim().toUpperCase()}" is already assigned to another supplier. Vendor Code must be unique.`);
+      return;
+    }
+    addSupplier({ name, vendorCode: vendorCode.trim().toUpperCase(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }
@@ -69,16 +76,33 @@ export default function NewSupplierScreen() {
         </View>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>Vendor Code *</Text>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Vendor Code *</Text>
+            <View style={styles.pkBadge}>
+              <Feather name="key" size={10} color={Colors.primary} />
+              <Text style={styles.pkBadgeText}>Primary Key</Text>
+            </View>
+          </View>
           <TextInput
-            style={styles.input}
+            style={[styles.input, vendorCodeDuplicate && styles.inputError]}
             value={vendorCode}
-            onChangeText={setVendorCode}
+            onChangeText={(v) => setVendorCode(v.toUpperCase())}
             placeholder="e.g. VC001"
             placeholderTextColor={Colors.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
           />
+          {vendorCodeDuplicate ? (
+            <View style={styles.errorRow}>
+              <Feather name="alert-circle" size={13} color={Colors.danger} />
+              <Text style={styles.errorText}>This vendor code is already taken</Text>
+            </View>
+          ) : vendorCode.trim().length > 0 ? (
+            <View style={styles.successRow}>
+              <Feather name="check-circle" size={13} color={Colors.success} />
+              <Text style={styles.successText}>Vendor code is available</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.formField}>
@@ -180,6 +204,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
   },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  pkBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
+  inputError: { borderColor: Colors.danger, borderWidth: 1.5 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  errorText: { fontSize: 12, color: Colors.danger, fontWeight: "500" },
+  successRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  successText: { fontSize: 12, color: Colors.success, fontWeight: "500" },
   categories: { gap: 8, paddingVertical: 4 },
   catBtn: {
     paddingHorizontal: 14,
