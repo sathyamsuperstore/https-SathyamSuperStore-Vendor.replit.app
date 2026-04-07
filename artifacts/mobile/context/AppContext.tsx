@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const SESSION_KEY = "@currentUserId";
+
 export type OrderStatus = "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
 export type UserType = "Admin" | "Vendor" | "Manager" | "Staff";
 
@@ -55,6 +57,9 @@ interface AppContextType {
   suppliers: Supplier[];
   orders: Order[];
   appUsers: AppUser[];
+  currentUser: AppUser | null;
+  login: (userId: string, password: string) => { success: boolean; error?: string };
+  logout: () => void;
   addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => void;
   updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
@@ -89,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
 
   useEffect(() => {
     loadData();
@@ -96,19 +102,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
+        AsyncStorage.getItem(SESSION_KEY),
       ]);
 
-      setSuppliers(suppliersData ? JSON.parse(suppliersData) : []);
-      setOrders(ordersData ? JSON.parse(ordersData) : []);
-      if (usersData) setAppUsers(JSON.parse(usersData));
+      const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
+      const loadedOrders = ordersData ? JSON.parse(ordersData) : [];
+      const loadedUsers: AppUser[] = usersData ? JSON.parse(usersData) : [];
+
+      setSuppliers(loadedSuppliers);
+      setOrders(loadedOrders);
+      setAppUsers(loadedUsers);
+
+      if (sessionData) {
+        const savedUser = loadedUsers.find((u) => u.id === sessionData);
+        if (savedUser) setCurrentUser(savedUser);
+      }
     } catch (e) {
       setSuppliers([]);
       setOrders([]);
     }
+  }
+
+  function login(userId: string, password: string): { success: boolean; error?: string } {
+    const user = appUsers.find(
+      (u) => u.userId.toLowerCase() === userId.trim().toLowerCase() && u.password === password
+    );
+    if (!user) return { success: false, error: "Invalid User ID or Password." };
+    setCurrentUser(user);
+    AsyncStorage.setItem(SESSION_KEY, user.id);
+    return { success: true };
+  }
+
+  function logout() {
+    setCurrentUser(null);
+    AsyncStorage.removeItem(SESSION_KEY);
   }
 
   async function saveSuppliers(data: Supplier[]) {
@@ -223,6 +254,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         suppliers,
         orders,
         appUsers,
+        currentUser,
+        login,
+        logout,
         addSupplier,
         updateSupplier,
         deleteSupplier,

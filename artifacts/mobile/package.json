@@ -58,6 +58,7 @@
   "dependencies": {
     "expo-document-picker": "^14.0.8",
     "expo-file-system": "^19.0.21",
+    "expo-sharing": "~13.0.1",
     "xlsx": "^0.18.5"
   }
 }
