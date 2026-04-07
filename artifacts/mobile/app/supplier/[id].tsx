@@ -7,13 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Colors } from "@/constants/colors";
 import { useApp, Supplier } from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
@@ -111,11 +109,10 @@ export default function SupplierDetailScreen() {
             ),
         }}
       />
-      <KeyboardAwareScrollView
+      <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
-        bottomOffset={20}
         keyboardShouldPersistTaps="handled"
       >
         {editing ? (
@@ -255,7 +252,7 @@ export default function SupplierDetailScreen() {
             </TouchableOpacity>
           </>
         )}
-      </KeyboardAwareScrollView>
+      </ScrollView>
     </>
   );
 }
