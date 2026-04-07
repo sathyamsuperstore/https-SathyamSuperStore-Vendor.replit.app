@@ -383,9 +383,30 @@ function OrdersView({ topPt }: { topPt: number }) {
   );
 }
 
+const ALL_STATUSES: OrderStatus[] = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
+
 function VendorOrderCard({ order }: { order: Order }) {
+  const { updateOrderStatus } = useApp();
   const [expanded, setExpanded] = useState(false);
   const status = STATUS_COLORS[order.status];
+
+  function handleStatusChange(newStatus: OrderStatus) {
+    if (newStatus === order.status) return;
+    Alert.alert(
+      "Update Status",
+      `Change status to "${STATUS_COLORS[newStatus].label}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Update",
+          onPress: () => {
+            updateOrderStatus(order.id, newStatus);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  }
 
   return (
     <View style={cardStyles.card}>
@@ -412,6 +433,35 @@ function VendorOrderCard({ order }: { order: Order }) {
 
       {expanded && (
         <View style={cardStyles.itemsSection}>
+          <View style={cardStyles.statusSection}>
+            <Text style={cardStyles.statusSectionLabel}>Update Status</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={cardStyles.statusOptions}>
+              {ALL_STATUSES.map((s) => {
+                const sc = STATUS_COLORS[s];
+                const isActive = order.status === s;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      cardStyles.statusOption,
+                      { borderColor: isActive ? sc.text : Colors.border },
+                      isActive && { backgroundColor: sc.bg },
+                    ]}
+                    onPress={() => handleStatusChange(s)}
+                    activeOpacity={0.7}
+                  >
+                    {isActive && (
+                      <Feather name="check" size={11} color={sc.text} />
+                    )}
+                    <Text style={[cardStyles.statusOptionText, { color: isActive ? sc.text : Colors.textSecondary }, isActive && { fontWeight: "800" }]}>
+                      {sc.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
           <View style={cardStyles.tableHeader}>
             <Text style={[cardStyles.th, { flex: 3 }]}>Item</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
@@ -555,6 +605,27 @@ const cardStyles = StyleSheet.create({
   summaryText: { fontSize: 12, color: Colors.textMuted },
   amount: { fontSize: 14, fontWeight: "700", color: Colors.primary },
   itemsSection: { borderTopWidth: 1, borderTopColor: Colors.border },
+  statusSection: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: 8,
+    backgroundColor: Colors.surfaceSecondary,
+  },
+  statusSectionLabel: { fontSize: 11, fontWeight: "700", color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
+  statusOptions: { gap: 6, paddingVertical: 2 },
+  statusOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    backgroundColor: Colors.surface,
+  },
+  statusOptionText: { fontSize: 12, fontWeight: "600" },
   tableHeader: {
     flexDirection: "row", backgroundColor: Colors.surfaceSecondary,
     paddingHorizontal: 14, paddingVertical: 8,
