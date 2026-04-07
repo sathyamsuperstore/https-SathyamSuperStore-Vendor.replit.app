@@ -59,6 +59,7 @@ interface AppContextType {
   updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
   addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => void;
+  addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => void;
   updateOrder: (id: string, order: Partial<Order>) => void;
   deleteOrder: (id: string) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
@@ -176,6 +177,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrders([newOrder, ...orders]);
   }
 
+  function addOrdersBatch(orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) {
+    const now = new Date().toISOString();
+    const newOrders: Order[] = orderInputs.map((order) => ({
+      ...order,
+      id: generateId(),
+      orderNumber: generateOrderNumber(),
+      totalAmount: calculateTotal(order.items),
+      createdAt: now,
+      updatedAt: now,
+    }));
+    saveOrders([...newOrders, ...orders]);
+  }
+
   function updateOrder(id: string, data: Partial<Order>) {
     saveOrders(
       orders.map((o) =>
@@ -213,6 +227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateSupplier,
         deleteSupplier,
         addOrder,
+        addOrdersBatch,
         updateOrder,
         deleteOrder,
         updateOrderStatus,

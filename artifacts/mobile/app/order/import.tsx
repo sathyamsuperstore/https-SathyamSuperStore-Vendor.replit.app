@@ -50,7 +50,7 @@ function formatCurrency(n: number): string {
 }
 
 export default function ImportOrderScreen() {
-  const { suppliers, addOrder } = useApp();
+  const { suppliers, addOrdersBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -191,7 +191,7 @@ export default function ImportOrderScreen() {
       return;
     }
 
-    for (const group of vendorGroups) {
+    const orderInputs = vendorGroups.map((group) => {
       const supplier = suppliers.find((s) => s.id === group.supplierId)!;
       const items: OrderItem[] = group.items.map((row) => ({
         id: generateItemId(),
@@ -200,15 +200,16 @@ export default function ImportOrderScreen() {
         unit: row["UOM"] || "pcs",
         unitPrice: row["MRP"] || 0,
       }));
-      addOrder({
+      return {
         supplierId: supplier.id,
         supplierName: supplier.name,
-        status: "pending",
+        status: "pending" as const,
         items,
         notes: `Imported from ${fileName ?? "Excel file"} · Vendor Code: ${group.vendorCode}`,
         expectedDelivery: addDays(7),
-      });
-    }
+      };
+    });
+    addOrdersBatch(orderInputs);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert(
