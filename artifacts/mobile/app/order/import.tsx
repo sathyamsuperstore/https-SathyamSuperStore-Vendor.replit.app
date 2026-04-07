@@ -156,6 +156,8 @@ export default function ImportOrderScreen() {
 
       const groups: VendorGroup[] = Object.entries(groupMap).map(([vendorCode, items]) => {
         const matchedSupplier = suppliers.find(
+          (s) => s.vendorCode.toUpperCase() === vendorCode.trim().toUpperCase()
+        ) ?? suppliers.find(
           (s) =>
             s.name.toLowerCase() === vendorCode.toLowerCase() ||
             s.contactName.toLowerCase() === vendorCode.toLowerCase()
@@ -163,7 +165,7 @@ export default function ImportOrderScreen() {
         return {
           vendorCode,
           items,
-          supplierId: matchedSupplier?.id ?? (suppliers[0]?.id ?? ""),
+          supplierId: matchedSupplier?.id ?? "",
         };
       });
 
@@ -333,25 +335,38 @@ function VendorGroupCard({
   const [expanded, setExpanded] = useState(true);
   const subtotal = group.items.reduce((s, i) => s + i.MRP * i["Order Qty"], 0);
   const selectedSupplier = suppliers.find((s) => s.id === group.supplierId);
+  const isAutoMatched = selectedSupplier?.vendorCode.toUpperCase() === group.vendorCode.trim().toUpperCase();
+  const isUnmatched = !group.supplierId;
 
   return (
-    <View style={groupStyles.card}>
+    <View style={[groupStyles.card, isUnmatched && groupStyles.cardUnmatched]}>
       <TouchableOpacity style={groupStyles.header} onPress={() => setExpanded((e) => !e)} activeOpacity={0.7}>
         <View style={groupStyles.headerLeft}>
           <View style={groupStyles.vendorBadge}>
             <Text style={groupStyles.vendorCode}>{group.vendorCode}</Text>
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={groupStyles.itemCount}>{group.items.length} item{group.items.length !== 1 ? "s" : ""}</Text>
             <Text style={groupStyles.subtotal}>{formatCurrency(subtotal)}</Text>
           </View>
+          {isAutoMatched ? (
+            <View style={groupStyles.matchBadge}>
+              <Feather name="check-circle" size={11} color={Colors.success} />
+              <Text style={groupStyles.matchBadgeText}>Auto-matched</Text>
+            </View>
+          ) : isUnmatched ? (
+            <View style={groupStyles.unmatchedBadge}>
+              <Feather name="alert-circle" size={11} color={Colors.warning} />
+              <Text style={groupStyles.unmatchedBadgeText}>Select supplier</Text>
+            </View>
+          ) : null}
         </View>
         <Feather name={expanded ? "chevron-up" : "chevron-down"} size={18} color={Colors.textMuted} />
       </TouchableOpacity>
 
       <View style={groupStyles.supplierRow}>
-        <Feather name="link" size={14} color={Colors.textMuted} />
-        <Text style={groupStyles.supplierLabel}>Map to supplier:</Text>
+        <Feather name="link" size={14} color={isUnmatched ? Colors.warning : Colors.textMuted} />
+        <Text style={groupStyles.supplierLabel}>Linked supplier:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={groupStyles.supplierOptions}>
           {suppliers.map((s) => (
             <TouchableOpacity
@@ -359,6 +374,11 @@ function VendorGroupCard({
               style={[groupStyles.supplierBtn, group.supplierId === s.id && groupStyles.supplierBtnActive]}
               onPress={() => onSelectSupplier(s.id)}
             >
+              {s.vendorCode ? (
+                <Text style={[groupStyles.supplierBtnCode, group.supplierId === s.id && groupStyles.supplierBtnCodeActive]}>
+                  {s.vendorCode}
+                </Text>
+              ) : null}
               <Text style={[groupStyles.supplierBtnText, group.supplierId === s.id && groupStyles.supplierBtnTextActive]}>
                 {s.name}
               </Text>
@@ -419,6 +439,35 @@ const groupStyles = StyleSheet.create({
   vendorCode: { fontSize: 13, fontWeight: "800", color: Colors.primary },
   itemCount: { fontSize: 13, fontWeight: "600", color: Colors.text },
   subtotal: { fontSize: 12, color: Colors.textMuted },
+  cardUnmatched: { borderColor: Colors.warning, borderWidth: 1.5 },
+  matchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.successLight,
+  },
+  matchBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.success },
+  unmatchedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Colors.warningLight,
+  },
+  unmatchedBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.warning },
+  supplierBtnCode: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: Colors.primary,
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  supplierBtnCodeActive: { color: Colors.textInverse },
   supplierRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -432,11 +481,13 @@ const groupStyles = StyleSheet.create({
   supplierOptions: { gap: 6, paddingVertical: 2 },
   supplierBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingVertical: 6,
+    borderRadius: 10,
     backgroundColor: Colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: Colors.border,
+    alignItems: "center",
+    minWidth: 60,
   },
   supplierBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   supplierBtnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
