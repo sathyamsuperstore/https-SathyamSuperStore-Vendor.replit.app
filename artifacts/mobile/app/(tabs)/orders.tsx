@@ -143,40 +143,36 @@ export default function OrdersScreen() {
           );
         })}
 
-        {/* Divider */}
-        <View style={styles.filterDivider} />
-
-        {/* Brand filter pill */}
-        <TouchableOpacity
-          style={[styles.filter, styles.brandFilterPill, brandActive && styles.brandFilterPillActive]}
-          onPress={() => setShowBrandModal(true)}
-        >
-          <Feather
-            name="tag"
-            size={13}
-            color={brandActive ? Colors.textInverse : Colors.textSecondary}
-          />
-          <Text style={[styles.filterText, brandActive && styles.filterTextActive]} numberOfLines={1}>
-            {brandActive ? activeBrand : "Brand"}
-          </Text>
-          <Feather
-            name="chevron-down"
-            size={13}
-            color={brandActive ? Colors.textInverse : Colors.textMuted}
-          />
-        </TouchableOpacity>
       </ScrollView>
 
-      {/* Active brand indicator strip */}
-      {brandActive && (
-        <View style={styles.activeBrandStrip}>
-          <Feather name="tag" size={12} color={Colors.warning} />
-          <Text style={styles.activeBrandLabel}>Brand: {activeBrand}</Text>
-          <TouchableOpacity onPress={() => setActiveBrand("all")} style={styles.clearBrand}>
-            <Feather name="x" size={13} color={Colors.warning} />
+      {/* Brand filter row — always visible below status pills */}
+      <TouchableOpacity
+        style={[styles.brandBar, brandActive && styles.brandBarActive]}
+        onPress={() => setShowBrandModal(true)}
+        activeOpacity={0.75}
+      >
+        <Feather
+          name="tag"
+          size={14}
+          color={brandActive ? Colors.textInverse : Colors.textSecondary}
+        />
+        <Text
+          style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
+          numberOfLines={1}
+        >
+          {brandActive ? `Brand: ${activeBrand}` : "Filter by Brand"}
+        </Text>
+        {brandActive ? (
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); setActiveBrand("all"); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="x-circle" size={15} color={Colors.textInverse} />
           </TouchableOpacity>
-        </View>
-      )}
+        ) : (
+          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+        )}
+      </TouchableOpacity>
 
       <FlatList
         data={filtered}
@@ -332,15 +328,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: Colors.border,
-    alignSelf: "center",
-    marginHorizontal: 4,
-  },
-  brandFilterPill: { gap: 5, paddingHorizontal: 12 },
-  brandFilterPillActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   filterTextActive: { color: Colors.textInverse },
   filterCount: {
@@ -352,21 +339,25 @@ const styles = StyleSheet.create({
   filterCountActive: { backgroundColor: "rgba(255,255,255,0.25)" },
   filterCountText: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   filterCountTextActive: { color: Colors.textInverse },
-  activeBrandStrip: {
+  brandBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     marginHorizontal: 20,
-    marginBottom: 6,
-    backgroundColor: Colors.warning + "18",
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: Colors.warning + "50",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderColor: Colors.border,
   },
-  activeBrandLabel: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.warning },
-  clearBrand: { padding: 2 },
+  brandBarActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  brandBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  brandBarTextActive: { color: Colors.textInverse },
   list: { paddingHorizontal: 20, paddingTop: 8 },
   listEmpty: { flex: 1 },
   modalBackdrop: {
