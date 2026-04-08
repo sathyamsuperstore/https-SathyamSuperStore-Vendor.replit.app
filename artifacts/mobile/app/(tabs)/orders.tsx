@@ -97,21 +97,6 @@ export default function OrdersScreen() {
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={[styles.filterBtn, brandActive && styles.filterBtnActive]}
-            onPress={() => setShowBrandModal(true)}
-          >
-            <Feather
-              name="sliders"
-              size={16}
-              color={brandActive ? Colors.textInverse : Colors.primary}
-            />
-            {brandActive && (
-              <Text style={styles.filterBtnText} numberOfLines={1}>
-                {activeBrand}
-              </Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
             style={styles.importBtn}
             onPress={() => router.push("/order/import")}
           >
@@ -127,7 +112,7 @@ export default function OrdersScreen() {
         </View>
       </View>
 
-      {/* Status filter pills */}
+      {/* Status + Brand filter pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -157,6 +142,29 @@ export default function OrdersScreen() {
             </TouchableOpacity>
           );
         })}
+
+        {/* Divider */}
+        <View style={styles.filterDivider} />
+
+        {/* Brand filter pill */}
+        <TouchableOpacity
+          style={[styles.filter, styles.brandFilterPill, brandActive && styles.brandFilterPillActive]}
+          onPress={() => setShowBrandModal(true)}
+        >
+          <Feather
+            name="tag"
+            size={13}
+            color={brandActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text style={[styles.filterText, brandActive && styles.filterTextActive]} numberOfLines={1}>
+            {brandActive ? activeBrand : "Brand"}
+          </Text>
+          <Feather
+            name="chevron-down"
+            size={13}
+            color={brandActive ? Colors.textInverse : Colors.textMuted}
+          />
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Active brand indicator strip */}
@@ -290,28 +298,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger + "30",
   },
-  filterBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: Colors.primaryMuted,
-    borderWidth: 1,
-    borderColor: Colors.primary + "30",
-    maxWidth: 120,
-  },
-  filterBtnActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  filterBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.textInverse,
-    flexShrink: 1,
-  },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -346,6 +332,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  filterDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginHorizontal: 4,
+  },
+  brandFilterPill: { gap: 5, paddingHorizontal: 12 },
+  brandFilterPillActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   filterTextActive: { color: Colors.textInverse },
   filterCount: {
