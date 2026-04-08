@@ -39,8 +39,27 @@ export default function OrderDetailScreen() {
   const { orders, updateOrderStatus, deleteOrder } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [selectedBrand, setSelectedBrand] = useState<string>("all");
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
+
+  const itemBrands = useMemo(() => {
+    if (!order) return [];
+    const set = new Set<string>();
+    order.items.forEach((item) => { if (item.brand) set.add(item.brand); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [order]);
+
+  const visibleItems = useMemo(() => {
+    if (!order) return [];
+    if (selectedBrand === "all") return order.items;
+    return order.items.filter((item) => item.brand === selectedBrand);
+  }, [order, selectedBrand]);
+
+  const visibleTotal = useMemo(
+    () => visibleItems.reduce((s, item) => s + item.quantity * item.unitPrice, 0),
+    [visibleItems]
+  );
 
   if (!order) {
     return (
@@ -151,9 +170,51 @@ export default function OrderDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Items</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Items</Text>
+            <Text style={styles.itemCount}>{visibleItems.length} of {order.items.length}</Text>
+          </View>
+
+          {/* Brand filter bar — shown only when order has branded items */}
+          {itemBrands.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.brandPills}
+              style={styles.brandPillsScroll}
+            >
+              <TouchableOpacity
+                style={[styles.brandPill, selectedBrand === "all" && styles.brandPillActive]}
+                onPress={() => setSelectedBrand("all")}
+              >
+                <Text style={[styles.brandPillText, selectedBrand === "all" && styles.brandPillTextActive]}>
+                  All
+                </Text>
+              </TouchableOpacity>
+              {itemBrands.map((brand) => {
+                const isActive = selectedBrand === brand;
+                const count = order.items.filter((i) => i.brand === brand).length;
+                return (
+                  <TouchableOpacity
+                    key={brand}
+                    style={[styles.brandPill, isActive && styles.brandPillActive]}
+                    onPress={() => setSelectedBrand(isActive ? "all" : brand)}
+                  >
+                    <Feather name="tag" size={11} color={isActive ? Colors.textInverse : Colors.textMuted} />
+                    <Text style={[styles.brandPillText, isActive && styles.brandPillTextActive]}>
+                      {brand}
+                    </Text>
+                    <Text style={[styles.brandPillCount, isActive && styles.brandPillCountActive]}>
+                      {count}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
           <View style={styles.itemsCard}>
-            {order.items.map((item, idx) => (
+            {visibleItems.map((item, idx) => (
               <View key={item.id}>
                 {idx > 0 && <View style={styles.itemDivider} />}
                 <View style={styles.itemRow}>
@@ -174,8 +235,10 @@ export default function OrderDetailScreen() {
             ))}
             <View style={styles.itemDivider} />
             <View style={styles.itemRow}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>{formatCurrency(order.totalAmount)}</Text>
+              <Text style={styles.totalLabel}>
+                {selectedBrand === "all" ? "Total" : `${selectedBrand} Total`}
+              </Text>
+              <Text style={styles.totalValue}>{formatCurrency(visibleTotal)}</Text>
             </View>
           </View>
         </View>
@@ -225,7 +288,35 @@ const styles = StyleSheet.create({
   supplier: { fontSize: 14, color: "rgba(255,255,255,0.7)" },
   amount: { fontSize: 32, fontWeight: "800", color: Colors.textInverse },
   section: { marginBottom: 20 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 12 },
+  itemCount: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  brandPillsScroll: { marginBottom: 10 },
+  brandPills: { gap: 6, paddingRight: 4 },
+  brandPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  brandPillActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  brandPillText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  brandPillTextActive: { color: Colors.textInverse },
+  brandPillCount: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  brandPillCountActive: { color: Colors.textInverse, backgroundColor: "rgba(255,255,255,0.25)" },
   infoGrid: { gap: 12 },
   infoItem: {
     backgroundColor: Colors.surface,
