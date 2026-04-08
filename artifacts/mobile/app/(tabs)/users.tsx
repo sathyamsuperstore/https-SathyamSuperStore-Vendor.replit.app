@@ -25,12 +25,21 @@ export default function UsersScreen() {
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Users</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => router.push("/user/new")}
-        >
-          <Feather name="plus" size={20} color={Colors.textInverse} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.importBtn}
+            onPress={() => router.push("/user/import")}
+          >
+            <Feather name="upload" size={17} color={Colors.primary} />
+            <Text style={styles.importBtnText}>Import</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => router.push("/user/new")}
+          >
+            <Feather name="plus" size={20} color={Colors.textInverse} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -66,6 +75,13 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  importBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10,
+    backgroundColor: Colors.primaryMuted, borderWidth: 1, borderColor: Colors.primary + "40",
+  },
+  importBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
   addBtn: {
     width: 42,
     height: 42,

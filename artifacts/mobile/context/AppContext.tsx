@@ -71,6 +71,8 @@ interface AppContextType {
   addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
   updateAppUser: (id: string, user: Partial<AppUser>) => void;
   deleteAppUser: (id: string) => void;
+  addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[] };
+  addUsersBatch: (items: Omit<AppUser, "id" | "createdAt">[]) => { added: number; skipped: string[] };
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -167,6 +169,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   function deleteAppUser(id: string) {
     saveAppUsers(appUsers.filter((u) => u.id !== id));
+  }
+
+  function addSuppliersBatch(items: Omit<Supplier, "id" | "createdAt">[]): { added: number; skipped: string[] } {
+    const skipped: string[] = [];
+    const existingCodes = new Set(suppliers.map((s) => s.vendorCode.toUpperCase()));
+    const newSuppliers: Supplier[] = [];
+    const seenCodes = new Set<string>();
+    for (const item of items) {
+      const code = item.vendorCode.toUpperCase();
+      if (existingCodes.has(code) || seenCodes.has(code)) {
+        skipped.push(item.vendorCode);
+        continue;
+      }
+      seenCodes.add(code);
+      newSuppliers.push({ ...item, id: generateId(), createdAt: new Date().toISOString() });
+    }
+    if (newSuppliers.length > 0) saveSuppliers([...suppliers, ...newSuppliers]);
+    return { added: newSuppliers.length, skipped };
+  }
+
+  function addUsersBatch(items: Omit<AppUser, "id" | "createdAt">[]): { added: number; skipped: string[] } {
+    const skipped: string[] = [];
+    const existingIds = new Set(appUsers.map((u) => u.userId.toLowerCase()));
+    const newUsers: AppUser[] = [];
+    const seenIds = new Set<string>();
+    for (const item of items) {
+      const uid = item.userId.toLowerCase();
+      if (existingIds.has(uid) || seenIds.has(uid)) {
+        skipped.push(item.userId);
+        continue;
+      }
+      seenIds.add(uid);
+      newUsers.push({ ...item, id: generateId(), createdAt: new Date().toISOString() });
+    }
+    if (newUsers.length > 0) saveAppUsers([...appUsers, ...newUsers]);
+    return { added: newUsers.length, skipped };
   }
 
   async function saveOrders(data: Order[]) {
@@ -268,6 +306,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addAppUser,
         updateAppUser,
         deleteAppUser,
+        addSuppliersBatch,
+        addUsersBatch,
       }}
     >
       {children}
