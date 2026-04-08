@@ -27,12 +27,33 @@ interface ParsedRow {
   UOM: string;
   MRP: number;
   "Order Qty": number;
+  SyncDate: string;
 }
 
 interface VendorGroup {
   vendorCode: string;
   items: ParsedRow[];
   supplierId: string;
+  syncDate?: string;
+}
+
+function parseExcelDate(val: unknown): string {
+  if (val === null || val === undefined || val === "") return "";
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return "";
+    return val.toISOString().split("T")[0];
+  }
+  if (typeof val === "number") {
+    const ms = (val - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().split("T")[0];
+  }
+  const str = String(val).trim();
+  if (!str) return "";
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  return str;
 }
 
 function generateItemId(): string {
@@ -139,6 +160,7 @@ export default function ImportOrderScreen() {
         UOM: String(row["UOM"] ?? "pcs").trim(),
         MRP: parseFloat(String(row["MRP"] ?? "0")) || 0,
         "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
+        SyncDate: parseExcelDate(row["SyncDate"]),
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -166,6 +188,7 @@ export default function ImportOrderScreen() {
           vendorCode,
           items,
           supplierId: matchedSupplier?.id ?? "",
+          syncDate: items[0]?.SyncDate || undefined,
         };
       });
 
@@ -207,6 +230,7 @@ export default function ImportOrderScreen() {
         items,
         notes: `Imported from ${fileName ?? "Excel file"} · Vendor Code: ${group.vendorCode}`,
         expectedDelivery: addDays(7),
+        syncDate: group.syncDate,
       };
     });
     addOrdersBatch(orderInputs);

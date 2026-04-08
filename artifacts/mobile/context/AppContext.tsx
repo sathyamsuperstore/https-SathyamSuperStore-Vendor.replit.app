@@ -49,6 +49,7 @@ export interface Order {
   totalAmount: number;
   notes: string;
   expectedDelivery: string;
+  syncDate?: string;
   createdAt: string;
   updatedAt: string;
 }

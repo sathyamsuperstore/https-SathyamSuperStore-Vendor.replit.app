@@ -137,6 +137,12 @@ export default function OrderDetailScreen() {
                 {isOverdue ? "⚠ " : ""}{formatDate(order.expectedDelivery)}
               </Text>
             </View>
+            {order.syncDate ? (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Sync Date</Text>
+                <Text style={styles.infoValue}>{formatDate(order.syncDate)}</Text>
+              </View>
+            ) : null}
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Last Updated</Text>
               <Text style={styles.infoValue}>{formatDate(order.updatedAt)}</Text>
