@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  Alert,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,7 +28,7 @@ const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
 ];
 
 export default function OrdersScreen() {
-  const { orders } = useApp();
+  const { orders, clearAllOrders } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
@@ -62,6 +63,26 @@ export default function OrdersScreen() {
     ).length;
   }
 
+  function handleClearAll() {
+    if (orders.length === 0) return;
+    Alert.alert(
+      "Remove All Orders",
+      `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove All",
+          style: "destructive",
+          onPress: () => {
+            clearAllOrders();
+            setActiveFilter("all");
+            setActiveBrand("all");
+          },
+        },
+      ]
+    );
+  }
+
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
   const brandActive = activeBrand !== "all";
 
@@ -70,6 +91,11 @@ export default function OrdersScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Orders</Text>
         <View style={styles.headerActions}>
+          {orders.length > 0 && (
+            <TouchableOpacity style={styles.clearAllBtn} onPress={handleClearAll}>
+              <Feather name="trash-2" size={16} color={Colors.danger} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.filterBtn, brandActive && styles.filterBtnActive]}
             onPress={() => setShowBrandModal(true)}
@@ -254,6 +280,16 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  clearAllBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: Colors.dangerLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.danger + "30",
+  },
   filterBtn: {
     flexDirection: "row",
     alignItems: "center",

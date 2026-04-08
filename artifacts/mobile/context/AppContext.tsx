@@ -69,6 +69,7 @@ interface AppContextType {
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => void;
   updateOrder: (id: string, order: Partial<Order>) => void;
   deleteOrder: (id: string) => void;
+  clearAllOrders: () => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
   addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
   updateAppUser: (id: string, user: Partial<AppUser>) => void;
@@ -280,6 +281,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrders(orders.filter((o) => o.id !== id));
   }
 
+  function clearAllOrders() {
+    saveOrders([]);
+  }
+
   function updateOrderStatus(id: string, status: OrderStatus) {
     saveOrders(
       orders.map((o) =>
@@ -304,6 +309,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addOrdersBatch,
         updateOrder,
         deleteOrder,
+        clearAllOrders,
         updateOrderStatus,
         addAppUser,
         updateAppUser,
