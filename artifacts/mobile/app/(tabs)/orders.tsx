@@ -6,6 +6,7 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  Modal,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,6 +32,7 @@ export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [activeBrand, setActiveBrand] = useState<string>("all");
+  const [showBrandModal, setShowBrandModal] = useState(false);
 
   const allBrands = useMemo(() => {
     const set = new Set<string>();
@@ -61,13 +63,28 @@ export default function OrdersScreen() {
   }
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
-  const hasBrands = allBrands.length > 0;
+  const brandActive = activeBrand !== "all";
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Orders</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.filterBtn, brandActive && styles.filterBtnActive]}
+            onPress={() => setShowBrandModal(true)}
+          >
+            <Feather
+              name="sliders"
+              size={16}
+              color={brandActive ? Colors.textInverse : Colors.primary}
+            />
+            {brandActive && (
+              <Text style={styles.filterBtnText} numberOfLines={1}>
+                {activeBrand}
+              </Text>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.importBtn}
             onPress={() => router.push("/order/import")}
@@ -84,7 +101,7 @@ export default function OrdersScreen() {
         </View>
       </View>
 
-      {/* Status filter row */}
+      {/* Status filter pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -116,44 +133,14 @@ export default function OrdersScreen() {
         })}
       </ScrollView>
 
-      {/* Brand filter row — only shown when brands exist */}
-      {hasBrands && (
-        <View style={styles.brandRow}>
-          <Feather name="tag" size={13} color={Colors.textMuted} style={styles.brandIcon} />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.brandFilters}
-          >
-            <TouchableOpacity
-              style={[styles.brandChip, activeBrand === "all" && styles.brandChipActive]}
-              onPress={() => setActiveBrand("all")}
-            >
-              <Text style={[styles.brandChipText, activeBrand === "all" && styles.brandChipTextActive]}>
-                All Brands
-              </Text>
-            </TouchableOpacity>
-            {allBrands.map((brand) => {
-              const count = brandOrderCount(brand);
-              const isActive = activeBrand === brand;
-              return (
-                <TouchableOpacity
-                  key={brand}
-                  style={[styles.brandChip, isActive && styles.brandChipActive]}
-                  onPress={() => setActiveBrand(isActive ? "all" : brand)}
-                >
-                  <Text style={[styles.brandChipText, isActive && styles.brandChipTextActive]}>
-                    {brand}
-                  </Text>
-                  <View style={[styles.brandCount, isActive && styles.brandCountActive]}>
-                    <Text style={[styles.brandCountText, isActive && styles.brandCountTextActive]}>
-                      {count}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+      {/* Active brand indicator strip */}
+      {brandActive && (
+        <View style={styles.activeBrandStrip}>
+          <Feather name="tag" size={12} color={Colors.warning} />
+          <Text style={styles.activeBrandLabel}>Brand: {activeBrand}</Text>
+          <TouchableOpacity onPress={() => setActiveBrand("all")} style={styles.clearBrand}>
+            <Feather name="x" size={13} color={Colors.warning} />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -171,7 +158,7 @@ export default function OrdersScreen() {
             icon="file-text"
             title="No orders found"
             subtitle={
-              activeBrand !== "all"
+              brandActive
                 ? `No orders with brand "${activeBrand}"`
                 : activeFilter === "all"
                 ? "Tap the + button to create your first order"
@@ -181,6 +168,76 @@ export default function OrdersScreen() {
         }
         showsVerticalScrollIndicator={false}
       />
+
+      {/* Brand filter modal */}
+      <Modal
+        visible={showBrandModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBrandModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowBrandModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Brand</Text>
+            {brandActive && (
+              <TouchableOpacity
+                onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+              >
+                <Text style={styles.modalClear}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allBrands.length === 0 ? (
+            <View style={styles.noBrands}>
+              <Feather name="tag" size={32} color={Colors.textMuted} />
+              <Text style={styles.noBrandsTitle}>No Brands Yet</Text>
+              <Text style={styles.noBrandsSub}>
+                Import orders with a Brand column to filter by brand.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList}>
+              <TouchableOpacity
+                style={[styles.brandRow, activeBrand === "all" && styles.brandRowActive]}
+                onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+              >
+                <Text style={[styles.brandName, activeBrand === "all" && styles.brandNameActive]}>
+                  All Brands
+                </Text>
+                <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                {activeBrand === "all" && (
+                  <Feather name="check" size={16} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+              {allBrands.map((brand) => {
+                const isActive = activeBrand === brand;
+                const count = brandOrderCount(brand);
+                return (
+                  <TouchableOpacity
+                    key={brand}
+                    style={[styles.brandRow, isActive && styles.brandRowActive]}
+                    onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
+                  >
+                    <View style={styles.brandDot} />
+                    <Text style={[styles.brandName, isActive && styles.brandNameActive]}>
+                      {brand}
+                    </Text>
+                    <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                    {isActive && <Feather name="check" size={16} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -196,7 +253,29 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+    maxWidth: 120,
+  },
+  filterBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textInverse,
+    flexShrink: 1,
+  },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -242,40 +321,80 @@ const styles = StyleSheet.create({
   filterCountActive: { backgroundColor: "rgba(255,255,255,0.25)" },
   filterCountText: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   filterCountTextActive: { color: Colors.textInverse },
+  activeBrandStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 20,
+    marginBottom: 6,
+    backgroundColor: Colors.warning + "18",
+    borderWidth: 1,
+    borderColor: Colors.warning + "50",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  activeBrandLabel: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.warning },
+  clearBrand: { padding: 2 },
+  list: { paddingHorizontal: 20, paddingTop: 8 },
+  listEmpty: { flex: 1 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  modalSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    maxHeight: "70%",
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  noBrands: {
+    alignItems: "center",
+    padding: 40,
+    gap: 10,
+  },
+  noBrandsTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  noBrandsSub: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  brandList: { paddingHorizontal: 20 },
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: 20,
-    marginBottom: 4,
+    gap: 10,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
-  brandIcon: { marginRight: 6, marginTop: 1 },
-  brandFilters: { paddingRight: 20, paddingVertical: 4, gap: 6 },
-  brandChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 5,
+  brandRowActive: { backgroundColor: Colors.primaryMuted + "80" },
+  brandDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.warning,
   },
-  brandChipActive: {
-    backgroundColor: Colors.warning + "22",
-    borderColor: Colors.warning,
-  },
-  brandChipText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
-  brandChipTextActive: { color: Colors.warning },
-  brandCount: {
-    backgroundColor: Colors.surfaceSecondary,
-    borderRadius: 8,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  brandCountActive: { backgroundColor: Colors.warning + "33" },
-  brandCountText: { fontSize: 10, fontWeight: "700", color: Colors.textMuted },
-  brandCountTextActive: { color: Colors.warning },
-  list: { paddingHorizontal: 20, paddingTop: 8 },
-  listEmpty: { flex: 1 },
+  brandName: { flex: 1, fontSize: 15, fontWeight: "600", color: Colors.text },
+  brandNameActive: { color: Colors.primary },
+  brandCount: { fontSize: 12, color: Colors.textMuted, marginRight: 4 },
 });
