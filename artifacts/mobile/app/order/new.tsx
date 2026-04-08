@@ -13,7 +13,6 @@ import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderItem } from "@/context/AppContext";
 
@@ -105,11 +104,10 @@ export default function NewOrderScreen() {
   return (
     <>
       <Stack.Screen options={{ title: "New Order", headerBackTitle: "Back" }} />
-      <KeyboardAwareScrollView
+      <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 }]}
         showsVerticalScrollIndicator={false}
-        bottomOffset={20}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.section}>
@@ -241,7 +239,7 @@ export default function NewOrderScreen() {
           <Feather name="check" size={18} color={Colors.textInverse} />
           <Text style={styles.submitBtnText}>Create Order</Text>
         </TouchableOpacity>
-      </KeyboardAwareScrollView>
+      </ScrollView>
     </>
   );
 }
