@@ -30,13 +30,38 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
+  const [activeBrand, setActiveBrand] = useState<string>("all");
 
-  const filtered = useMemo(() => {
+  const allBrands = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach((o) =>
+      o.items.forEach((item) => {
+        if (item.brand) set.add(item.brand);
+      })
+    );
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  const statusFiltered = useMemo(() => {
     if (activeFilter === "all") return orders;
     return orders.filter((o) => o.status === activeFilter);
   }, [orders, activeFilter]);
 
+  const filtered = useMemo(() => {
+    if (activeBrand === "all") return statusFiltered;
+    return statusFiltered.filter((o) =>
+      o.items.some((item) => item.brand === activeBrand)
+    );
+  }, [statusFiltered, activeBrand]);
+
+  function brandOrderCount(brand: string): number {
+    return statusFiltered.filter((o) =>
+      o.items.some((item) => item.brand === brand)
+    ).length;
+  }
+
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
+  const hasBrands = allBrands.length > 0;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -59,6 +84,7 @@ export default function OrdersScreen() {
         </View>
       </View>
 
+      {/* Status filter row */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -66,7 +92,10 @@ export default function OrdersScreen() {
         style={styles.filtersScroll}
       >
         {STATUS_FILTERS.map((f) => {
-          const count = f.key === "all" ? orders.length : orders.filter((o) => o.status === f.key).length;
+          const count =
+            f.key === "all"
+              ? orders.length
+              : orders.filter((o) => o.status === f.key).length;
           const isActive = activeFilter === f.key;
           return (
             <TouchableOpacity
@@ -87,6 +116,47 @@ export default function OrdersScreen() {
         })}
       </ScrollView>
 
+      {/* Brand filter row — only shown when brands exist */}
+      {hasBrands && (
+        <View style={styles.brandRow}>
+          <Feather name="tag" size={13} color={Colors.textMuted} style={styles.brandIcon} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.brandFilters}
+          >
+            <TouchableOpacity
+              style={[styles.brandChip, activeBrand === "all" && styles.brandChipActive]}
+              onPress={() => setActiveBrand("all")}
+            >
+              <Text style={[styles.brandChipText, activeBrand === "all" && styles.brandChipTextActive]}>
+                All Brands
+              </Text>
+            </TouchableOpacity>
+            {allBrands.map((brand) => {
+              const count = brandOrderCount(brand);
+              const isActive = activeBrand === brand;
+              return (
+                <TouchableOpacity
+                  key={brand}
+                  style={[styles.brandChip, isActive && styles.brandChipActive]}
+                  onPress={() => setActiveBrand(isActive ? "all" : brand)}
+                >
+                  <Text style={[styles.brandChipText, isActive && styles.brandChipTextActive]}>
+                    {brand}
+                  </Text>
+                  <View style={[styles.brandCount, isActive && styles.brandCountActive]}>
+                    <Text style={[styles.brandCountText, isActive && styles.brandCountTextActive]}>
+                      {count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -101,7 +171,9 @@ export default function OrdersScreen() {
             icon="file-text"
             title="No orders found"
             subtitle={
-              activeFilter === "all"
+              activeBrand !== "all"
+                ? `No orders with brand "${activeBrand}"`
+                : activeFilter === "all"
                 ? "Tap the + button to create your first order"
                 : `No ${activeFilter} orders at the moment`
             }
@@ -158,10 +230,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     gap: 6,
   },
-  filterActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
+  filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   filterTextActive: { color: Colors.textInverse },
   filterCount: {
@@ -173,6 +242,40 @@ const styles = StyleSheet.create({
   filterCountActive: { backgroundColor: "rgba(255,255,255,0.25)" },
   filterCountText: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   filterCountTextActive: { color: Colors.textInverse },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 20,
+    marginBottom: 4,
+  },
+  brandIcon: { marginRight: 6, marginTop: 1 },
+  brandFilters: { paddingRight: 20, paddingVertical: 4, gap: 6 },
+  brandChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 5,
+  },
+  brandChipActive: {
+    backgroundColor: Colors.warning + "22",
+    borderColor: Colors.warning,
+  },
+  brandChipText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  brandChipTextActive: { color: Colors.warning },
+  brandCount: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  brandCountActive: { backgroundColor: Colors.warning + "33" },
+  brandCountText: { fontSize: 10, fontWeight: "700", color: Colors.textMuted },
+  brandCountTextActive: { color: Colors.warning },
   list: { paddingHorizontal: 20, paddingTop: 8 },
   listEmpty: { flex: 1 },
 });
