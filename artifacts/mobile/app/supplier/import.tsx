@@ -20,7 +20,7 @@ import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 
 const REQUIRED_COLS = ["VendorCode", "VendorName"];
-const ALL_COLS = ["VendorCode", "VendorName", "VendorGstNo", "ContactName", "Email", "Phone", "Address", "Category"];
+const ALL_COLS = ["VendorCode", "VendorName", "VendorGstNo", "ContactName", "Email", "Phone", "Address", "VendorCategory"];
 
 interface ParsedSupplier {
   vendorCode: string;
@@ -112,7 +112,7 @@ export default function ImportSuppliersScreen() {
           email: String(row["Email"] ?? "").trim(),
           phone: String(row["Phone"] ?? "").trim(),
           address: String(row["Address"] ?? "").trim(),
-          category: String(row["Category"] ?? "").trim(),
+          category: String(row["VendorCategory"] ?? "").trim(),
         });
       });
 
@@ -239,8 +239,8 @@ export default function ImportSuppliersScreen() {
                 <Text style={styles.previewTitle}>Preview ({parsed.length} suppliers)</Text>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.th, { flex: 2 }]}>VendorCode</Text>
-                  <Text style={[styles.th, { flex: 3 }]}>Name</Text>
-                  <Text style={[styles.th, { flex: 2 }]}>Category</Text>
+                  <Text style={[styles.th, { flex: 3 }]}>VendorName</Text>
+                  <Text style={[styles.th, { flex: 2 }]}>VendorCategory</Text>
                   <Text style={styles.thStatus}>Status</Text>
                 </View>
                 {parsed.map((item, i) => {

@@ -163,7 +163,7 @@ export default function NewSupplierScreen() {
         </View>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>Category</Text>
+          <Text style={styles.label}>Vendor Category</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>
             {CATEGORIES.map((cat) => (
               <TouchableOpacity

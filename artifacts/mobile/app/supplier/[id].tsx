@@ -207,7 +207,7 @@ export default function SupplierDetailScreen() {
               />
             </View>
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Category</Text>
+              <Text style={styles.fieldLabel}>Vendor Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>
                 {CATEGORIES.map((cat) => (
                   <TouchableOpacity
@@ -230,7 +230,7 @@ export default function SupplierDetailScreen() {
               <InfoRow icon="mail" label="Email" value={supplier.email} />
               <InfoRow icon="phone" label="Phone" value={supplier.phone} />
               <InfoRow icon="map-pin" label="Address" value={supplier.address} />
-              <InfoRow icon="layers" label="Category" value={supplier.category} last />
+              <InfoRow icon="layers" label="Vendor Category" value={supplier.category} last />
             </View>
 
             <View style={styles.ordersSection}>
