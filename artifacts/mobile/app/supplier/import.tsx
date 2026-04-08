@@ -19,8 +19,8 @@ import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 
-const REQUIRED_COLS = ["VendorCode", "Name"];
-const ALL_COLS = ["VendorCode", "Name", "VendorGstNo", "ContactName", "Email", "Phone", "Address", "Category"];
+const REQUIRED_COLS = ["VendorCode", "VendorName"];
+const ALL_COLS = ["VendorCode", "VendorName", "VendorGstNo", "ContactName", "Email", "Phone", "Address", "Category"];
 
 interface ParsedSupplier {
   vendorCode: string;
@@ -94,9 +94,9 @@ export default function ImportSuppliersScreen() {
 
       rows.forEach((row, i) => {
         const vendorCode = String(row["VendorCode"] ?? "").trim().toUpperCase();
-        const name = String(row["Name"] ?? "").trim();
+        const name = String(row["VendorName"] ?? "").trim();
         if (!vendorCode || !name) {
-          rowErrors.push(`Row ${i + 2}: VendorCode and Name are required.`);
+          rowErrors.push(`Row ${i + 2}: VendorCode and VendorName are required.`);
           return;
         }
         if (seenCodes.has(vendorCode)) {

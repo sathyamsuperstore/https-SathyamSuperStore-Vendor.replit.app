@@ -118,7 +118,7 @@ export default function SupplierDetailScreen() {
         {editing ? (
           <View style={styles.form}>
             <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Company Name *</Text>
+              <Text style={styles.fieldLabel}>Vendor Name *</Text>
               <TextInput
                 style={styles.input}
                 value={form.name}

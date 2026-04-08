@@ -62,7 +62,7 @@ export default function NewSupplierScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.formField}>
-          <Text style={styles.label}>Company Name *</Text>
+          <Text style={styles.label}>Vendor Name *</Text>
           <TextInput
             style={styles.input}
             value={name}
