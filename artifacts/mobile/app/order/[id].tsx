@@ -159,6 +159,9 @@ export default function OrderDetailScreen() {
                 <View style={styles.itemRow}>
                   <View style={styles.itemInfo}>
                     <Text style={styles.itemName}>{item.name}</Text>
+                    {item.brand ? (
+                      <Text style={styles.itemBrand}>{item.brand}</Text>
+                    ) : null}
                     <Text style={styles.itemMeta}>
                       {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
                     </Text>
@@ -243,7 +246,8 @@ const styles = StyleSheet.create({
   },
   itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
   itemInfo: { flex: 1, marginRight: 12 },
-  itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 3 },
+  itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
+  itemBrand: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginBottom: 3 },
   itemMeta: { fontSize: 12, color: Colors.textMuted },
   itemTotal: { fontSize: 14, fontWeight: "700", color: Colors.text },
   itemDivider: { height: 1, backgroundColor: Colors.border },

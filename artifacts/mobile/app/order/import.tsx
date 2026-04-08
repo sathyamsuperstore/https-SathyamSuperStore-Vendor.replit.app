@@ -28,6 +28,7 @@ interface ParsedRow {
   MRP: number;
   "Order Qty": number;
   SyncDate: string;
+  Brand: string;
 }
 
 interface VendorGroup {
@@ -161,6 +162,7 @@ export default function ImportOrderScreen() {
         MRP: parseFloat(String(row["MRP"] ?? "0")) || 0,
         "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
         SyncDate: parseExcelDate(row["SyncDate"]),
+        Brand: String(row["Brand"] ?? "").trim(),
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -219,6 +221,7 @@ export default function ImportOrderScreen() {
       const items: OrderItem[] = group.items.map((row) => ({
         id: generateItemId(),
         name: `${row["Item No"] ? row["Item No"] + " - " : ""}${row["Item Description"]}`,
+        brand: row["Brand"] || undefined,
         quantity: row["Order Qty"] || 1,
         unit: row["UOM"] || "pcs",
         unitPrice: row["MRP"] || 0,

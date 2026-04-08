@@ -34,6 +34,7 @@ export interface Supplier {
 export interface OrderItem {
   id: string;
   name: string;
+  brand?: string;
   quantity: number;
   unit: string;
   unitPrice: number;
