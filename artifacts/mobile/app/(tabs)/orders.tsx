@@ -41,20 +41,20 @@ export default function OrdersScreen() {
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  const statusFiltered = useMemo(() => {
+    if (activeFilter === "all") return orders;
+    return orders.filter((o) => o.status === activeFilter);
+  }, [orders, activeFilter]);
+
   const allBrands = useMemo(() => {
     const set = new Set<string>();
-    orders.forEach((o) =>
+    statusFiltered.forEach((o) =>
       o.items.forEach((item) => {
         if (item.brand) set.add(item.brand);
       })
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [orders]);
-
-  const statusFiltered = useMemo(() => {
-    if (activeFilter === "all") return orders;
-    return orders.filter((o) => o.status === activeFilter);
-  }, [orders, activeFilter]);
+  }, [statusFiltered]);
 
   const filtered = useMemo(() => {
     if (activeBrand === "all") return statusFiltered;
@@ -218,7 +218,7 @@ export default function OrdersScreen() {
             <TouchableOpacity
               key={f.key}
               style={[styles.filter, isActive && styles.filterActive]}
-              onPress={() => setActiveFilter(f.key)}
+              onPress={() => { setActiveFilter(f.key); setActiveBrand("all"); }}
             >
               <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
                 {f.label}
