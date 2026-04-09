@@ -9,10 +9,15 @@ import {
   Modal,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as XLSX from "xlsx";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderStatus } from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
@@ -34,6 +39,7 @@ export default function OrdersScreen() {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [activeBrand, setActiveBrand] = useState<string>("all");
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const allBrands = useMemo(() => {
     const set = new Set<string>();
@@ -61,6 +67,75 @@ export default function OrdersScreen() {
     return statusFiltered.filter((o) =>
       o.items.some((item) => item.brand === brand)
     ).length;
+  }
+
+  async function handleExport() {
+    if (filtered.length === 0) {
+      Alert.alert("Nothing to Export", "No orders match the current filters.");
+      return;
+    }
+    try {
+      setDownloading(true);
+      const rows: Record<string, unknown>[] = [];
+      for (const order of filtered) {
+        for (const item of order.items) {
+          const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
+          const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
+          rows.push({
+            "Order No": order.orderNumber,
+            "Order Date": new Date(order.createdAt).toLocaleDateString("en-IN"),
+            "Supplier": order.supplierName,
+            "Status": order.status.charAt(0).toUpperCase() + order.status.slice(1),
+            "Beat": order.beat ?? "",
+            "Sync Date": order.syncDate ?? "",
+            "Item No": itemNo,
+            "Item Description": desc,
+            "Brand": item.brand ?? "",
+            "UOM": item.unit,
+            "MRP": item.unitPrice,
+            "Order Qty": item.quantity,
+            "Amount": item.quantity * item.unitPrice,
+          });
+        }
+      }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+        { wch: 10 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Orders");
+      const fileName = `orders_export_${Date.now()}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export Orders",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   function handleClearAll() {
@@ -96,6 +171,20 @@ export default function OrdersScreen() {
               <Feather name="trash-2" size={16} color={Colors.danger} />
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.exportBtn}
+            onPress={handleExport}
+            disabled={downloading || filtered.length === 0}
+          >
+            {downloading ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Feather name="download" size={17} color={filtered.length === 0 ? Colors.textMuted : Colors.primary} />
+            )}
+            <Text style={[styles.exportBtnText, filtered.length === 0 && styles.exportBtnTextDisabled]}>
+              Export
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.importBtn}
             onPress={() => router.push("/order/import")}
@@ -294,6 +383,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger + "30",
   },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.successLight ?? "#DCFCE7",
+    borderWidth: 1,
+    borderColor: Colors.success ? Colors.success + "40" : "#16A34A40",
+  },
+  exportBtnText: { fontSize: 14, fontWeight: "700", color: Colors.success ?? "#16A34A" },
+  exportBtnTextDisabled: { color: Colors.textMuted },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
