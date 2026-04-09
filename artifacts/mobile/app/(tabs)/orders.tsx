@@ -79,16 +79,10 @@ export default function OrdersScreen() {
       const rows: Record<string, unknown>[] = [];
       for (const order of filtered) {
         for (const item of order.items) {
-          const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           rows.push({
-            "Order No": order.orderNumber,
             "Order Date": new Date(order.createdAt).toLocaleDateString("en-IN"),
             "Supplier": order.supplierName,
-            "Status": order.status.charAt(0).toUpperCase() + order.status.slice(1),
-            "Beat": order.beat ?? "",
-            "Sync Date": order.syncDate ?? "",
-            "Item No": itemNo,
             "Item Description": desc,
             "Brand": item.brand ?? "",
             "UOM": item.unit,
@@ -100,8 +94,7 @@ export default function OrdersScreen() {
       }
       const ws = XLSX.utils.json_to_sheet(rows);
       ws["!cols"] = [
-        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
-        { wch: 10 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+        { wch: 14 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
