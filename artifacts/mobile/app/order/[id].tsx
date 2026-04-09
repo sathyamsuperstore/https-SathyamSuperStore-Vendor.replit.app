@@ -162,6 +162,12 @@ export default function OrderDetailScreen() {
                 <Text style={styles.infoValue}>{formatDate(order.syncDate)}</Text>
               </View>
             ) : null}
+            {order.beat ? (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Beat</Text>
+                <Text style={styles.infoValue}>{order.beat}</Text>
+              </View>
+            ) : null}
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Last Updated</Text>
               <Text style={styles.infoValue}>{formatDate(order.updatedAt)}</Text>

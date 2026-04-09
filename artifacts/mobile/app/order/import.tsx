@@ -29,6 +29,7 @@ interface ParsedRow {
   "Order Qty": number;
   SyncDate: string;
   Brand: string;
+  Beat: string;
 }
 
 interface VendorGroup {
@@ -36,6 +37,7 @@ interface VendorGroup {
   items: ParsedRow[];
   supplierId: string;
   syncDate?: string;
+  beat?: string;
 }
 
 function parseExcelDate(val: unknown): string {
@@ -163,6 +165,7 @@ export default function ImportOrderScreen() {
         "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
         SyncDate: parseExcelDate(row["SyncDate"]),
         Brand: String(row["Brand"] ?? "").trim(),
+        Beat: String(row["Beat"] ?? "").trim(),
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -191,6 +194,7 @@ export default function ImportOrderScreen() {
           items,
           supplierId: matchedSupplier?.id ?? "",
           syncDate: items[0]?.SyncDate || undefined,
+          beat: items[0]?.Beat || undefined,
         };
       });
 
@@ -234,6 +238,7 @@ export default function ImportOrderScreen() {
         notes: `Imported from ${fileName ?? "Excel file"} · Vendor Code: ${group.vendorCode}`,
         expectedDelivery: addDays(7),
         syncDate: group.syncDate,
+        beat: group.beat,
       };
     });
     addOrdersBatch(orderInputs);

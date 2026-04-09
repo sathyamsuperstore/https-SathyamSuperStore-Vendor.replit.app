@@ -51,6 +51,7 @@ export interface Order {
   notes: string;
   expectedDelivery: string;
   syncDate?: string;
+  beat?: string;
   createdAt: string;
   updatedAt: string;
 }

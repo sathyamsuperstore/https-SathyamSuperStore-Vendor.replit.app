@@ -33,6 +33,7 @@ export default function NewOrderScreen() {
 
   const [supplierId, setSupplierId] = useState<string>("");
   const [expectedDelivery, setExpectedDelivery] = useState(addDays(7));
+  const [beat, setBeat] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<OrderItem[]>([
     { id: generateItemId(), name: "", quantity: 1, unit: "pcs", unitPrice: 0 },
@@ -96,6 +97,7 @@ export default function NewOrderScreen() {
       items,
       notes,
       expectedDelivery: new Date(expectedDelivery).toISOString(),
+      beat: beat.trim() || undefined,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
@@ -146,6 +148,17 @@ export default function NewOrderScreen() {
             value={expectedDelivery}
             onChangeText={setExpectedDelivery}
             placeholder="2024-12-31"
+            placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Beat (optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={beat}
+            onChangeText={setBeat}
+            placeholder="e.g. Beat 1, North Zone..."
             placeholderTextColor={Colors.textMuted}
           />
         </View>
