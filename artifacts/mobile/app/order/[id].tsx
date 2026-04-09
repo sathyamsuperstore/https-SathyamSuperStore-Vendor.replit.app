@@ -7,11 +7,15 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as XLSX from "xlsx";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderStatus } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -40,6 +44,7 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
+  const [downloading, setDownloading] = useState(false);
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -96,6 +101,69 @@ export default function OrderDetailScreen() {
     ]);
   }
 
+  async function handleExport() {
+    if (!order || visibleItems.length === 0) return;
+    try {
+      setDownloading(true);
+      const rows = visibleItems.map((item) => {
+        const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
+        const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
+        return {
+          "Order No": order.orderNumber,
+          "Order Date": new Date(order.createdAt).toLocaleDateString("en-IN"),
+          "Supplier": order.supplierName,
+          "Status": order.status.charAt(0).toUpperCase() + order.status.slice(1),
+          "Beat": order.beat ?? "",
+          "Sync Date": order.syncDate ?? "",
+          "Item No": itemNo,
+          "Item Description": desc,
+          "Brand": item.brand ?? "",
+          "UOM": item.unit,
+          "MRP": item.unitPrice,
+          "Order Qty": item.quantity,
+          "Amount": item.quantity * item.unitPrice,
+        };
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+        { wch: 10 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Order");
+      const fileName = `${order.orderNumber.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export Order",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function handleDelete() {
     Alert.alert("Delete Order", "This action cannot be undone.", [
       { text: "Cancel", style: "cancel" },
@@ -121,9 +189,22 @@ export default function OrderDetailScreen() {
         options={{
           title: order.orderNumber,
           headerRight: () => (
-            <TouchableOpacity onPress={handleDelete} style={{ padding: 8 }}>
-              <Feather name="trash-2" size={18} color={Colors.danger} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <TouchableOpacity
+                onPress={handleExport}
+                disabled={downloading}
+                style={{ padding: 8 }}
+              >
+                {downloading ? (
+                  <ActivityIndicator size="small" color={Colors.success} />
+                ) : (
+                  <Feather name="download" size={18} color={Colors.success} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDelete} style={{ padding: 8 }}>
+                <Feather name="trash-2" size={18} color={Colors.danger} />
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
