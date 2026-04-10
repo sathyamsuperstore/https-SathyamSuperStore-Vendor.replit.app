@@ -97,6 +97,9 @@ export default function OrdersScreen() {
       ws["!cols"] = [
         { wch: 14 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
       ];
+      ws["!headerFooter"] = {
+        oddHeader: "&RSathyam Super Store&0A2A,Mettupalayam Road, Cheran Nagar&0ACoimbatore-641029&0A98431-44868&0AWhatsapp: 97881-44868&0AAccounts: 97868-64868",
+      };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
       const fileName = `orders_export_${Date.now()}.xlsx`;
