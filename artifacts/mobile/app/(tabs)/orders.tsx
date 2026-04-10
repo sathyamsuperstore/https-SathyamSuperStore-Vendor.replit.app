@@ -76,7 +76,7 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const colHeader = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Order Qty", "Stock"];
+      const colHeader = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         for (const item of order.items) {
@@ -88,8 +88,8 @@ export default function OrdersScreen() {
             item.brand ?? "",
             item.unit,
             item.unitPrice,
-            item.quantity,
             item.stock ?? "",
+            item.quantity,
           ]);
         }
       }

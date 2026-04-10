@@ -105,7 +105,7 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Order Qty", "Stock"];
+      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
       const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
         return [
@@ -113,8 +113,8 @@ export default function OrderDetailScreen() {
           item.brand ?? "",
           item.unit,
           item.unitPrice,
-          item.quantity,
           item.stock ?? "",
+          item.quantity,
         ];
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
