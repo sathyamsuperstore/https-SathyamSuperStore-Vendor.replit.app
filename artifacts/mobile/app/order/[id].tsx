@@ -145,12 +145,23 @@ export default function OrderDetailScreen() {
       if (ws["A10"]) {
         ws["A10"].s = { alignment: { wrapText: true, vertical: "top" } };
       }
-      // Apply wrapText to Column A for item data rows (rows 11 onward, 1-indexed)
+      // Apply wrapText + thin borders to all item data rows (rows 11 onward)
       const dataStartRow = 11;
+      const thinBorder = {
+        top:    { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left:   { style: "thin", color: { rgb: "000000" } },
+        right:  { style: "thin", color: { rgb: "000000" } },
+      };
       for (let i = 0; i < dataRows.length; i++) {
-        const cellRef = `A${dataStartRow + i}`;
-        if (ws[cellRef]) {
-          ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
+        const row = dataStartRow + i;
+        for (const col of ["A", "B", "C", "D", "E"]) {
+          const cellRef = `${col}${row}`;
+          if (ws[cellRef]) {
+            ws[cellRef].s = col === "A"
+              ? { alignment: { wrapText: true, vertical: "top" }, border: thinBorder }
+              : { border: thinBorder };
+          }
         }
       }
       ws["!pageSetup"] = {
