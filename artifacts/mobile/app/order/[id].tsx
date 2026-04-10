@@ -137,6 +137,14 @@ export default function OrderDetailScreen() {
       ws["!cols"] = [
         { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
       ];
+      // Apply wrapText to Column A for item data rows (rows 11 onward, 1-indexed)
+      const dataStartRow = 11;
+      for (let i = 0; i < dataRows.length; i++) {
+        const cellRef = `A${dataStartRow + i}`;
+        if (ws[cellRef]) {
+          ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
+        }
+      }
       ws["!pageSetup"] = {
         fitToPage: true,
         fitToWidth: 1,
