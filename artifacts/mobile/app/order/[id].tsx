@@ -137,6 +137,10 @@ export default function OrderDetailScreen() {
       ws["!cols"] = [
         { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
       ];
+      // wrapText on Row 8 (delivery notice)
+      if (ws["A8"]) {
+        ws["A8"].s = { alignment: { wrapText: true, vertical: "top" } };
+      }
       // Apply wrapText to Column A for item data rows (rows 11 onward, 1-indexed)
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
