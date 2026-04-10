@@ -76,7 +76,7 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const header = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Order Qty", "Amount"];
+      const colHeader = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Order Qty", "Amount"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         for (const item of order.items) {
@@ -93,13 +93,21 @@ export default function OrdersScreen() {
           ]);
         }
       }
-      const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
-      ws["!cols"] = [
-        { wch: 14 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      const sheetData: (string | number)[][] = [
+        ["",                                                                     "", "", "ORDER FORM",  "", "", "", "Sathyam Super Store"],
+        ["GST# :  33ADFFS5244N1ZR",                                              "", "", "",            "", "", "", "2A,Mettupalayam Road, Cheran Nagar"],
+        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",         "", "", "",            "", "", "", "Coimbatore-641029"],
+        ["",                                                                     "", "", "",            "", "", "", "98431-44868"],
+        ["",                                                                     "", "", "",            "", "", "", "Whatsapp: 97881-44868"],
+        ["",                                                                     "", "", "",            "", "", "", "Accounts: 97868-64868"],
+        ["", "", "", "", "", "", "", ""],
+        colHeader,
+        ...dataRows,
       ];
-      ws["!headerFooter"] = {
-        oddHeader: "&LGST# :  33ADFFS5244N1ZR&0AORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***&CORDER FORM&RSathyam Super Store&0A2A,Mettupalayam Road, Cheran Nagar&0ACoimbatore-641029&0A98431-44868&0AWhatsapp: 97881-44868&0AAccounts: 97868-64868",
-      };
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      ws["!cols"] = [
+        { wch: 55 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 32 },
+      ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
       const fileName = `orders_export_${Date.now()}.xlsx`;
