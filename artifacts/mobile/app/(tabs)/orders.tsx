@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as XLSX from "xlsx-js-style";
-import { injectPageSetup, base64ToUint8, uint8ToBase64 } from "@/utils/excelUtils";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
@@ -116,14 +115,19 @@ export default function OrdersScreen() {
           ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
         }
       }
+      ws["!pageSetup"] = {
+        paperSize: 9,
+        orientation: "portrait",
+        fitToWidth: 1,
+        fitToHeight: 0,
+        scale: 100,
+      };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
-      const PAGE_SETUP = { paperSize: 9, orientation: "portrait" as const, fitToWidth: 1, fitToHeight: 0 };
       const fileName = `orders_export_${Date.now()}.xlsx`;
       if (Platform.OS === "web") {
         const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
-        const fixed = injectPageSetup(new Uint8Array(wbout), PAGE_SETUP);
-        const blob = new Blob([fixed], { type: "application/octet-stream" });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -132,10 +136,8 @@ export default function OrdersScreen() {
         URL.revokeObjectURL(url);
       } else {
         const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
-        const fixed = injectPageSetup(base64ToUint8(base64), PAGE_SETUP);
-        const fixedBase64 = uint8ToBase64(fixed);
         const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, fixedBase64, { encoding: "base64" as any });
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(fileUri, {

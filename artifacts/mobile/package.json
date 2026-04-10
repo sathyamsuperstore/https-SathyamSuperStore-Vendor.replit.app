@@ -58,7 +58,6 @@
     "expo-document-picker": "^14.0.8",
     "expo-file-system": "^19.0.21",
     "expo-sharing": "~14.0.8",
-    "fflate": "^0.8.2",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
   }

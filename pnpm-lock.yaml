@@ -224,9 +224,6 @@ importers:
       expo-sharing:
         specifier: ~14.0.8
         version: 14.0.8(expo@54.0.33)
-      fflate:
-        specifier: ^0.8.2
-        version: 0.8.2
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -3586,9 +3583,6 @@ packages:
 
   fflate@0.3.11:
     resolution: {integrity: sha512-Rr5QlUeGN1mbOHlaqcSYMKVpPbgLy0AWT/W0EHxA6NGI12yO1jpoui2zBBvU2G824ltM6Ut8BFgfHSBGfkmS0A==}
-
-  fflate@0.8.2:
-    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   figures@6.1.0:
     resolution: {integrity: sha512-d+l3qxjSesT4V7v2fh+QnmFnUWv9lSpjarhShNTgBOfA0ttejbQUAlHLitbjkoRiDulW0OPoQPYIGhIC8ohejg==}
@@ -9423,8 +9417,6 @@ snapshots:
       picomatch: 4.0.3
 
   fflate@0.3.11: {}
-
-  fflate@0.8.2: {}
 
   figures@6.1.0:
     dependencies:
