@@ -137,6 +137,12 @@ export default function OrderDetailScreen() {
       ws["!cols"] = [
         { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
       ];
+      ws["!pageSetup"] = {
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        orientation: "portrait",
+      };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Order");
       const fileName = `${order.orderNumber.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.xlsx`;
