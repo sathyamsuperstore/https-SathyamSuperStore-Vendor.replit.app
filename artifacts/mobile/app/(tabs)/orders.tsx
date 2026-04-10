@@ -76,23 +76,24 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const rows: Record<string, unknown>[] = [];
+      const header = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Order Qty", "Amount"];
+      const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         for (const item of order.items) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push({
-            "Order Date": new Date(order.createdAt).toLocaleDateString("en-IN"),
-            "Supplier": order.supplierName,
-            "Item Description": desc,
-            "Brand": item.brand ?? "",
-            "UOM": item.unit,
-            "MRP": item.unitPrice,
-            "Order Qty": item.quantity,
-            "Amount": item.quantity * item.unitPrice,
-          });
+          dataRows.push([
+            new Date(order.createdAt).toLocaleDateString("en-IN"),
+            order.supplierName,
+            desc,
+            item.brand ?? "",
+            item.unit,
+            item.unitPrice,
+            item.quantity,
+            item.quantity * item.unitPrice,
+          ]);
         }
       }
-      const ws = XLSX.utils.json_to_sheet(rows);
+      const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
       ws["!cols"] = [
         { wch: 14 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
       ];
