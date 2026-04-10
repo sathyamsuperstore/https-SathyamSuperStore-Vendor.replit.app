@@ -105,29 +105,23 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const rows = visibleItems.map((item) => {
-        const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
+      const header = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Order Qty", "Amount"];
+      const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-        return {
-          "Order No": order.orderNumber,
-          "Order Date": new Date(order.createdAt).toLocaleDateString("en-IN"),
-          "Supplier": order.supplierName,
-          "Status": order.status.charAt(0).toUpperCase() + order.status.slice(1),
-          "Beat": order.beat ?? "",
-          "Sync Date": order.syncDate ?? "",
-          "Item No": itemNo,
-          "Item Description": desc,
-          "Brand": item.brand ?? "",
-          "UOM": item.unit,
-          "MRP": item.unitPrice,
-          "Order Qty": item.quantity,
-          "Amount": item.quantity * item.unitPrice,
-        };
+        return [
+          new Date(order.createdAt).toLocaleDateString("en-IN"),
+          order.supplierName,
+          desc,
+          item.brand ?? "",
+          item.unit,
+          item.unitPrice,
+          item.quantity,
+          item.quantity * item.unitPrice,
+        ];
       });
-      const ws = XLSX.utils.json_to_sheet(rows);
+      const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
       ws["!cols"] = [
-        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
-        { wch: 10 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+        { wch: 14 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Order");
