@@ -230,9 +230,11 @@ function OrdersView({ topPt }: { topPt: number }) {
         }
       }
       ws["!pageSetup"] = {
+        paperSize: 9,
         orientation: "portrait",
         fitToWidth: 1,
         fitToHeight: 0,
+        scale: 100,
       };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "My Orders");
