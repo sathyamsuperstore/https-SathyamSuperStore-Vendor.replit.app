@@ -119,12 +119,14 @@ export default function OrderDetailScreen() {
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["",                                                                     "", "ORDER FORM",  "", "", "Sathyam Super Store"],
-        ["GST# :  33ADFFS5244N1ZR",                                              "", "",            "", "", "2A,Mettupalayam Road, Cheran Nagar"],
-        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",         "", "",            "", "", "Coimbatore-641029"],
-        ["",                                                                     "", "",            "", "", "98431-44868"],
-        ["",                                                                     "", "",            "", "", "Whatsapp: 97881-44868"],
-        ["",                                                                     "", "",            "", "", "Accounts: 97868-64868"],
+        ["", "", "ORDER FORM", "", "", "Sathyam Super Store"],
+        ["", "", "",           "", "", "2A,Mettupalayam Road, Cheran Nagar"],
+        ["", "", "",           "", "", "Coimbatore-641029"],
+        ["", "", "",           "", "", "98431-44868"],
+        ["", "", "",           "", "", "Whatsapp: 97881-44868"],
+        ["", "", "",           "", "", "Accounts: 97868-64868"],
+        ["GST# :  33ADFFS5244N1ZR",                                          "", "", "", "", ""],
+        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",     "", "", "", "", ""],
         ["", "", "", "", "", ""],
         colHeader,
         ...dataRows,
