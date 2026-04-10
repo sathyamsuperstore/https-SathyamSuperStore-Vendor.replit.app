@@ -116,16 +116,15 @@ export default function OrdersScreen() {
         }
       }
       ws["!pageSetup"] = {
-        fitToPage: true,
+        orientation: "portrait",
         fitToWidth: 1,
         fitToHeight: 0,
-        orientation: "portrait",
       };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
       const fileName = `orders_export_${Date.now()}.xlsx`;
       if (Platform.OS === "web") {
-        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
         const blob = new Blob([wbout], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -134,7 +133,7 @@ export default function OrdersScreen() {
         a.click();
         URL.revokeObjectURL(url);
       } else {
-        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
         const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
         await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
         const canShare = await Sharing.isAvailableAsync();
