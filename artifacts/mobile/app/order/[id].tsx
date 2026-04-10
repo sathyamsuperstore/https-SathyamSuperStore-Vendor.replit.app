@@ -152,6 +152,14 @@ export default function OrderDetailScreen() {
       };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Order");
+      // "Rows to repeat at top" — row 10 (column header row) prints on every page
+      if (!wb.Workbook) wb.Workbook = {} as any;
+      if (!wb.Workbook.Names) wb.Workbook.Names = [];
+      wb.Workbook.Names.push({
+        Sheet: 0,
+        Name: "_xlnm.Print_Titles",
+        Ref: "Order!$10:$10",
+      });
       const fileName = `${order.orderNumber.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.xlsx`;
       if (Platform.OS === "web") {
         const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
