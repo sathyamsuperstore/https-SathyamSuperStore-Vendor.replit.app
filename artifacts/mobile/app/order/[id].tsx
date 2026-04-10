@@ -141,6 +141,10 @@ export default function OrderDetailScreen() {
       if (ws["A8"]) {
         ws["A8"].s = { alignment: { wrapText: true, vertical: "top" } };
       }
+      // wrapText on A10 ("Item Description" column header)
+      if (ws["A10"]) {
+        ws["A10"].s = { alignment: { wrapText: true, vertical: "top" } };
+      }
       // Apply wrapText to Column A for item data rows (rows 11 onward, 1-indexed)
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
