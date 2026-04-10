@@ -30,6 +30,7 @@ interface ParsedRow {
   SyncDate: string;
   Brand: string;
   Beat: string;
+  Stock: number;
 }
 
 interface VendorGroup {
@@ -166,6 +167,7 @@ export default function ImportOrderScreen() {
         SyncDate: parseExcelDate(row["SyncDate"]),
         Brand: String(row["Brand"] ?? "").trim(),
         Beat: String(row["Beat"] ?? "").trim(),
+        Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -229,6 +231,7 @@ export default function ImportOrderScreen() {
         quantity: row["Order Qty"] || 1,
         unit: row["UOM"] || "pcs",
         unitPrice: row["MRP"] || 0,
+        stock: row["Stock"] || undefined,
       }));
       return {
         supplierId: supplier.id,

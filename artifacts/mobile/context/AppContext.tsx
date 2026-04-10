@@ -38,6 +38,7 @@ export interface OrderItem {
   quantity: number;
   unit: string;
   unitPrice: number;
+  stock?: number;
 }
 
 export interface Order {

@@ -105,7 +105,7 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Order Qty"];
+      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Order Qty", "Stock"];
       const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
         return [
@@ -114,6 +114,7 @@ export default function OrderDetailScreen() {
           item.unit,
           item.unitPrice,
           item.quantity,
+          item.stock ?? "",
         ];
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
@@ -135,7 +136,7 @@ export default function OrderDetailScreen() {
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
+        { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
       // wrapText on Row 8 (delivery notice)
       if (ws["A8"]) {
@@ -155,7 +156,7 @@ export default function OrderDetailScreen() {
       };
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataStartRow + i;
-        for (const col of ["A", "B", "C", "D", "E"]) {
+        for (const col of ["A", "B", "C", "D", "E", "F"]) {
           const cellRef = `${col}${row}`;
           if (ws[cellRef]) {
             ws[cellRef].s = col === "A"
@@ -361,6 +362,7 @@ export default function OrderDetailScreen() {
                     ) : null}
                     <Text style={styles.itemMeta}>
                       {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
+                      {item.stock != null ? `  ·  Stock: ${item.stock}` : ""}
                     </Text>
                   </View>
                   <Text style={styles.itemTotal}>
