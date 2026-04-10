@@ -222,6 +222,19 @@ function OrdersView({ topPt }: { topPt: number }) {
         { wch: 10 }, { wch: 32 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
       ];
       ws["!cols"] = colWidths;
+      // wrapText on Column G (Item Description) — json_to_sheet: header=row1, data starts row 2
+      for (let i = 0; i < rows.length; i++) {
+        const cellRef = `G${2 + i}`;
+        if (ws[cellRef]) {
+          ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
+        }
+      }
+      ws["!pageSetup"] = {
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        orientation: "portrait",
+      };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "My Orders");
 

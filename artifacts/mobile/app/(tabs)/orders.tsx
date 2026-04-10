@@ -107,6 +107,20 @@ export default function OrdersScreen() {
       ws["!cols"] = [
         { wch: 55 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
       ];
+      // wrapText on Column C (Item Description) — data starts at row 9 (7 header + 1 colHeader)
+      const dataStartRow = 9;
+      for (let i = 0; i < dataRows.length; i++) {
+        const cellRef = `C${dataStartRow + i}`;
+        if (ws[cellRef]) {
+          ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
+        }
+      }
+      ws["!pageSetup"] = {
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        orientation: "portrait",
+      };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
       const fileName = `orders_export_${Date.now()}.xlsx`;
