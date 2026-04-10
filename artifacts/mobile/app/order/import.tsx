@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderItem, Supplier } from "@/context/AppContext";
