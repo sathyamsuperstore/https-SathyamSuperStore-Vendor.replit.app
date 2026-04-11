@@ -1,42 +1,60 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
-  Platform,
   ActivityIndicator,
   TextInput,
+  Platform,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderItem, UserType } from "@/context/AppContext";
 
-const FOLDER_ID_KEY = "@driveImportFolderId";
-const DEFAULT_FOLDER_ID = "1s2DYV-7LHtAydgSrJYK9bA7U8xm08DI7";
+const GSHEET_MIME = "application/vnd.google-apps.spreadsheet";
 const VALID_USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
-function getApiBase(): string {
-  if (Platform.OS === "web") {
-    return "";
-  }
-  const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
-  return `https://${domain}`;
+function extractFileId(input: string): { id: string; isSheet: boolean } | null {
+  const s = input.trim();
+  // Google Sheets URL: /spreadsheets/d/{ID}
+  const sheetsMatch = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (sheetsMatch) return { id: sheetsMatch[1], isSheet: true };
+  // Google Drive file URL: /file/d/{ID} or /open?id={ID} or /uc?id={ID}
+  const fileMatch = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return { id: fileMatch[1], isSheet: false };
+  const openMatch = s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (openMatch) return { id: openMatch[1], isSheet: false };
+  // Bare ID (26+ chars, only base64url chars)
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(s)) return { id: s, isSheet: false };
+  return null;
 }
 
-interface DriveFile {
-  id: string;
-  name: string;
-  modifiedTime: string;
-  size?: string;
-  mimeType?: string;
+function extractFileName(url: string): string {
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split("/");
+    const last = parts[parts.length - 1];
+    if (last && last.includes(".")) return last;
+  } catch {}
+  return "";
+}
+
+function guessIsSheet(url: string): boolean {
+  return url.includes("spreadsheets") || url.includes("docs.google.com/spreadsheets");
+}
+
+function detectFileType(url: string, name: string): "orders" | "suppliers" | "users" | "unknown" {
+  const haystack = (url + " " + name).toLowerCase();
+  if (haystack.includes("order")) return "orders";
+  if (haystack.includes("supplier") || haystack.includes("vendor")) return "suppliers";
+  if (haystack.includes("user")) return "users";
+  return "unknown";
 }
 
 function parseExcelDate(val: unknown): string {
@@ -61,109 +79,65 @@ function addDays(days: number): string {
   return d.toISOString();
 }
 
-function detectFileType(name: string): "orders" | "suppliers" | "users" | "unknown" {
-  const n = name.toLowerCase();
-  if (n.includes("order")) return "orders";
-  if (n.includes("supplier") || n.includes("vendor")) return "suppliers";
-  if (n.includes("user")) return "users";
-  return "unknown";
-}
-
-interface ImportResult {
-  fileName: string;
+interface FileEntry {
+  url: string;
+  id: string;
+  isSheet: boolean;
   type: "orders" | "suppliers" | "users" | "unknown";
   status: "pending" | "importing" | "success" | "error" | "skipped";
   message?: string;
 }
 
 export default function DriveImportScreen() {
-  const { suppliers, appUsers, addOrdersBatch, addSuppliersBatch, addUsersBatch } = useApp();
+  const { suppliers, addOrdersBatch, addSuppliersBatch, addUsersBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [folderId, setFolderId] = useState("");
-  const [folderIdInput, setFolderIdInput] = useState("");
-  const [showFolderConfig, setShowFolderConfig] = useState(false);
-
-  const [listing, setListing] = useState(false);
-  const [files, setFiles] = useState<DriveFile[]>([]);
-  const [listError, setListError] = useState("");
-
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<ImportResult[]>([]);
+  const [urlInput, setUrlInput] = useState("");
+  const [entries, setEntries] = useState<FileEntry[]>([]);
   const [importing, setImporting] = useState(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem(FOLDER_ID_KEY).then((v) => {
-      const id = v ?? DEFAULT_FOLDER_ID;
-      setFolderId(id);
-      setFolderIdInput(id);
-      if (!v) AsyncStorage.setItem(FOLDER_ID_KEY, DEFAULT_FOLDER_ID);
-    });
-  }, []);
-
-  async function saveFolderId() {
-    const id = folderIdInput.trim();
-    await AsyncStorage.setItem(FOLDER_ID_KEY, id);
-    setFolderId(id);
-    setShowFolderConfig(false);
-    setFiles([]);
-    setSelectedIds(new Set());
-    setResults([]);
-  }
-
-  async function listFiles() {
-    setListing(true);
-    setListError("");
-    setFiles([]);
-    setSelectedIds(new Set());
-    setResults([]);
-    try {
-      const base = getApiBase();
-      const url = folderId
-        ? `${base}/api/drive/files?folderId=${encodeURIComponent(folderId)}`
-        : `${base}/api/drive/files`;
-      const resp = await fetch(url);
-      const data = await resp.json() as any;
-      if (data.error) throw new Error(data.error);
-      const fileList: DriveFile[] = data.files ?? [];
-      if (fileList.length === 0) {
-        setListError("No Excel files found in the specified folder.");
-      } else {
-        setFiles(fileList);
-        setSelectedIds(new Set(fileList.map((f) => f.id)));
-      }
-    } catch (e: any) {
-      setListError(e?.message ?? "Failed to list files from Google Drive.");
-    } finally {
-      setListing(false);
+  function parseInput() {
+    const lines = urlInput.split(/[\n,]+/).map((l) => l.trim()).filter(Boolean);
+    const parsed: FileEntry[] = [];
+    for (const line of lines) {
+      const info = extractFileId(line);
+      if (!info) continue;
+      const isSheet = info.isSheet || guessIsSheet(line);
+      parsed.push({
+        url: line,
+        id: info.id,
+        isSheet,
+        type: detectFileType(line, ""),
+        status: "pending",
+      });
     }
+    setEntries(parsed);
   }
 
-  function toggleFile(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
+  async function downloadAndParse(entry: FileEntry): Promise<XLSX.WorkBook> {
+    // Use Google's public export URLs — works for "Anyone with the link" shared files
+    let downloadUrl: string;
+    if (entry.isSheet) {
+      downloadUrl = `https://docs.google.com/spreadsheets/d/${entry.id}/export?format=xlsx`;
+    } else {
+      downloadUrl = `https://drive.google.com/uc?export=download&id=${entry.id}&confirm=t`;
+    }
 
-  async function downloadAndParse(file: DriveFile): Promise<XLSX.WorkBook> {
-    const base = getApiBase();
-    const url = `${base}/api/drive/file/${file.id}?mimeType=${encodeURIComponent(file.mimeType ?? "")}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} downloading ${file.name}`);
+    const resp = await fetch(downloadUrl);
+    if (!resp.ok) throw new Error(`Download failed (HTTP ${resp.status}). Make sure the file is shared as "Anyone with the link".`);
     const arrayBuffer = await resp.arrayBuffer();
+    if (arrayBuffer.byteLength === 0) throw new Error("Downloaded file is empty.");
     return XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
   }
 
-  async function importFile(file: DriveFile): Promise<{ message: string }> {
-    const type = detectFileType(file.name);
+  async function importEntry(entry: FileEntry): Promise<{ message: string }> {
+    const type = entry.type;
     if (type === "unknown") {
-      return { message: "Could not detect file type from filename. Rename to include 'order', 'supplier', or 'user'." };
+      return { message: "Could not detect file type. Add 'order', 'supplier', or 'user' to the URL description." };
     }
 
-    const workbook = await downloadAndParse(file);
+    const workbook = await downloadAndParse(entry);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
     if (rows.length === 0) return { message: "File is empty." };
@@ -200,7 +174,7 @@ export default function DriveImportScreen() {
           supplierName: matchedSupplier?.name ?? vendorCode,
           status: "pending" as const,
           items: orderItems,
-          notes: `Imported from Drive: ${file.name}`,
+          notes: `Imported from Drive`,
           expectedDelivery: addDays(7),
           syncDate: parseExcelDate(items[0]?.["SyncDate"]) || undefined,
           beat: String(items[0]?.["Beat"] ?? "").trim() || undefined,
@@ -245,7 +219,7 @@ export default function DriveImportScreen() {
           return {
             userId: String(row["UserID"] ?? "").trim(),
             password: String(row["Password"] ?? "").trim(),
-            userType: (VALID_USER_TYPES as string[]).includes(rawType) ? (rawType as UserType) : "Vendor" as UserType,
+            userType: (VALID_USER_TYPES as string[]).includes(rawType) ? (rawType as UserType) : ("Vendor" as UserType),
             vendorCode: String(row["VendorCode"] ?? "").trim().toUpperCase(),
             vendorName: String(row["VendorName"] ?? "").trim(),
             vendorMobileNo1: String(row["VendorMobileNo1"] ?? "").trim(),
@@ -261,209 +235,171 @@ export default function DriveImportScreen() {
   }
 
   async function runImport() {
-    const toImport = files.filter((f) => selectedIds.has(f.id));
-    if (toImport.length === 0) return;
-
+    if (entries.length === 0) return;
     setImporting(true);
-    const initResults: ImportResult[] = toImport.map((f) => ({
-      fileName: f.name,
-      type: detectFileType(f.name),
-      status: "pending",
-    }));
-    setResults(initResults);
+    setEntries((prev) => prev.map((e) => ({ ...e, status: "pending", message: undefined })));
 
-    for (let i = 0; i < toImport.length; i++) {
-      const file = toImport[i];
-      setResults((prev) => prev.map((r, idx) => idx === i ? { ...r, status: "importing" } : r));
+    for (let i = 0; i < entries.length; i++) {
+      setEntries((prev) => prev.map((e, idx) => idx === i ? { ...e, status: "importing" } : e));
+      const entry = entries[i];
       try {
-        const type = detectFileType(file.name);
-        if (type === "unknown") {
-          setResults((prev) => prev.map((r, idx) => idx === i ? { ...r, status: "skipped", message: "Unknown type — rename file to include 'order', 'supplier', or 'user'." } : r));
+        if (entry.type === "unknown") {
+          setEntries((prev) => prev.map((e, idx) => idx === i ? { ...e, status: "skipped", message: "Unknown type — include 'order', 'supplier', or 'user' in the URL or label." } : e));
           continue;
         }
-        const { message } = await importFile(file);
-        setResults((prev) => prev.map((r, idx) => idx === i ? { ...r, status: "success", message } : r));
-      } catch (e: any) {
-        setResults((prev) => prev.map((r, idx) => idx === i ? { ...r, status: "error", message: e?.message ?? "Failed" } : r));
+        const { message } = await importEntry(entry);
+        setEntries((prev) => prev.map((e, idx) => idx === i ? { ...e, status: "success", message } : e));
+      } catch (err: any) {
+        setEntries((prev) => prev.map((e, idx) => idx === i ? { ...e, status: "error", message: err?.message ?? "Failed to import." } : e));
       }
     }
+
     setImporting(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
-  const selectedCount = selectedIds.size;
-  const done = results.length > 0 && !importing;
+  function setType(idx: number, type: FileEntry["type"]) {
+    setEntries((prev) => prev.map((e, i) => i === idx ? { ...e, type } : e));
+  }
+
+  function removeEntry(idx: number) {
+    setEntries((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const hasResults = entries.some((e) => e.status !== "pending");
+  const done = hasResults && !importing;
+  const typeOptions: FileEntry["type"][] = ["orders", "suppliers", "users"];
 
   return (
     <>
       <Stack.Screen options={{ title: "Drive Import", headerBackTitle: "Back" }} />
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 24 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Folder config */}
-        <View style={styles.configCard}>
-          <View style={styles.configRow}>
-            <View style={styles.configLeft}>
-              <Feather name="folder" size={18} color={Colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.configLabel}>Google Drive Folder</Text>
-                <Text style={styles.configValue} numberOfLines={1}>
-                  {folderId ? folderId : "All Drive files (no folder filter)"}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.configEditBtn}
-              onPress={() => { setFolderIdInput(folderId); setShowFolderConfig((v) => !v); }}
-            >
-              <Feather name={showFolderConfig ? "x" : "settings"} size={15} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {showFolderConfig && (
-            <View style={styles.folderInputWrap}>
-              <Text style={styles.folderInputLabel}>
-                Paste your Google Drive Folder ID below. Leave blank to search all files.
-              </Text>
-              <TextInput
-                style={styles.folderInput}
-                value={folderIdInput}
-                onChangeText={setFolderIdInput}
-                placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.saveFolderBtn} onPress={saveFolderId}>
-                <Feather name="check" size={14} color={Colors.textInverse} />
-                <Text style={styles.saveFolderBtnText}>Save & Apply</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Info banner */}
+        {/* How-to banner */}
         <View style={styles.infoBanner}>
-          <Feather name="info" size={14} color={Colors.primary} />
-          <Text style={styles.infoText}>
-            Files are auto-detected by name: filenames containing "order", "supplier"/"vendor", or "user" are imported accordingly.
-          </Text>
+          <Feather name="info" size={15} color={Colors.primary} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.infoTitle}>How to use</Text>
+            <Text style={styles.infoText}>
+              1. Open the Google Sheet or file{"\n"}
+              2. Click Share → "Anyone with the link" → Copy link{"\n"}
+              3. Paste the link(s) below (one per line){"\n"}
+              4. Tap Detect Files, set the type, then Import
+            </Text>
+          </View>
         </View>
 
-        {/* List button */}
-        <TouchableOpacity
-          style={[styles.listBtn, listing && { opacity: 0.6 }]}
-          onPress={listFiles}
-          disabled={listing}
-          activeOpacity={0.8}
-        >
-          {listing ? (
-            <ActivityIndicator size="small" color={Colors.textInverse} />
-          ) : (
-            <Feather name="refresh-cw" size={16} color={Colors.textInverse} />
-          )}
-          <Text style={styles.listBtnText}>{listing ? "Scanning Drive..." : "Scan Google Drive"}</Text>
-        </TouchableOpacity>
+        {/* URL input */}
+        <View style={styles.inputCard}>
+          <Text style={styles.inputLabel}>Paste Google Sheets / Drive file URLs</Text>
+          <TextInput
+            style={styles.textArea}
+            value={urlInput}
+            onChangeText={setUrlInput}
+            placeholder={"https://docs.google.com/spreadsheets/d/...\nhttps://docs.google.com/spreadsheets/d/..."}
+            placeholderTextColor={Colors.textMuted}
+            multiline
+            numberOfLines={5}
+            autoCapitalize="none"
+            autoCorrect={false}
+            textAlignVertical="top"
+          />
+          <TouchableOpacity
+            style={[styles.detectBtn, !urlInput.trim() && { opacity: 0.5 }]}
+            onPress={parseInput}
+            disabled={!urlInput.trim()}
+            activeOpacity={0.8}
+          >
+            <Feather name="search" size={16} color={Colors.textInverse} />
+            <Text style={styles.detectBtnText}>Detect Files</Text>
+          </TouchableOpacity>
+        </View>
 
-        {!!listError && (
-          <View style={styles.errorCard}>
-            <Feather name="alert-circle" size={16} color={Colors.danger} />
-            <Text style={styles.errorText}>{listError}</Text>
-          </View>
-        )}
-
-        {/* File list */}
-        {files.length > 0 && results.length === 0 && (
+        {/* File entries */}
+        {entries.length > 0 && (
           <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{files.length} file{files.length !== 1 ? "s" : ""} found</Text>
-              <TouchableOpacity onPress={() => setSelectedIds(selectedIds.size === files.length ? new Set() : new Set(files.map((f) => f.id)))}>
-                <Text style={styles.selectAll}>{selectedIds.size === files.length ? "Deselect All" : "Select All"}</Text>
-              </TouchableOpacity>
-            </View>
-            {files.map((file) => {
-              const type = detectFileType(file.name);
-              const isSelected = selectedIds.has(file.id);
-              return (
-                <TouchableOpacity
-                  key={file.id}
-                  style={[styles.fileCard, isSelected && styles.fileCardSelected]}
-                  onPress={() => toggleFile(file.id)}
-                  activeOpacity={0.7}
-                >
-                  <Feather
-                    name={isSelected ? "check-square" : "square"}
-                    size={18}
-                    color={isSelected ? Colors.primary : Colors.textMuted}
-                    style={{ marginTop: 2 }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.fileName} numberOfLines={2}>{file.name}</Text>
-                    <View style={styles.fileMeta}>
-                      <View style={[styles.typeChip, type === "unknown" && styles.typeChipUnknown]}>
-                        <Text style={[styles.typeChipText, type === "unknown" && styles.typeChipTextUnknown]}>
-                          {type === "orders" ? "Orders" : type === "suppliers" ? "Suppliers" : type === "users" ? "Users" : "Unknown"}
-                        </Text>
-                      </View>
-                      <Text style={styles.fileDate}>
-                        {new Date(file.modifiedTime).toLocaleDateString("en-IN")}
-                      </Text>
-                    </View>
+            <Text style={styles.sectionTitle}>{entries.length} file{entries.length !== 1 ? "s" : ""} detected</Text>
+
+            {entries.map((entry, idx) => (
+              <View key={idx} style={[
+                styles.entryCard,
+                entry.status === "success" && styles.entryCardSuccess,
+                entry.status === "error" && styles.entryCardError,
+                entry.status === "skipped" && styles.entryCardWarning,
+              ]}>
+                <View style={styles.entryTop}>
+                  <View style={styles.entryLeft}>
+                    {entry.status === "importing" ? (
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : entry.status === "success" ? (
+                      <Feather name="check-circle" size={18} color={Colors.success} />
+                    ) : entry.status === "error" ? (
+                      <Feather name="x-circle" size={18} color={Colors.danger} />
+                    ) : entry.status === "skipped" ? (
+                      <Feather name="minus-circle" size={18} color={Colors.warning} />
+                    ) : (
+                      <Feather name={entry.isSheet ? "grid" : "file"} size={18} color={Colors.primary} />
+                    )}
+                    <Text style={styles.entryId} numberOfLines={1}>
+                      {entry.isSheet ? "Google Sheet" : "Drive File"} · {entry.id.slice(0, 12)}…
+                    </Text>
                   </View>
-                </TouchableOpacity>
-              );
-            })}
-
-            <TouchableOpacity
-              style={[styles.importBtn, (selectedCount === 0 || importing) && { opacity: 0.5 }]}
-              onPress={runImport}
-              disabled={selectedCount === 0 || importing}
-              activeOpacity={0.8}
-            >
-              <Feather name="download-cloud" size={18} color={Colors.textInverse} />
-              <Text style={styles.importBtnText}>
-                Import {selectedCount} File{selectedCount !== 1 ? "s" : ""}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* Results */}
-        {results.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Import Results</Text>
-            </View>
-            {results.map((r, i) => (
-              <View key={i} style={styles.resultCard}>
-                <View style={styles.resultHeader}>
-                  {r.status === "importing" ? (
-                    <ActivityIndicator size="small" color={Colors.primary} />
-                  ) : r.status === "success" ? (
-                    <Feather name="check-circle" size={16} color={Colors.success} />
-                  ) : r.status === "error" ? (
-                    <Feather name="x-circle" size={16} color={Colors.danger} />
-                  ) : r.status === "skipped" ? (
-                    <Feather name="minus-circle" size={16} color={Colors.warning} />
-                  ) : (
-                    <Feather name="clock" size={16} color={Colors.textMuted} />
+                  {entry.status === "pending" && (
+                    <TouchableOpacity onPress={() => removeEntry(idx)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Feather name="x" size={16} color={Colors.textMuted} />
+                    </TouchableOpacity>
                   )}
-                  <Text style={styles.resultFileName} numberOfLines={1}>{r.fileName}</Text>
                 </View>
-                {r.message && (
+
+                {/* Type selector */}
+                {(entry.status === "pending" || entry.status === "skipped") && (
+                  <View style={styles.typeRow}>
+                    <Text style={styles.typeLabel}>Type:</Text>
+                    {typeOptions.map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[styles.typeChip, entry.type === t && styles.typeChipActive]}
+                        onPress={() => setType(idx, t)}
+                      >
+                        <Text style={[styles.typeChipText, entry.type === t && styles.typeChipTextActive]}>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {entry.message && (
                   <Text style={[
-                    styles.resultMsg,
-                    r.status === "error" && { color: Colors.danger },
-                    r.status === "success" && { color: Colors.success },
-                    r.status === "skipped" && { color: Colors.warning },
+                    styles.entryMsg,
+                    entry.status === "error" && { color: Colors.danger },
+                    entry.status === "success" && { color: Colors.success },
+                    entry.status === "skipped" && { color: Colors.warning },
                   ]}>
-                    {r.message}
+                    {entry.message}
                   </Text>
                 )}
               </View>
             ))}
+
+            {!hasResults && (
+              <TouchableOpacity
+                style={[styles.importBtn, (importing || entries.length === 0) && { opacity: 0.5 }]}
+                onPress={runImport}
+                disabled={importing || entries.length === 0}
+                activeOpacity={0.8}
+              >
+                <Feather name="download-cloud" size={18} color={Colors.textInverse} />
+                <Text style={styles.importBtnText}>
+                  Import {entries.length} File{entries.length !== 1 ? "s" : ""}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {done && (
               <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()} activeOpacity={0.8}>
                 <Feather name="check" size={16} color={Colors.textInverse} />
@@ -479,88 +415,58 @@ export default function DriveImportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, gap: 14 },
-  configCard: {
-    backgroundColor: Colors.surface, borderRadius: 14,
-    borderWidth: 1, borderColor: Colors.border, overflow: "hidden",
-  },
-  configRow: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    padding: 14, gap: 10,
-  },
-  configLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  configLabel: { fontSize: 11, fontWeight: "700", color: Colors.textMuted, textTransform: "uppercase" },
-  configValue: { fontSize: 12, color: Colors.text, fontWeight: "500", marginTop: 2 },
-  configEditBtn: {
-    padding: 8, borderRadius: 8, backgroundColor: Colors.primaryMuted,
-  },
-  folderInputWrap: {
-    padding: 14, paddingTop: 0, gap: 10, borderTopWidth: 1, borderTopColor: Colors.border,
-  },
-  folderInputLabel: { fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
-  folderInput: {
-    backgroundColor: Colors.surfaceSecondary, borderRadius: 10, borderWidth: 1,
-    borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 13, color: Colors.text, fontFamily: "monospace",
-  },
-  saveFolderBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: Colors.primary, borderRadius: 10,
-    paddingHorizontal: 16, paddingVertical: 10, alignSelf: "flex-end",
-  },
-  saveFolderBtnText: { fontSize: 13, fontWeight: "700", color: Colors.textInverse },
+  content: { padding: 20, gap: 16 },
   infoBanner: {
-    flexDirection: "row", gap: 8, alignItems: "flex-start",
-    backgroundColor: Colors.primaryMuted, borderRadius: 12, padding: 12,
-  },
-  infoText: { fontSize: 12, color: Colors.primary, flex: 1, lineHeight: 18 },
-  listBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
-  },
-  listBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
-  errorCard: {
     flexDirection: "row", gap: 10, alignItems: "flex-start",
-    backgroundColor: Colors.dangerLight, borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: Colors.danger + "30",
+    backgroundColor: Colors.primaryMuted, borderRadius: 14, padding: 14,
   },
-  errorText: { fontSize: 13, color: Colors.danger, flex: 1 },
-  sectionHeader: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+  infoTitle: { fontSize: 13, fontWeight: "700", color: Colors.primary, marginBottom: 4 },
+  infoText: { fontSize: 12, color: Colors.primary, lineHeight: 20 },
+  inputCard: {
+    backgroundColor: Colors.surface, borderRadius: 14,
+    borderWidth: 1, borderColor: Colors.border, padding: 14, gap: 12,
   },
+  inputLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  textArea: {
+    backgroundColor: Colors.surfaceSecondary, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 12, color: Colors.text, minHeight: 110, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  detectBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 12,
+  },
+  detectBtnText: { fontSize: 14, fontWeight: "700", color: Colors.textInverse },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  selectAll: { fontSize: 13, fontWeight: "600", color: Colors.primary },
-  fileCard: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 12,
-    borderWidth: 1.5, borderColor: Colors.border, padding: 14,
+  entryCard: {
+    backgroundColor: Colors.surface, borderRadius: 14,
+    borderWidth: 1.5, borderColor: Colors.border, padding: 14, gap: 10,
   },
-  fileCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryMuted + "30" },
-  fileName: { fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 6 },
-  fileMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
+  entryCardSuccess: { borderColor: Colors.success, backgroundColor: Colors.successLight + "60" },
+  entryCardError: { borderColor: Colors.danger, backgroundColor: Colors.dangerLight + "60" },
+  entryCardWarning: { borderColor: Colors.warning, backgroundColor: Colors.warningLight + "60" },
+  entryTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  entryLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  entryId: { fontSize: 12, color: Colors.textSecondary, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", flex: 1 },
+  typeRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  typeLabel: { fontSize: 12, fontWeight: "600", color: Colors.textMuted },
   typeChip: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-    backgroundColor: Colors.primaryMuted,
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: Colors.surfaceSecondary, borderWidth: 1.5, borderColor: Colors.border,
   },
-  typeChipUnknown: { backgroundColor: Colors.warningLight },
-  typeChipText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
-  typeChipTextUnknown: { color: Colors.warning },
-  fileDate: { fontSize: 11, color: Colors.textMuted },
+  typeChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  typeChipText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  typeChipTextActive: { color: Colors.textInverse },
+  entryMsg: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
   importBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, marginTop: 4,
+    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16,
   },
   importBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
-  resultCard: {
-    backgroundColor: Colors.surface, borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.border, padding: 14, gap: 6,
-  },
-  resultHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  resultFileName: { fontSize: 13, fontWeight: "600", color: Colors.text, flex: 1 },
-  resultMsg: { fontSize: 12, color: Colors.textSecondary, marginLeft: 28 },
   doneBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 16, marginTop: 4,
+    backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 16,
   },
   doneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
 });

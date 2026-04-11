@@ -28,10 +28,8 @@ router.get("/drive/files", async (req, res) => {
       `/drive/v3/files?${params.toString()}`,
       { method: "GET" }
     );
-    const rawText = await response.text();
-    let data: any;
-    try { data = JSON.parse(rawText); } catch { data = { rawResponse: rawText }; }
-    res.json({ ...data, _debug: { status: response.status, query } });
+    const data = (await response.json()) as any;
+    res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to list Drive files" });
   }
