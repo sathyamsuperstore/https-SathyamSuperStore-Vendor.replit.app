@@ -199,36 +199,43 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloading(true);
     try {
-      const rows: Record<string, unknown>[] = [];
+      const colHeader = ["Order No", "Order Date", "Status", "Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+      const dataRows: (string | number)[][] = [];
       for (const order of vendorOrders) {
         for (const item of order.items) {
-          const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push({
-            "Order No": order.orderNumber,
-            "Order Date": formatDate(order.createdAt),
-            "Vendor Code": currentUser?.vendorCode ?? "",
-            "Vendor Name": currentUser?.vendorName ?? "",
-            "Status": STATUS_COLORS[order.status].label,
-            "Item No": itemNo,
-            "Item Description": desc,
-            "UOM": item.unit,
-            "MRP": item.unitPrice,
-            "Order Qty": item.quantity,
-            "Amount": item.quantity * item.unitPrice,
-          });
+          dataRows.push([
+            order.orderNumber,
+            new Date(order.createdAt).toLocaleDateString("en-IN"),
+            STATUS_COLORS[order.status].label,
+            desc,
+            item.brand ?? "",
+            item.unit,
+            item.unitPrice,
+            item.stock ?? "",
+            item.quantity,
+          ]);
         }
       }
-
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const colWidths = [
-        { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 12 },
-        { wch: 10 }, { wch: 32 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      const sheetData: (string | number)[][] = [
+        ["",                                                                    "", "", "ORDER FORM",  "", "", "", "", "Sathyam Super Store"],
+        ["GST# :  33ADFFS5244N1ZR",                                             "", "", "",            "", "", "", "", "2A,Mettupalayam Road, Cheran Nagar"],
+        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",        "", "", "",            "", "", "", "", "Coimbatore-641029"],
+        ["",                                                                    "", "", "",            "", "", "", "", "98431-44868"],
+        ["",                                                                    "", "", "",            "", "", "", "", "Whatsapp: 97881-44868"],
+        ["",                                                                    "", "", "",            "", "", "", "", "Accounts: 97868-64868"],
+        ["", "", "", "", "", "", "", "", ""],
+        colHeader,
+        ...dataRows,
       ];
-      ws["!cols"] = colWidths;
-      // wrapText on Column G (Item Description) — json_to_sheet: header=row1, data starts row 2
-      for (let i = 0; i < rows.length; i++) {
-        const cellRef = `G${2 + i}`;
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      ws["!cols"] = [
+        { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      ];
+      // wrapText on col D (Item Description) — data starts row 9
+      const dataStartRow = 9;
+      for (let i = 0; i < dataRows.length; i++) {
+        const cellRef = `D${dataStartRow + i}`;
         if (ws[cellRef]) {
           ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
         }
@@ -262,16 +269,16 @@ function OrdersView({ topPt }: { topPt: number }) {
         if (canShare) {
           await Sharing.shareAsync(fileUri, {
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            dialogTitle: "Download Orders",
+            dialogTitle: "Export Orders",
             UTI: "com.microsoft.excel.xlsx",
           });
         } else {
-          Alert.alert("Download saved", `File saved to: ${fileUri}`);
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
         }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      Alert.alert("Download Failed", e?.message ?? "Unknown error");
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
     } finally {
       setDownloading(false);
     }
