@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -83,9 +84,11 @@ function LoginForm({ topPt }: { topPt: number }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={loginStyles.logoWrap}>
-          <View style={loginStyles.logoCircle}>
-            <Feather name="package" size={32} color={Colors.primary} />
-          </View>
+          <Image
+            source={require("../../assets/images/logo.png")}
+            style={loginStyles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={loginStyles.appName}>Sathyam Super Store</Text>
           <Text style={loginStyles.portalLabel}>Vendor Portal</Text>
         </View>
@@ -515,11 +518,8 @@ function VendorOrderCard({ order }: { order: Order }) {
 const loginStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flexGrow: 1, padding: 24, justifyContent: "center", gap: 24 },
-  logoWrap: { alignItems: "center", gap: 8 },
-  logoCircle: {
-    width: 80, height: 80, borderRadius: 20,
-    backgroundColor: Colors.primaryMuted, alignItems: "center", justifyContent: "center",
-  },
+  logoWrap: { alignItems: "center", gap: 6 },
+  logoImage: { width: 100, height: 100 },
   appName: { fontSize: 20, fontWeight: "800", color: Colors.text },
   portalLabel: { fontSize: 13, color: Colors.textMuted, fontWeight: "500" },
   card: {

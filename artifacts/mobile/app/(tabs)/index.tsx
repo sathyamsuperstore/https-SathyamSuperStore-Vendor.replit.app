@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
   TouchableOpacity,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -51,9 +52,16 @@ export default function DashboardScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.greeting}>Good morning</Text>
-          <Text style={styles.title}>Dashboard</Text>
+        <View style={styles.headerLeft}>
+          <Image
+            source={require("../../assets/images/logo.png")}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={styles.greeting}>Good morning</Text>
+            <Text style={styles.title}>Dashboard</Text>
+          </View>
         </View>
         <TouchableOpacity
           style={styles.addBtn}
@@ -135,9 +143,15 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
+    alignItems: "center",
     marginBottom: 20,
   },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerLogo: { width: 48, height: 48 },
   greeting: { fontSize: 13, color: Colors.textMuted, marginBottom: 2 },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
   addBtn: {
