@@ -152,18 +152,24 @@ export default function ImportSuppliersScreen() {
       const msg = skipped.length > 0
         ? `${added} supplier${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate VendorCode): ${skipped.join(", ")}`
         : `${added} supplier${added !== 1 ? "s" : ""} added successfully.`;
-      Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+      if (Platform.OS === "web") {
+        window.alert(`Import Complete\n\n${msg}`);
+        router.back();
+      } else {
+        Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+      }
     };
 
     if (existingConflicts.length > 0) {
-      Alert.alert(
-        "Duplicate VendorCodes",
-        `${existingConflicts.length} supplier(s) already exist with the same VendorCode and will be skipped:\n${existingConflicts.map((p) => p.vendorCode).join(", ")}\n\nContinue?`,
-        [
+      const conflictMsg = `${existingConflicts.length} supplier(s) already exist with the same VendorCode and will be skipped:\n${existingConflicts.map((p) => p.vendorCode).join(", ")}\n\nContinue?`;
+      if (Platform.OS === "web") {
+        if (window.confirm(`Duplicate VendorCodes\n\n${conflictMsg}`)) doImport();
+      } else {
+        Alert.alert("Duplicate VendorCodes", conflictMsg, [
           { text: "Cancel", style: "cancel" },
           { text: "Continue", onPress: doImport },
-        ]
-      );
+        ]);
+      }
     } else {
       doImport();
     }

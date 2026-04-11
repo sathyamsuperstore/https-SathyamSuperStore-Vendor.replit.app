@@ -247,11 +247,13 @@ export default function ImportOrderScreen() {
     addOrdersBatch(orderInputs);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(
-      "Orders Created",
-      `${vendorGroups.length} order${vendorGroups.length > 1 ? "s" : ""} created successfully.`,
-      [{ text: "OK", onPress: () => router.back() }]
-    );
+    const successMsg = `${vendorGroups.length} order${vendorGroups.length > 1 ? "s" : ""} created successfully.`;
+    if (Platform.OS === "web") {
+      window.alert(`Orders Created\n\n${successMsg}`);
+      router.back();
+    } else {
+      Alert.alert("Orders Created", successMsg, [{ text: "OK", onPress: () => router.back() }]);
+    }
   }
 
   const totalItems = vendorGroups.reduce((s, g) => s + g.items.length, 0);
