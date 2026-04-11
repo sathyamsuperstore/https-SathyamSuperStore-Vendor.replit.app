@@ -6,6 +6,7 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  TextInput,
   Modal,
   Alert,
   Platform,
@@ -39,6 +40,7 @@ export default function OrdersScreen() {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [activeBrand, setActiveBrand] = useState<string>("all");
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [brandSearch, setBrandSearch] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   const statusFiltered = useMemo(() => {
@@ -273,7 +275,7 @@ export default function OrdersScreen() {
       {/* Brand filter row — always visible below status pills */}
       <TouchableOpacity
         style={[styles.brandBar, brandActive && styles.brandBarActive]}
-        onPress={() => setShowBrandModal(true)}
+        onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
         activeOpacity={0.75}
       >
         <Feather
@@ -352,6 +354,26 @@ export default function OrdersScreen() {
             )}
           </View>
 
+          {allBrands.length > 0 && (
+            <View style={styles.brandSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.brandSearchInput}
+                value={brandSearch}
+                onChangeText={setBrandSearch}
+                placeholder="Search brands…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {brandSearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setBrandSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {allBrands.length === 0 ? (
             <View style={styles.noBrands}>
               <Feather name="tag" size={32} color={Colors.textMuted} />
@@ -361,37 +383,53 @@ export default function OrdersScreen() {
               </Text>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList}>
-              <TouchableOpacity
-                style={[styles.brandRow, activeBrand === "all" && styles.brandRowActive]}
-                onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
-              >
-                <Text style={[styles.brandName, activeBrand === "all" && styles.brandNameActive]}>
-                  All Brands
-                </Text>
-                <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
-                {activeBrand === "all" && (
-                  <Feather name="check" size={16} color={Colors.primary} />
-                )}
-              </TouchableOpacity>
-              {allBrands.map((brand) => {
-                const isActive = activeBrand === brand;
-                const count = brandOrderCount(brand);
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const q = brandSearch.trim().toLowerCase();
+                const visibleBrands = q ? allBrands.filter((b) => b.toLowerCase().includes(q)) : allBrands;
                 return (
-                  <TouchableOpacity
-                    key={brand}
-                    style={[styles.brandRow, isActive && styles.brandRowActive]}
-                    onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
-                  >
-                    <View style={styles.brandDot} />
-                    <Text style={[styles.brandName, isActive && styles.brandNameActive]}>
-                      {brand}
-                    </Text>
-                    <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
-                    {isActive && <Feather name="check" size={16} color={Colors.primary} />}
-                  </TouchableOpacity>
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[styles.brandRow, activeBrand === "all" && styles.brandRowActive]}
+                        onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+                      >
+                        <Text style={[styles.brandName, activeBrand === "all" && styles.brandNameActive]}>
+                          All Brands
+                        </Text>
+                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        {activeBrand === "all" && <Feather name="check" size={16} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    )}
+                    {visibleBrands.length === 0 ? (
+                      <View style={styles.noBrands}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noBrandsTitle}>No match</Text>
+                        <Text style={styles.noBrandsSub}>No brands found for "{brandSearch}"</Text>
+                      </View>
+                    ) : (
+                      visibleBrands.map((brand) => {
+                        const isActive = activeBrand === brand;
+                        const count = brandOrderCount(brand);
+                        return (
+                          <TouchableOpacity
+                            key={brand}
+                            style={[styles.brandRow, isActive && styles.brandRowActive]}
+                            onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
+                          >
+                            <View style={styles.brandDot} />
+                            <Text style={[styles.brandName, isActive && styles.brandNameActive]}>
+                              {brand}
+                            </Text>
+                            <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                            {isActive && <Feather name="check" size={16} color={Colors.primary} />}
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </ScrollView>
           )}
         </View>
@@ -541,6 +579,25 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
   modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  brandSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  brandSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
   noBrands: {
     alignItems: "center",
     padding: 40,
