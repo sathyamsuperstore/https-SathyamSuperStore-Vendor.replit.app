@@ -11,7 +11,7 @@ interface Props {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Electronics: "#3B82F6",
+  Grocery: "#3B82F6",
   "Raw Materials": "#10B981",
   Packaging: "#8B5CF6",
   Logistics: "#F59E0B",

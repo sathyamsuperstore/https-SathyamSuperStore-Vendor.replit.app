@@ -16,7 +16,7 @@ import { Colors } from "@/constants/colors";
 import { useApp, Supplier } from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
 
-const CATEGORIES = ["Electronics", "Raw Materials", "Packaging", "Logistics", "Services", "Other"];
+const CATEGORIES = ["Grocery", "Raw Materials", "Packaging", "Logistics", "Services", "Other"];
 
 export default function SupplierDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

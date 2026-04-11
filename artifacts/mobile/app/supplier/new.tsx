@@ -15,7 +15,7 @@ import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 
-const CATEGORIES = ["Electronics", "Raw Materials", "Packaging", "Logistics", "Services", "Other"];
+const CATEGORIES = ["Grocery", "Raw Materials", "Packaging", "Logistics", "Services", "Other"];
 
 export default function NewSupplierScreen() {
   const { suppliers, addSupplier } = useApp();
