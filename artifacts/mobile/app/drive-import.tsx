@@ -36,6 +36,7 @@ interface DriveFile {
   name: string;
   modifiedTime: string;
   size?: string;
+  mimeType?: string;
 }
 
 function parseExcelDate(val: unknown): string {
@@ -149,7 +150,7 @@ export default function DriveImportScreen() {
 
   async function downloadAndParse(file: DriveFile): Promise<XLSX.WorkBook> {
     const base = getApiBase();
-    const url = `${base}/api/drive/file/${file.id}`;
+    const url = `${base}/api/drive/file/${file.id}?mimeType=${encodeURIComponent(file.mimeType ?? "")}`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status} downloading ${file.name}`);
     const arrayBuffer = await resp.arrayBuffer();
