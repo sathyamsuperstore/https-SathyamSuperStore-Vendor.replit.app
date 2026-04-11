@@ -176,12 +176,36 @@ function OrdersView({ topPt }: { topPt: number }) {
   const vendorOrders = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.userType === "Manager" || currentUser.userType === "Admin") return orders;
-    if (!currentUser.vendorCode) return [];
-    const mySupplier = suppliers.find(
-      (s) => s.vendorCode.toUpperCase() === currentUser.vendorCode.toUpperCase()
+
+    // Build a list of candidate vendor codes to try:
+    // 1. The explicit vendorCode field
+    // 2. The userId itself (in case vendorCode was left blank or they're the same)
+    const candidates = [currentUser.vendorCode, currentUser.userId]
+      .map((c) => c?.trim().toUpperCase())
+      .filter(Boolean) as string[];
+
+    if (candidates.length === 0) return [];
+
+    // Exact match first
+    let mySupplier = suppliers.find((s) =>
+      candidates.includes(s.vendorCode.toUpperCase())
     );
-    if (!mySupplier) return [];
-    return orders.filter((o) => o.supplierId === mySupplier.id);
+
+    // Substring fallback: e.g. userId "V01V00013" contains vendorCode "V00013"
+    if (!mySupplier) {
+      mySupplier = suppliers.find((s) =>
+        candidates.some((c) => c.includes(s.vendorCode.toUpperCase()))
+      );
+    }
+
+    if (mySupplier) {
+      return orders.filter((o) => o.supplierId === mySupplier!.id);
+    }
+
+    // Final fallback: match by supplierName containing any candidate code
+    return orders.filter((o) =>
+      candidates.some((c) => o.supplierName.toUpperCase().includes(c))
+    );
   }, [orders, suppliers, currentUser]);
 
   const filtered = useMemo(() => {
