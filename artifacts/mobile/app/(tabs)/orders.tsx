@@ -160,9 +160,18 @@ export default function OrdersScreen() {
 
   function handleClearAll() {
     if (orders.length === 0) return;
+    const msg = `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`;
+    if (Platform.OS === "web") {
+      if (window.confirm(`Remove All Orders\n\n${msg}`)) {
+        clearAllOrders();
+        setActiveFilter("all");
+        setActiveBrand("all");
+      }
+      return;
+    }
     Alert.alert(
       "Remove All Orders",
-      `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`,
+      msg,
       [
         { text: "Cancel", style: "cancel" },
         {
