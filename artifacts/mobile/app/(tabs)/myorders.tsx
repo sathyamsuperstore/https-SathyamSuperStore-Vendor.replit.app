@@ -404,8 +404,10 @@ function OrdersView({ topPt }: { topPt: number }) {
 const ALL_STATUSES: OrderStatus[] = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
 
 function VendorOrderCard({ order }: { order: Order }) {
-  const { updateOrderStatus } = useApp();
+  const { updateOrderStatus, updateOrder } = useApp();
   const [expanded, setExpanded] = useState(false);
+  const [modifyMode, setModifyMode] = useState(false);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const status = STATUS_COLORS[order.status];
 
   function handleStatusChange(newStatus: OrderStatus) {
@@ -424,6 +426,41 @@ function VendorOrderCard({ order }: { order: Order }) {
         },
       ]
     );
+  }
+
+  function enterModifyMode() {
+    setCheckedIds(new Set(order.items.map((i) => i.id)));
+    setModifyMode(true);
+  }
+
+  function cancelModify() {
+    setModifyMode(false);
+    setCheckedIds(new Set());
+  }
+
+  function toggleItem(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function saveModify() {
+    const newItems = order.items.filter((i) => checkedIds.has(i.id));
+    if (newItems.length === 0) {
+      if (Platform.OS === "web") {
+        window.alert("At least one item must remain in the order.");
+      } else {
+        Alert.alert("Cannot Save", "At least one item must remain in the order.");
+      }
+      return;
+    }
+    const newTotal = newItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    updateOrder(order.id, { items: newItems, totalAmount: newTotal });
+    setModifyMode(false);
+    setCheckedIds(new Set());
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
   return (
@@ -480,7 +517,32 @@ function VendorOrderCard({ order }: { order: Order }) {
             </ScrollView>
           </View>
 
+          {/* Modify / Save / Cancel toolbar */}
+          {!modifyMode ? (
+            <TouchableOpacity style={cardStyles.modifyBtn} onPress={enterModifyMode} activeOpacity={0.8}>
+              <Feather name="edit-2" size={14} color={Colors.primary} />
+              <Text style={cardStyles.modifyBtnText}>Modify</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={cardStyles.modifyToolbar}>
+              <Text style={cardStyles.modifyHint}>
+                {checkedIds.size} of {order.items.length} selected
+              </Text>
+              <View style={cardStyles.modifyActions}>
+                <TouchableOpacity style={cardStyles.cancelModifyBtn} onPress={cancelModify} activeOpacity={0.8}>
+                  <Text style={cardStyles.cancelModifyText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={cardStyles.saveModifyBtn} onPress={saveModify} activeOpacity={0.8}>
+                  <Feather name="save" size={14} color={Colors.textInverse} />
+                  <Text style={cardStyles.saveModifyText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Items table */}
           <View style={cardStyles.tableHeader}>
+            {modifyMode && <View style={{ width: 32 }} />}
             <Text style={[cardStyles.th, { flex: 3 }]}>Item</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>UOM</Text>
@@ -489,18 +551,37 @@ function VendorOrderCard({ order }: { order: Order }) {
           {order.items.map((item, i) => {
             const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
             const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
+            const isChecked = checkedIds.has(item.id);
             return (
-              <View key={item.id} style={[cardStyles.tableRow, i % 2 === 0 && cardStyles.rowAlt]}>
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  cardStyles.tableRow,
+                  i % 2 === 0 && cardStyles.rowAlt,
+                  modifyMode && !isChecked && cardStyles.rowUnchecked,
+                ]}
+                onPress={() => modifyMode && toggleItem(item.id)}
+                activeOpacity={modifyMode ? 0.7 : 1}
+              >
+                {modifyMode && (
+                  <View style={cardStyles.checkboxCol}>
+                    <Feather
+                      name={isChecked ? "check-square" : "square"}
+                      size={18}
+                      color={isChecked ? Colors.primary : Colors.textMuted}
+                    />
+                  </View>
+                )}
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
-                  <Text style={cardStyles.td}>{desc}</Text>
+                  <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
                 </View>
                 <Text style={[cardStyles.td, cardStyles.right]}>{item.quantity}</Text>
                 <Text style={[cardStyles.td, cardStyles.right]}>{item.unit}</Text>
                 <Text style={[cardStyles.td, cardStyles.right, cardStyles.price]}>
                   {formatCurrency(item.unitPrice)}
                 </Text>
-              </View>
+              </TouchableOpacity>
             );
           })}
           {order.notes ? (
@@ -660,4 +741,31 @@ const cardStyles = StyleSheet.create({
     backgroundColor: Colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: Colors.border,
   },
   notesText: { fontSize: 11, color: Colors.textMuted, flex: 1 },
+  modifyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    margin: 12, paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 10, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: Colors.primaryMuted, alignSelf: "flex-start",
+  },
+  modifyBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  modifyToolbar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginHorizontal: 12, marginVertical: 10,
+  },
+  modifyHint: { fontSize: 12, color: Colors.textMuted, fontWeight: "600" },
+  modifyActions: { flexDirection: "row", gap: 8 },
+  cancelModifyBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface,
+  },
+  cancelModifyText: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
+  saveModifyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  saveModifyText: { fontSize: 13, fontWeight: "700", color: Colors.textInverse },
+  checkboxCol: { width: 32, alignItems: "center", justifyContent: "center" },
+  rowUnchecked: { opacity: 0.4 },
+  tdStrike: { textDecorationLine: "line-through" },
 });
