@@ -172,7 +172,7 @@ function OrdersView({ topPt }: { topPt: number }) {
 
   const vendorOrders = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.userType === "Manager") return orders;
+    if (currentUser.userType === "Manager" || currentUser.userType === "Admin") return orders;
     if (!currentUser.vendorCode) return [];
     const mySupplier = suppliers.find(
       (s) => s.vendorCode.toUpperCase() === currentUser.vendorCode.toUpperCase()
