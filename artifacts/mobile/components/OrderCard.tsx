@@ -8,6 +8,7 @@ import { StatusBadge } from "./StatusBadge";
 
 interface Props {
   order: Order;
+  vendorCode?: string;
 }
 
 function formatDate(dateStr: string): string {
@@ -19,7 +20,7 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 }
 
-export function OrderCard({ order }: Props) {
+export function OrderCard({ order, vendorCode }: Props) {
   const router = useRouter();
   const isOverdue =
     order.status !== "delivered" &&
@@ -36,6 +37,9 @@ export function OrderCard({ order }: Props) {
         <View style={styles.headerLeft}>
           <Text style={styles.orderNum}>{order.orderNumber}</Text>
           <Text style={styles.supplier}>{order.supplierName}</Text>
+          {vendorCode ? (
+            <Text style={styles.vendorCode}>Code: {vendorCode}</Text>
+          ) : null}
         </View>
         <StatusBadge status={order.status} size="sm" />
       </View>
@@ -83,6 +87,7 @@ const styles = StyleSheet.create({
   headerLeft: { flex: 1, marginRight: 8 },
   orderNum: { fontSize: 15, fontWeight: "700", color: Colors.text, marginBottom: 2 },
   supplier: { fontSize: 13, color: Colors.textSecondary },
+  vendorCode: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   divider: { height: 1, backgroundColor: Colors.border, marginBottom: 12 },
   footer: { flexDirection: "row", alignItems: "center", gap: 12 },
   footerItem: { flexDirection: "row", alignItems: "center", gap: 4 },

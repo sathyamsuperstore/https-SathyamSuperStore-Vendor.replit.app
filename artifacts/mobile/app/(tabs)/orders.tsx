@@ -33,7 +33,7 @@ const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
 ];
 
 export default function OrdersScreen() {
-  const { orders, clearAllOrders } = useApp();
+  const { orders, clearAllOrders, suppliers } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
@@ -295,7 +295,10 @@ export default function OrdersScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <OrderCard order={item} />}
+        renderItem={({ item }) => {
+          const vendorCode = suppliers.find((s) => s.id === item.supplierId)?.vendorCode ?? "";
+          return <OrderCard order={item} vendorCode={vendorCode} />;
+        }}
         contentContainerStyle={[
           styles.list,
           { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 100 },
