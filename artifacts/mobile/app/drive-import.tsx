@@ -20,6 +20,7 @@ import { Colors } from "@/constants/colors";
 import { useApp, OrderItem, UserType } from "@/context/AppContext";
 
 const FOLDER_ID_KEY = "@driveImportFolderId";
+const DEFAULT_FOLDER_ID = "1s2DYV-7LHtAydgSrJYK9bA7U8xm08DI7";
 const VALID_USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
 function getApiBase(): string {
@@ -93,10 +94,10 @@ export default function DriveImportScreen() {
 
   useEffect(() => {
     AsyncStorage.getItem(FOLDER_ID_KEY).then((v) => {
-      if (v) {
-        setFolderId(v);
-        setFolderIdInput(v);
-      }
+      const id = v ?? DEFAULT_FOLDER_ID;
+      setFolderId(id);
+      setFolderIdInput(id);
+      if (!v) AsyncStorage.setItem(FOLDER_ID_KEY, DEFAULT_FOLDER_ID);
     });
   }, []);
 
