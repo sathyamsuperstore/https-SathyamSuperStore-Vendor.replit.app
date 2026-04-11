@@ -408,6 +408,7 @@ function VendorOrderCard({ order }: { order: Order }) {
   const [expanded, setExpanded] = useState(false);
   const [modifyMode, setModifyMode] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
   const status = STATUS_COLORS[order.status];
 
   function handleStatusChange(newStatus: OrderStatus) {
@@ -429,13 +430,17 @@ function VendorOrderCard({ order }: { order: Order }) {
   }
 
   function enterModifyMode() {
+    const qtys: Record<string, string> = {};
+    order.items.forEach((i) => { qtys[i.id] = String(i.quantity); });
     setCheckedIds(new Set(order.items.map((i) => i.id)));
+    setEditedQtys(qtys);
     setModifyMode(true);
   }
 
   function cancelModify() {
     setModifyMode(false);
     setCheckedIds(new Set());
+    setEditedQtys({});
   }
 
   function toggleItem(id: string) {
@@ -447,7 +452,13 @@ function VendorOrderCard({ order }: { order: Order }) {
   }
 
   function saveModify() {
-    const newItems = order.items.filter((i) => checkedIds.has(i.id));
+    const newItems = order.items
+      .filter((i) => checkedIds.has(i.id))
+      .map((i) => {
+        const parsed = parseFloat(editedQtys[i.id] ?? "");
+        const qty = !isNaN(parsed) && parsed > 0 ? parsed : i.quantity;
+        return { ...i, quantity: qty };
+      });
     if (newItems.length === 0) {
       if (Platform.OS === "web") {
         window.alert("At least one item must remain in the order.");
@@ -460,6 +471,7 @@ function VendorOrderCard({ order }: { order: Order }) {
     updateOrder(order.id, { items: newItems, totalAmount: newTotal });
     setModifyMode(false);
     setCheckedIds(new Set());
+    setEditedQtys({});
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
@@ -553,35 +565,48 @@ function VendorOrderCard({ order }: { order: Order }) {
             const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
             const isChecked = checkedIds.has(item.id);
             return (
-              <TouchableOpacity
+              <View
                 key={item.id}
                 style={[
                   cardStyles.tableRow,
                   i % 2 === 0 && cardStyles.rowAlt,
                   modifyMode && !isChecked && cardStyles.rowUnchecked,
                 ]}
-                onPress={() => modifyMode && toggleItem(item.id)}
-                activeOpacity={modifyMode ? 0.7 : 1}
               >
                 {modifyMode && (
-                  <View style={cardStyles.checkboxCol}>
+                  <TouchableOpacity
+                    style={cardStyles.checkboxCol}
+                    onPress={() => toggleItem(item.id)}
+                    activeOpacity={0.7}
+                  >
                     <Feather
                       name={isChecked ? "check-square" : "square"}
                       size={18}
                       color={isChecked ? Colors.primary : Colors.textMuted}
                     />
-                  </View>
+                  </TouchableOpacity>
                 )}
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
                   <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
                 </View>
-                <Text style={[cardStyles.td, cardStyles.right]}>{item.quantity}</Text>
+                {modifyMode ? (
+                  <TextInput
+                    style={[cardStyles.td, cardStyles.qtyInput, !isChecked && { opacity: 0.4 }]}
+                    value={editedQtys[item.id] ?? String(item.quantity)}
+                    onChangeText={(v) => setEditedQtys((prev) => ({ ...prev, [item.id]: v }))}
+                    keyboardType="numeric"
+                    selectTextOnFocus
+                    editable={isChecked}
+                  />
+                ) : (
+                  <Text style={[cardStyles.td, cardStyles.right]}>{item.quantity}</Text>
+                )}
                 <Text style={[cardStyles.td, cardStyles.right]}>{item.unit}</Text>
                 <Text style={[cardStyles.td, cardStyles.right, cardStyles.price]}>
                   {formatCurrency(item.unitPrice)}
                 </Text>
-              </TouchableOpacity>
+              </View>
             );
           })}
           {order.notes ? (
@@ -768,4 +793,8 @@ const cardStyles = StyleSheet.create({
   checkboxCol: { width: 32, alignItems: "center", justifyContent: "center" },
   rowUnchecked: { opacity: 0.4 },
   tdStrike: { textDecorationLine: "line-through" },
+  qtyInput: {
+    flex: 1, textAlign: "right", borderBottomWidth: 1.5, borderBottomColor: Colors.primary,
+    paddingVertical: 2, paddingHorizontal: 4, minWidth: 40, color: Colors.text,
+  },
 });
