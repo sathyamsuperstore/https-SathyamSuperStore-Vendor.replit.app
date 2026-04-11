@@ -41,6 +41,7 @@ function RootLayoutNav() {
       <Stack.Screen name="user/[id]" options={{ presentation: "card" }} />
       <Stack.Screen name="user/new" options={{ presentation: "modal" }} />
       <Stack.Screen name="user/import" options={{ presentation: "modal" }} />
+      <Stack.Screen name="drive-import" options={{ presentation: "modal" }} />
     </Stack>
   );
 }

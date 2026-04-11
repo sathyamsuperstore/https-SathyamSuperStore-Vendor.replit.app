@@ -222,6 +222,13 @@ export default function OrdersScreen() {
             <Text style={styles.importBtnText}>Import</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.driveBtn}
+            onPress={() => router.push("/drive-import")}
+          >
+            <Feather name="hard-drive" size={17} color="#1a73e8" />
+            <Text style={styles.driveBtnText}>DriveImport</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.addBtn}
             onPress={() => router.push("/order/new")}
           >
@@ -440,6 +447,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + "30",
   },
   importBtnText: { fontSize: 14, fontWeight: "700", color: Colors.primary },
+  driveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#e8f0fe",
+    borderWidth: 1,
+    borderColor: "#1a73e830",
+  },
+  driveBtnText: { fontSize: 14, fontWeight: "700", color: "#1a73e8" },
   addBtn: {
     width: 42,
     height: 42,
