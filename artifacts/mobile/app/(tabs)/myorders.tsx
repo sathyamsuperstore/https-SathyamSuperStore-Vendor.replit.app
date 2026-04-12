@@ -172,6 +172,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   const insets = useSafeAreaInsets();
   const [downloading, setDownloading] = useState(false);
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
+  const [showStock, setShowStock] = useState(false);
 
   const vendorOrders = useMemo(() => {
     if (!currentUser) return [];
@@ -232,43 +233,44 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloading(true);
     try {
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+      const colHeader = showStock
+        ? ["Item Description", "Brand", "UOM", "MRP", "Order Qty"]
+        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of vendorOrders) {
         for (const item of order.items) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          dataRows.push([
-            desc,
-            item.brand ?? "",
-            item.unit,
-            item.unitPrice,
-            item.stock ?? "",
-            item.quantity,
-          ]);
+          if (showStock) {
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.quantity]);
+          } else {
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.stock ?? "", item.quantity]);
+          }
         }
       }
       const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
       const exportDate = new Date().toLocaleDateString("en-IN");
+      // When showStock is ON the Stock column is omitted from the export (5 cols), otherwise 6 cols
+      const pad = showStock ? ["", "", "", "", ""] : ["", "", "", "", "", ""];
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", ""],
-        ["Accounts: 97868-64868",                                                "", "",            "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", ""],
-        ["", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  ...pad.slice(3)],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   ...pad.slice(1)],
+        ["Coimbatore-641029",                                                    ...pad.slice(1)],
+        ["98431-44868",                                                          ...pad.slice(1)],
+        ["Whatsapp: 97881-44868",                                                ...pad.slice(1)],
+        ["Accounts: 97868-64868",                                                ...pad.slice(1)],
+        ["GST# : 33ADFFS5244N1ZR",                                               ...pad.slice(1)],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      ...pad.slice(1)],
+        pad,
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", ""],
-        [`Supplier : ${supplierName}`,  "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,  "", "", "", "", ""],
+        pad,
+        [`Supplier : ${supplierName}`,  ...pad.slice(1)],
+        [`Order Date : ${exportDate}`,  ...pad.slice(1)],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
-      ws["!cols"] = [
-        { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      ];
+      ws["!cols"] = showStock
+        ? [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }]
+        : [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
@@ -438,7 +440,13 @@ function OrdersView({ topPt }: { topPt: number }) {
           keyExtractor={(o) => o.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => <VendorOrderCard order={item} />}
+          renderItem={({ item }) => (
+            <VendorOrderCard
+              order={item}
+              showStock={showStock}
+              onToggleStock={() => setShowStock((v) => !v)}
+            />
+          )}
         />
       )}
     </View>
@@ -447,13 +455,20 @@ function OrdersView({ topPt }: { topPt: number }) {
 
 const ALL_STATUSES: OrderStatus[] = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
 
-function VendorOrderCard({ order }: { order: Order }) {
+function VendorOrderCard({
+  order,
+  showStock,
+  onToggleStock,
+}: {
+  order: Order;
+  showStock: boolean;
+  onToggleStock: () => void;
+}) {
   const { updateOrderStatus, updateOrder } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [modifyMode, setModifyMode] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
-  const [showStock, setShowStock] = useState(false);
   const status = STATUS_COLORS[order.status];
 
   function handleStatusChange(newStatus: OrderStatus) {
@@ -601,7 +616,7 @@ function VendorOrderCard({ order }: { order: Order }) {
           <View style={cardStyles.stockToggleRow}>
             <TouchableOpacity
               style={[cardStyles.stockToggleBtn, showStock && cardStyles.stockToggleBtnOn]}
-              onPress={() => setShowStock((v) => !v)}
+              onPress={onToggleStock}
               activeOpacity={0.75}
             >
               <Feather
