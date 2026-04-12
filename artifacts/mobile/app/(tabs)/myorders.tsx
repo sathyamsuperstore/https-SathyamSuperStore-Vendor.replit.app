@@ -238,23 +238,30 @@ function OrdersView({ topPt }: { topPt: number }) {
           ]);
         }
       }
+      const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
+      const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["",                                                                     "", "ORDER FORM",  "", "", "Sathyam Super Store"],
-        ["GST# :  33ADFFS5244N1ZR",                                              "", "",            "", "", "2A,Mettupalayam Road, Cheran Nagar"],
-        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",         "", "",            "", "", "Coimbatore-641029"],
-        ["",                                                                     "", "",            "", "", "98431-44868"],
-        ["",                                                                     "", "",            "", "", "Whatsapp: 97881-44868"],
-        ["",                                                                     "", "",            "", "", "Accounts: 97868-64868"],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", ""],
+        ["Accounts: 97868-64868",                                                "", "",            "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", ""],
         ["", "", "", "", "", ""],
         colHeader,
         ...dataRows,
+        ["", "", "", "", "", ""],
+        [`Supplier : ${supplierName}`,  "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,  "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
         { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
-      // wrapText on Column A (Item Description) — data starts at row 9 (7 header + 1 colHeader)
-      const dataStartRow = 9;
+      // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
+      const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
         const cellRef = `A${dataStartRow + i}`;
         if (ws[cellRef]) {
