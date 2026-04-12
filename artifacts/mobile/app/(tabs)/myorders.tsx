@@ -589,6 +589,7 @@ function VendorOrderCard({ order }: { order: Order }) {
             <Text style={[cardStyles.th, { flex: 3 }]}>Item</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>UOM</Text>
+            <Text style={[cardStyles.th, cardStyles.right]}>Stock</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>MRP</Text>
           </View>
           {order.items.map((item, i) => {
@@ -634,6 +635,9 @@ function VendorOrderCard({ order }: { order: Order }) {
                   <Text style={[cardStyles.td, cardStyles.right]}>{item.quantity}</Text>
                 )}
                 <Text style={[cardStyles.td, cardStyles.right]}>{item.unit}</Text>
+                <Text style={[cardStyles.td, cardStyles.right]}>
+                  {item.stock != null && item.stock !== undefined ? item.stock : "—"}
+                </Text>
                 <Text style={[cardStyles.td, cardStyles.right, cardStyles.price]}>
                   {formatCurrency(item.unitPrice)}
                 </Text>
