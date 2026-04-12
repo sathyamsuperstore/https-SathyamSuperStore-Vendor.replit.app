@@ -223,15 +223,14 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloading(true);
     try {
-      const colHeader = ["Order No", "Order Date", "Status", "Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+      const colHeader = ["Order Date", "Supplier", "Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of vendorOrders) {
         for (const item of order.items) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           dataRows.push([
-            order.orderNumber,
             new Date(order.createdAt).toLocaleDateString("en-IN"),
-            STATUS_COLORS[order.status].label,
+            order.supplierName,
             desc,
             item.brand ?? "",
             item.unit,
@@ -242,24 +241,24 @@ function OrdersView({ topPt }: { topPt: number }) {
         }
       }
       const sheetData: (string | number)[][] = [
-        ["",                                                                    "", "", "ORDER FORM",  "", "", "", "", "Sathyam Super Store"],
-        ["GST# :  33ADFFS5244N1ZR",                                             "", "", "",            "", "", "", "", "2A,Mettupalayam Road, Cheran Nagar"],
-        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",        "", "", "",            "", "", "", "", "Coimbatore-641029"],
-        ["",                                                                    "", "", "",            "", "", "", "", "98431-44868"],
-        ["",                                                                    "", "", "",            "", "", "", "", "Whatsapp: 97881-44868"],
-        ["",                                                                    "", "", "",            "", "", "", "", "Accounts: 97868-64868"],
-        ["", "", "", "", "", "", "", "", ""],
+        ["",                                                                     "", "", "ORDER FORM",  "", "", "", "Sathyam Super Store"],
+        ["GST# :  33ADFFS5244N1ZR",                                              "", "", "",            "", "", "", "2A,Mettupalayam Road, Cheran Nagar"],
+        ["ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",         "", "", "",            "", "", "", "Coimbatore-641029"],
+        ["",                                                                     "", "", "",            "", "", "", "98431-44868"],
+        ["",                                                                     "", "", "",            "", "", "", "Whatsapp: 97881-44868"],
+        ["",                                                                     "", "", "",            "", "", "", "Accounts: 97868-64868"],
+        ["", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 36 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 55 }, { wch: 22 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
-      // wrapText on col D (Item Description) — data starts row 9
+      // wrapText on Column C (Item Description) — data starts at row 9 (7 header + 1 colHeader)
       const dataStartRow = 9;
       for (let i = 0; i < dataRows.length; i++) {
-        const cellRef = `D${dataStartRow + i}`;
+        const cellRef = `C${dataStartRow + i}`;
         if (ws[cellRef]) {
           ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
         }
@@ -272,7 +271,7 @@ function OrdersView({ topPt }: { topPt: number }) {
         scale: 100,
       };
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "My Orders");
+      XLSX.utils.book_append_sheet(wb, ws, "Orders");
 
       const fileName = `orders_${currentUser?.vendorCode ?? "vendor"}_${Date.now()}.xlsx`;
 
