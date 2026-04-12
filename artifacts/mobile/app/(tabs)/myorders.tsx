@@ -202,10 +202,19 @@ function OrdersView({ topPt }: { topPt: number }) {
       return orders.filter((o) => o.supplierId === mySupplier!.id);
     }
 
-    // Final fallback: match by supplierName containing any candidate code
-    return orders.filter((o) =>
-      candidates.some((c) => o.supplierName.toUpperCase().includes(c))
-    );
+    // Final fallback: match orders where supplierName looks like a vendor code
+    // and any candidate contains it, OR the supplierName contains any candidate.
+    // e.g. supplierName="V00013", candidate="V01V00013" → "V01V00013".includes("V00013") ✓
+    // e.g. supplierName="ABC Corp V00013", candidate="V00013" → "ABC CORP V00013".includes("V00013") ✓
+    return orders.filter((o) => {
+      const sn = o.supplierName.toUpperCase();
+      return candidates.some(
+        (c) =>
+          sn.includes(c) ||           // supplierName contains candidate
+          c.includes(sn) ||           // candidate contains supplierName (e.g. userId contains code)
+          o.supplierId === c          // supplierId stored as vendorCode (old imports)
+      );
+    });
   }, [orders, suppliers, currentUser]);
 
   const filtered = useMemo(() => {
