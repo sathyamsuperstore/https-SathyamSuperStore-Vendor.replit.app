@@ -453,6 +453,7 @@ function VendorOrderCard({ order }: { order: Order }) {
   const [modifyMode, setModifyMode] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
+  const [showStock, setShowStock] = useState(false);
   const status = STATUS_COLORS[order.status];
 
   function handleStatusChange(newStatus: OrderStatus) {
@@ -597,12 +598,28 @@ function VendorOrderCard({ order }: { order: Order }) {
           )}
 
           {/* Items table */}
+          <View style={cardStyles.stockToggleRow}>
+            <TouchableOpacity
+              style={[cardStyles.stockToggleBtn, showStock && cardStyles.stockToggleBtnOn]}
+              onPress={() => setShowStock((v) => !v)}
+              activeOpacity={0.75}
+            >
+              <Feather
+                name={showStock ? "eye" : "eye-off"}
+                size={13}
+                color={showStock ? Colors.primary : Colors.textMuted}
+              />
+              <Text style={[cardStyles.stockToggleText, showStock && cardStyles.stockToggleTextOn]}>
+                Stock
+              </Text>
+            </TouchableOpacity>
+          </View>
           <View style={cardStyles.tableHeader}>
             {modifyMode && <View style={{ width: 32 }} />}
             <Text style={[cardStyles.th, { flex: 3 }]}>Item</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>UOM</Text>
-            <Text style={[cardStyles.th, cardStyles.right]}>Stock</Text>
+            {showStock && <Text style={[cardStyles.th, cardStyles.right]}>Stock</Text>}
             <Text style={[cardStyles.th, cardStyles.right]}>MRP</Text>
           </View>
           {order.items.map((item, i) => {
@@ -648,9 +665,11 @@ function VendorOrderCard({ order }: { order: Order }) {
                   <Text style={[cardStyles.td, cardStyles.right]}>{item.quantity}</Text>
                 )}
                 <Text style={[cardStyles.td, cardStyles.right]}>{item.unit}</Text>
-                <Text style={[cardStyles.td, cardStyles.right]}>
-                  {item.stock != null && item.stock !== undefined ? item.stock : "—"}
-                </Text>
+                {showStock && (
+                  <Text style={[cardStyles.td, cardStyles.right]}>
+                    {item.stock != null && item.stock !== undefined ? item.stock : "—"}
+                  </Text>
+                )}
                 <Text style={[cardStyles.td, cardStyles.right, cardStyles.price]}>
                   {formatCurrency(item.unitPrice)}
                 </Text>
@@ -845,4 +864,20 @@ const cardStyles = StyleSheet.create({
     flex: 1, textAlign: "right", borderBottomWidth: 1.5, borderBottomColor: Colors.primary,
     paddingVertical: 2, paddingHorizontal: 4, minWidth: 40, color: Colors.text,
   },
+  stockToggleRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 2,
+  },
+  stockToggleBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  stockToggleBtnOn: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryMuted,
+  },
+  stockToggleText: { fontSize: 12, fontWeight: "600", color: Colors.textMuted },
+  stockToggleTextOn: { color: Colors.primary },
 });
