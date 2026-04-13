@@ -625,7 +625,7 @@ function VendorOrderCard({
                 color={showStock ? Colors.primary : Colors.textMuted}
               />
               <Text style={[cardStyles.stockToggleText, showStock && cardStyles.stockToggleTextOn]}>
-                Stock
+                Hide Stock
               </Text>
             </TouchableOpacity>
           </View>
