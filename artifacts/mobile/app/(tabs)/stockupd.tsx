@@ -315,9 +315,21 @@ export default function StockUpdScreen() {
       });
     });
     if (negStockOnly) {
-      result = result.filter((o) =>
-        o.items.some((it) => it.stock != null && it.stock < 0)
-      );
+      result = result.filter((o) => {
+        const brandSubset =
+          activeBrand === "all"
+            ? o.items
+            : o.items.filter((it) => it.brand === activeBrand);
+        const searchSubset = q
+          ? brandSubset.filter((it) => {
+              const desc = it.name.includes(" - ")
+                ? it.name.split(" - ").slice(1).join(" - ")
+                : it.name;
+              return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+            })
+          : brandSubset;
+        return searchSubset.some((it) => it.stock != null && it.stock < 0);
+      });
     }
     return result;
   }, [statusFiltered, activeBrand, itemSearch, negStockOnly]);
