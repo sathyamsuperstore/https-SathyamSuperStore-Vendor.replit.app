@@ -255,8 +255,8 @@ function OrdersView({ topPt }: { topPt: number }) {
     setDownloading(true);
     try {
       const colHeader = showStock
-        ? ["Item Description", "Brand", "UOM", "MRP", "Order Qty"]
-        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+        ? ["Item Description", "Brand", "UOM", "MRP", "Min", "Order Qty"]
+        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         const exportItems = brandActive
@@ -265,16 +265,15 @@ function OrdersView({ topPt }: { topPt: number }) {
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           if (showStock) {
-            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.quantity]);
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.min ?? "", item.quantity]);
           } else {
-            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.stock ?? "", item.quantity]);
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.stock ?? "", item.min ?? "", item.quantity]);
           }
         }
       }
       const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
       const exportDate = new Date().toLocaleDateString("en-IN");
-      // When showStock is ON the Stock column is omitted from the export (5 cols), otherwise 6 cols
-      const pad = showStock ? ["", "", "", "", ""] : ["", "", "", "", "", ""];
+      const pad = showStock ? ["", "", "", "", "", ""] : ["", "", "", "", "", "", ""];
       const sheetData: (string | number)[][] = [
         ["Sathyam Super Store",                                                  "", "ORDER FORM",  ...pad.slice(3)],
         ["2A,Mettupalayam Road, Cheran Nagar",                                   ...pad.slice(1)],
@@ -293,8 +292,8 @@ function OrdersView({ topPt }: { topPt: number }) {
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = showStock
-        ? [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }]
-        : [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+        ? [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }]
+        : [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
@@ -781,6 +780,7 @@ function VendorOrderCard({
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>UOM</Text>
             {showStock && <Text style={[cardStyles.th, cardStyles.right]}>Stock</Text>}
+            <Text style={[cardStyles.th, cardStyles.right]}>Min</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>MRP</Text>
           </View>
           {[...order.items]
@@ -845,6 +845,9 @@ function VendorOrderCard({
                     {item.stock != null && item.stock !== undefined ? item.stock : "—"}
                   </Text>
                 )}
+                <Text style={[cardStyles.td, cardStyles.right]}>
+                  {item.min != null ? item.min : "—"}
+                </Text>
                 <Text style={[cardStyles.td, cardStyles.right, cardStyles.price]}>
                   {formatCurrency(item.unitPrice)}
                 </Text>

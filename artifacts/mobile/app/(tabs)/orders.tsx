@@ -78,7 +78,7 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         for (const item of order.items) {
@@ -89,6 +89,7 @@ export default function OrdersScreen() {
             item.unit,
             item.unitPrice,
             item.stock ?? "",
+            item.min ?? "",
             item.quantity,
           ]);
         }
@@ -96,24 +97,24 @@ export default function OrdersScreen() {
       const uniqueSuppliers = [...new Set(filtered.map((o) => o.supplierName))].join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", ""],
-        ["Accounts: 97868-64868",                                                "", "",            "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", ""],
-        ["", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", ""],
+        ["Accounts: 97868-64868",                                                "", "",            "", "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", ""],
+        ["", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", ""],
-        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,     "", "", "", "", ""],
+        ["", "", "", "", "", "", ""],
+        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,     "", "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;

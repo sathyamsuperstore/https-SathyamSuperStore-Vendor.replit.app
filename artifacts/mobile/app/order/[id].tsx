@@ -112,7 +112,7 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty"];
+      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
       const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
         return [
@@ -121,29 +121,30 @@ export default function OrderDetailScreen() {
           item.unit,
           item.unitPrice,
           item.stock ?? "",
+          item.min ?? "",
           item.quantity,
         ];
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                              "", "", "", "ORDER FORM"],
-        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", ""],
-        ["Coimbatore-641029",                                                "", "", "", ""],
-        ["98431-44868",                                                      "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                            "", "", "", ""],
-        ["Accounts: 97868-64868",                                            "", "", "", ""],
-        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", ""],
-        ["", "", "", "", ""],
+        ["Sathyam Super Store",                                              "", "", "", "", "ORDER FORM"],
+        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", ""],
+        ["Coimbatore-641029",                                                "", "", "", "", ""],
+        ["98431-44868",                                                      "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                            "", "", "", "", ""],
+        ["Accounts: 97868-64868",                                            "", "", "", "", ""],
+        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", ""],
+        ["", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", ""],
-        [`Supplier : ${order.supplierName}`, "", "", "", ""],
-        [`Order Date : ${orderDate}`,        "", "", "", ""],
+        ["", "", "", "", "", ""],
+        [`Supplier : ${order.supplierName}`, "", "", "", "", ""],
+        [`Order Date : ${orderDate}`,        "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
       // wrapText on Row 8 (delivery notice)
       if (ws["A8"]) {
@@ -163,7 +164,7 @@ export default function OrderDetailScreen() {
       };
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataStartRow + i;
-        for (const col of ["A", "B", "C", "D", "E", "F"]) {
+        for (const col of ["A", "B", "C", "D", "E", "F", "G"]) {
           const cellRef = `${col}${row}`;
           if (ws[cellRef]) {
             ws[cellRef].s = col === "A"
@@ -384,6 +385,7 @@ export default function OrderDetailScreen() {
                     <Text style={styles.itemMeta}>
                       {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
                       {item.stock != null ? `  ·  Stock: ${item.stock}` : ""}
+                      {item.min != null ? `  ·  Min: ${item.min}` : ""}
                     </Text>
                     <View style={styles.newStockRow}>
                       <Text style={styles.newStockLabel}>New Stock Qty:</Text>

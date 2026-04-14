@@ -39,6 +39,7 @@ export interface OrderItem {
   unit: string;
   unitPrice: number;
   stock?: number;
+  min?: number;
   sortNo?: number;
   newStockQty?: number;
 }

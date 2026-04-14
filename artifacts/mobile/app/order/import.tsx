@@ -31,6 +31,7 @@ interface ParsedRow {
   Brand: string;
   Beat: string;
   Stock: number;
+  Min: number;
   SortNo: number;
 }
 
@@ -169,6 +170,7 @@ export default function ImportOrderScreen() {
         Brand: String(row["Brand"] ?? "").trim(),
         Beat: String(row["Beat"] ?? "").trim(),
         Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
+        Min: parseFloat(String(row["Min"] ?? "")) || 0,
         SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
       }));
 
@@ -233,7 +235,8 @@ export default function ImportOrderScreen() {
         quantity: row["Order Qty"] || 1,
         unit: row["UOM"] || "pcs",
         unitPrice: row["MRP"] || 0,
-        stock: row["Stock"] || undefined,
+        stock: row["Stock"] !== 0 ? row["Stock"] : undefined,
+        min: row["Min"] !== 0 ? row["Min"] : undefined,
         sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
       }));
       return {
@@ -297,7 +300,7 @@ export default function ImportOrderScreen() {
                 <Text style={styles.dropTitle}>Tap to select Excel file</Text>
                 <Text style={styles.dropHint}>Supports .xlsx and .xls files</Text>
                 <View style={styles.columnsList}>
-                  {["VendorCode", "Item No", "Item Description", "UOM", "MRP", "Order Qty"].map((col) => (
+                  {["VendorCode", "Item No", "Item Description", "UOM", "MRP", "Min", "Order Qty"].map((col) => (
                     <View key={col} style={styles.colChip}>
                       <Text style={styles.colChipText}>{col}</Text>
                     </View>
