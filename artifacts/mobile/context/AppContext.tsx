@@ -39,6 +39,7 @@ export interface OrderItem {
   unit: string;
   unitPrice: number;
   stock?: number;
+  sortNo?: number;
 }
 
 export interface Order {

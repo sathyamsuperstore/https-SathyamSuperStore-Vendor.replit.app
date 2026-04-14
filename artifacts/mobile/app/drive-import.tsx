@@ -168,6 +168,7 @@ export default function DriveImportScreen() {
           unit: String(row["UOM"] ?? "pcs").trim(),
           unitPrice: parseFloat(String(row["MRP"] ?? "0")) || 0,
           stock: parseFloat(String(row["Stock"] ?? "")) || undefined,
+          sortNo: row["SortNo"] !== undefined && row["SortNo"] !== "" ? parseFloat(String(row["SortNo"])) : undefined,
         }));
         return {
           supplierId: matchedSupplier?.id ?? "",

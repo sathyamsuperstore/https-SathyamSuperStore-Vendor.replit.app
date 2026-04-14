@@ -57,8 +57,13 @@ export default function OrderDetailScreen() {
 
   const visibleItems = useMemo(() => {
     if (!order) return [];
-    if (selectedBrand === "all") return order.items;
-    return order.items.filter((item) => item.brand === selectedBrand);
+    const base = selectedBrand === "all" ? order.items : order.items.filter((item) => item.brand === selectedBrand);
+    return [...base].sort((a, b) => {
+      if (a.sortNo != null && b.sortNo != null) return a.sortNo - b.sortNo;
+      if (a.sortNo != null) return -1;
+      if (b.sortNo != null) return 1;
+      return 0;
+    });
   }, [order, selectedBrand]);
 
   const visibleTotal = useMemo(
@@ -356,6 +361,9 @@ export default function OrderDetailScreen() {
                 {idx > 0 && <View style={styles.itemDivider} />}
                 <View style={styles.itemRow}>
                   <View style={styles.itemInfo}>
+                    {item.sortNo != null ? (
+                      <Text style={styles.itemSortNo}>#{item.sortNo}</Text>
+                    ) : null}
                     <Text style={styles.itemName}>{item.name}</Text>
                     {item.brand ? (
                       <Text style={styles.itemBrand}>{item.brand}</Text>
@@ -475,6 +483,7 @@ const styles = StyleSheet.create({
   },
   itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
   itemInfo: { flex: 1, marginRight: 12 },
+  itemSortNo: { fontSize: 10, fontWeight: "700", color: Colors.textMuted, marginBottom: 1 },
   itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
   itemBrand: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginBottom: 3 },
   itemMeta: { fontSize: 12, color: Colors.textMuted },

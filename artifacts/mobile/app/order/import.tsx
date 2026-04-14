@@ -31,6 +31,7 @@ interface ParsedRow {
   Brand: string;
   Beat: string;
   Stock: number;
+  SortNo: number;
 }
 
 interface VendorGroup {
@@ -168,6 +169,7 @@ export default function ImportOrderScreen() {
         Brand: String(row["Brand"] ?? "").trim(),
         Beat: String(row["Beat"] ?? "").trim(),
         Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
+        SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -232,6 +234,7 @@ export default function ImportOrderScreen() {
         unit: row["UOM"] || "pcs",
         unitPrice: row["MRP"] || 0,
         stock: row["Stock"] || undefined,
+        sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
       }));
       return {
         supplierId: supplier.id,

@@ -776,13 +776,21 @@ function VendorOrderCard({
           </View>
           <View style={cardStyles.tableHeader}>
             {modifyMode && <View style={{ width: 32 }} />}
+            <Text style={[cardStyles.th, { width: 36 }]}>S.No</Text>
             <Text style={[cardStyles.th, { flex: 3 }]}>Item</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>Qty</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>UOM</Text>
             {showStock && <Text style={[cardStyles.th, cardStyles.right]}>Stock</Text>}
             <Text style={[cardStyles.th, cardStyles.right]}>MRP</Text>
           </View>
-          {order.items.map((item, i) => {
+          {[...order.items]
+            .sort((a, b) => {
+              if (a.sortNo != null && b.sortNo != null) return a.sortNo - b.sortNo;
+              if (a.sortNo != null) return -1;
+              if (b.sortNo != null) return 1;
+              return 0;
+            })
+            .map((item, i) => {
             const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
             const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
             const isChecked = checkedIds.has(item.id);
@@ -808,6 +816,9 @@ function VendorOrderCard({
                     />
                   </TouchableOpacity>
                 )}
+                <Text style={cardStyles.sortNoCell}>
+                  {item.sortNo != null ? item.sortNo : "—"}
+                </Text>
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
                   <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
@@ -1063,6 +1074,7 @@ const cardStyles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   saveModifyText: { fontSize: 13, fontWeight: "700", color: Colors.textInverse },
+  sortNoCell: { width: 36, fontSize: 11, fontWeight: "700", color: Colors.textMuted, textAlign: "center" },
   checkboxCol: { width: 32, alignItems: "center", justifyContent: "center" },
   rowUnchecked: { opacity: 0.4 },
   tdStrike: { textDecorationLine: "line-through" },
