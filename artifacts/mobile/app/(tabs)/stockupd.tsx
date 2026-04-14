@@ -41,11 +41,13 @@ function StockUpdCard({
   order,
   activeBrand,
   itemSearch,
+  negStockOnly,
   onSave,
 }: {
   order: Order;
   activeBrand: string;
   itemSearch: string;
+  negStockOnly: boolean;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -58,7 +60,7 @@ function StockUpdCard({
       activeBrand === "all"
         ? order.items
         : order.items.filter((it) => it.brand === activeBrand);
-    const base = q
+    let base = q
       ? brandFiltered.filter((it) => {
           const desc = it.name.includes(" - ")
             ? it.name.split(" - ").slice(1).join(" - ")
@@ -66,6 +68,9 @@ function StockUpdCard({
           return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
         })
       : brandFiltered;
+    if (negStockOnly) {
+      base = base.filter((it) => it.stock != null && it.stock < 0);
+    }
     return [...base].sort((a, b) => {
       const ba = (a.brand ?? "").toLowerCase();
       const bb = (b.brand ?? "").toLowerCase();
@@ -277,6 +282,7 @@ export default function StockUpdScreen() {
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
+  const [negStockOnly, setNegStockOnly] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const statusFiltered = useMemo(() => {
@@ -296,7 +302,7 @@ export default function StockUpdScreen() {
 
   const filtered = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
-    return statusFiltered.filter((o) => {
+    let result = statusFiltered.filter((o) => {
       const brandOk =
         activeBrand === "all" || o.items.some((it) => it.brand === activeBrand);
       if (!brandOk) return false;
@@ -308,7 +314,13 @@ export default function StockUpdScreen() {
         return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
       });
     });
-  }, [statusFiltered, activeBrand, itemSearch]);
+    if (negStockOnly) {
+      result = result.filter((o) =>
+        o.items.some((it) => it.stock != null && it.stock < 0)
+      );
+    }
+    return result;
+  }, [statusFiltered, activeBrand, itemSearch, negStockOnly]);
 
   function brandOrderCount(brand: string): number {
     return statusFiltered.filter((o) =>
@@ -563,6 +575,30 @@ export default function StockUpdScreen() {
         )}
       </TouchableOpacity>
 
+      {/* Negative Stock Only toggle */}
+      <TouchableOpacity
+        style={[styles.negStockToggle, negStockOnly && styles.negStockToggleActive]}
+        onPress={() => setNegStockOnly((v) => !v)}
+        activeOpacity={0.75}
+      >
+        <Feather
+          name="trending-down"
+          size={14}
+          color={negStockOnly ? Colors.textInverse : Colors.textSecondary}
+        />
+        <Text style={[styles.negStockToggleText, negStockOnly && styles.negStockToggleTextActive]}>
+          Neg. Stock Only
+        </Text>
+        {negStockOnly && (
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); setNegStockOnly(false); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="x-circle" size={15} color={Colors.textInverse} />
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+
       {/* Item description search bar */}
       <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
         <Feather name="search" size={14} color={itemSearch.length > 0 ? Colors.primary : Colors.textMuted} />
@@ -587,7 +623,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} activeBrand={activeBrand} itemSearch={itemSearch} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} activeBrand={activeBrand} itemSearch={itemSearch} negStockOnly={negStockOnly} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
@@ -933,4 +969,30 @@ const styles = StyleSheet.create({
   brandName: { flex: 1, fontSize: 15, fontWeight: "600", color: Colors.text },
   brandNameActive: { color: Colors.primary },
   brandCount: { fontSize: 12, color: Colors.textMuted, marginRight: 4 },
+  negStockToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  negStockToggleActive: {
+    backgroundColor: Colors.danger,
+    borderColor: Colors.danger,
+  },
+  negStockToggleText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  negStockToggleTextActive: {
+    color: Colors.textInverse,
+  },
 });
