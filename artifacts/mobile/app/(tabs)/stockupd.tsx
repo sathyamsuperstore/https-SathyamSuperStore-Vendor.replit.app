@@ -39,29 +39,33 @@ function calcTotal(items: OrderItem[]): number {
 
 function StockUpdCard({
   order,
+  activeBrand,
   onSave,
 }: {
   order: Order;
+  activeBrand: string;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
 
-  const sortedItems = useMemo(
-    () =>
-      [...order.items].sort((a, b) => {
-        const ba = (a.brand ?? "").toLowerCase();
-        const bb = (b.brand ?? "").toLowerCase();
-        if (ba < bb) return -1;
-        if (ba > bb) return 1;
-        if (a.sortNo != null && b.sortNo != null) return b.sortNo - a.sortNo;
-        if (a.sortNo != null) return -1;
-        if (b.sortNo != null) return 1;
-        return 0;
-      }),
-    [order.items]
-  );
+  const sortedItems = useMemo(() => {
+    const base =
+      activeBrand === "all"
+        ? order.items
+        : order.items.filter((it) => it.brand === activeBrand);
+    return [...base].sort((a, b) => {
+      const ba = (a.brand ?? "").toLowerCase();
+      const bb = (b.brand ?? "").toLowerCase();
+      if (ba < bb) return -1;
+      if (ba > bb) return 1;
+      if (a.sortNo != null && b.sortNo != null) return b.sortNo - a.sortNo;
+      if (a.sortNo != null) return -1;
+      if (b.sortNo != null) return 1;
+      return 0;
+    });
+  }, [order.items, activeBrand]);
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
@@ -100,7 +104,9 @@ function StockUpdCard({
       >
         <View style={{ flex: 1 }}>
           <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
-          <Text style={cardSt.orderNo}>{order.orderNumber}  ·  {order.items.length} items</Text>
+          <Text style={cardSt.orderNo}>
+            {order.orderNumber}  ·  {sortedItems.length}{activeBrand !== "all" ? ` of ${order.items.length}` : ""} items
+          </Text>
         </View>
         <StatusBadge status={order.status} />
         <Feather
@@ -534,7 +540,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} activeBrand={activeBrand} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
