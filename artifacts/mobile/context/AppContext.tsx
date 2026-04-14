@@ -40,6 +40,7 @@ export interface OrderItem {
   unitPrice: number;
   stock?: number;
   sortNo?: number;
+  newStockQty?: number;
 }
 
 export interface Order {

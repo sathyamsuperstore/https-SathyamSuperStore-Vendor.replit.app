@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -40,11 +41,12 @@ function formatCurrency(amount: number): string {
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { orders, updateOrderStatus, deleteOrder } = useApp();
+  const { orders, updateOrderStatus, deleteOrder, updateOrder } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [downloading, setDownloading] = useState(false);
+  const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -219,6 +221,17 @@ export default function OrderDetailScreen() {
     }
   }
 
+  function saveNewStockQty(itemId: string, value: string) {
+    if (!order) return;
+    const parsed = parseFloat(value);
+    const qty = isNaN(parsed) || value.trim() === "" ? undefined : parsed;
+    updateOrder(order.id, {
+      items: order.items.map((it) =>
+        it.id === itemId ? { ...it, newStockQty: qty } : it
+      ),
+    });
+  }
+
   function handleDelete() {
     Alert.alert("Delete Order", "This action cannot be undone.", [
       { text: "Cancel", style: "cancel" },
@@ -372,6 +385,24 @@ export default function OrderDetailScreen() {
                       {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
                       {item.stock != null ? `  ·  Stock: ${item.stock}` : ""}
                     </Text>
+                    <View style={styles.newStockRow}>
+                      <Text style={styles.newStockLabel}>New Stock Qty:</Text>
+                      <TextInput
+                        style={styles.newStockInput}
+                        value={newStockQtyEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "")}
+                        onChangeText={(v) =>
+                          setNewStockQtyEdits((prev) => ({ ...prev, [item.id]: v }))
+                        }
+                        onBlur={() => {
+                          const val = newStockQtyEdits[item.id];
+                          if (val !== undefined) saveNewStockQty(item.id, val);
+                        }}
+                        placeholder="—"
+                        placeholderTextColor={Colors.textMuted}
+                        keyboardType="decimal-pad"
+                        selectTextOnFocus
+                      />
+                    </View>
                   </View>
                   <Text style={styles.itemTotal}>
                     {formatCurrency(item.quantity * item.unitPrice)}
@@ -487,6 +518,19 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
   itemBrand: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginBottom: 3 },
   itemMeta: { fontSize: 12, color: Colors.textMuted },
+  newStockRow: { flexDirection: "row", alignItems: "center", marginTop: 6, gap: 8 },
+  newStockLabel: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
+  newStockInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    borderBottomWidth: 1.5,
+    borderBottomColor: Colors.primary,
+    paddingVertical: 2,
+    minWidth: 60,
+    maxWidth: 100,
+  },
   itemTotal: { fontSize: 14, fontWeight: "700", color: Colors.text },
   itemDivider: { height: 1, backgroundColor: Colors.border },
   totalLabel: { fontSize: 15, fontWeight: "700", color: Colors.text },
