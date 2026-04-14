@@ -267,7 +267,7 @@ const cardSt = StyleSheet.create({
   },
   itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
-  itemMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
   inputRow: {
     flexDirection: "row",
     gap: 10,
