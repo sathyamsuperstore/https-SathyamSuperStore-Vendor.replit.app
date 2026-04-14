@@ -182,7 +182,7 @@ export default function DashboardScreen() {
                 : item.itemName;
               return (
                 <TouchableOpacity
-                  key={item.itemId}
+                  key={`${item.orderId}:${item.itemId}`}
                   style={[
                     styles.negStockRow,
                     idx % 2 !== 0 && styles.negStockRowAlt,
