@@ -31,6 +31,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "tray", selected: "tray.fill" }} />
         <Label>My Orders</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="stockupd">
+        <Icon sf={{ default: "square.and.arrow.up", selected: "square.and.arrow.up.fill" }} />
+        <Label>StockUpd</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -124,6 +128,18 @@ function ClassicTabLayout() {
               <SymbolView name="tray" tintColor={color} size={24} />
             ) : (
               <Feather name="inbox" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="stockupd"
+        options={{
+          title: "StockUpd",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="square.and.arrow.up" tintColor={color} size={24} />
+            ) : (
+              <Feather name="upload-cloud" size={22} color={color} />
             ),
         }}
       />
