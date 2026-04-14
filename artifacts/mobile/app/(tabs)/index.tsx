@@ -15,8 +15,6 @@ import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 import { StatCard } from "@/components/StatCard";
 import { OrderCard } from "@/components/OrderCard";
-import { StatusBadge } from "@/components/StatusBadge";
-import { OrderStatus } from "@/context/AppContext";
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
@@ -42,6 +40,32 @@ export default function DashboardScreen() {
   }, [orders]);
 
   const recentOrders = useMemo(() => orders.slice(0, 4), [orders]);
+
+  const negativeStockItems = useMemo(() => {
+    const items: {
+      itemId: string;
+      orderId: string;
+      supplierName: string;
+      itemName: string;
+      brand?: string;
+      stock: number;
+    }[] = [];
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (item.stock != null && item.stock < 0) {
+          items.push({
+            itemId: item.id,
+            orderId: order.id,
+            supplierName: order.supplierName,
+            itemName: item.name,
+            brand: item.brand,
+            stock: item.stock,
+          });
+        }
+      }
+    }
+    return items.sort((a, b) => a.stock - b.stock);
+  }, [orders]);
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
 
@@ -120,6 +144,15 @@ export default function DashboardScreen() {
             bg={Colors.statusDeliveredBg}
           />
         </View>
+        <View style={styles.statsRow}>
+          <StatCard
+            label="Neg. Stock"
+            value={negativeStockItems.length}
+            icon="trending-down"
+            color={Colors.danger}
+            bg={Colors.dangerLight}
+          />
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -133,6 +166,44 @@ export default function DashboardScreen() {
           <OrderCard key={order.id} order={order} />
         ))}
       </View>
+
+      {negativeStockItems.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Negative Stock</Text>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/stockupd")}>
+              <Text style={styles.seeAll}>See all</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.negStockCard}>
+            {negativeStockItems.slice(0, 4).map((item, idx) => {
+              const desc = item.itemName.includes(" - ")
+                ? item.itemName.split(" - ").slice(1).join(" - ")
+                : item.itemName;
+              return (
+                <TouchableOpacity
+                  key={item.itemId}
+                  style={[
+                    styles.negStockRow,
+                    idx % 2 !== 0 && styles.negStockRowAlt,
+                    idx > 0 && styles.negStockRowBorder,
+                  ]}
+                  onPress={() => router.push(`/order/${item.orderId}`)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.negStockInfo}>
+                    <Text style={styles.negStockName} numberOfLines={1}>{desc}</Text>
+                    <Text style={styles.negStockMeta} numberOfLines={1}>
+                      {[item.brand, item.supplierName].filter(Boolean).join("  ·  ")}
+                    </Text>
+                  </View>
+                  <Text style={styles.negStockValue}>{item.stock}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -183,4 +254,23 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   seeAll: { fontSize: 14, color: Colors.primaryLight, fontWeight: "600" },
+  negStockCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.danger + "40",
+    overflow: "hidden",
+  },
+  negStockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  negStockRowAlt: { backgroundColor: Colors.dangerLight + "50" },
+  negStockRowBorder: { borderTopWidth: 1, borderTopColor: Colors.danger + "20" },
+  negStockInfo: { flex: 1, marginRight: 12 },
+  negStockName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
+  negStockMeta: { fontSize: 12, color: Colors.textMuted },
+  negStockValue: { fontSize: 16, fontWeight: "800", color: Colors.danger },
 });
