@@ -40,10 +40,12 @@ function calcTotal(items: OrderItem[]): number {
 function StockUpdCard({
   order,
   activeBrand,
+  itemSearch,
   onSave,
 }: {
   order: Order;
   activeBrand: string;
+  itemSearch: string;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -51,10 +53,19 @@ function StockUpdCard({
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
 
   const sortedItems = useMemo(() => {
-    const base =
+    const q = itemSearch.trim().toLowerCase();
+    const brandFiltered =
       activeBrand === "all"
         ? order.items
         : order.items.filter((it) => it.brand === activeBrand);
+    const base = q
+      ? brandFiltered.filter((it) => {
+          const desc = it.name.includes(" - ")
+            ? it.name.split(" - ").slice(1).join(" - ")
+            : it.name;
+          return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+        })
+      : brandFiltered;
     return [...base].sort((a, b) => {
       const ba = (a.brand ?? "").toLowerCase();
       const bb = (b.brand ?? "").toLowerCase();
@@ -265,6 +276,7 @@ export default function StockUpdScreen() {
   const [activeBrand, setActiveBrand] = useState<string>("all");
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   const statusFiltered = useMemo(() => {
@@ -283,11 +295,20 @@ export default function StockUpdScreen() {
   }, [statusFiltered]);
 
   const filtered = useMemo(() => {
-    if (activeBrand === "all") return statusFiltered;
-    return statusFiltered.filter((o) =>
-      o.items.some((item) => item.brand === activeBrand)
-    );
-  }, [statusFiltered, activeBrand]);
+    const q = itemSearch.trim().toLowerCase();
+    return statusFiltered.filter((o) => {
+      const brandOk =
+        activeBrand === "all" || o.items.some((it) => it.brand === activeBrand);
+      if (!brandOk) return false;
+      if (!q) return true;
+      return o.items.some((it) => {
+        const desc = it.name.includes(" - ")
+          ? it.name.split(" - ").slice(1).join(" - ")
+          : it.name;
+        return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+      });
+    });
+  }, [statusFiltered, activeBrand, itemSearch]);
 
   function brandOrderCount(brand: string): number {
     return statusFiltered.filter((o) =>
@@ -536,11 +557,31 @@ export default function StockUpdScreen() {
         )}
       </TouchableOpacity>
 
+      {/* Item description search bar */}
+      <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
+        <Feather name="search" size={14} color={itemSearch.length > 0 ? Colors.primary : Colors.textMuted} />
+        <TextInput
+          style={styles.itemSearchInput}
+          value={itemSearch}
+          onChangeText={setItemSearch}
+          placeholder="Search by Item Description…"
+          placeholderTextColor={Colors.textMuted}
+          autoCorrect={false}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+        {itemSearch.length > 0 && Platform.OS !== "ios" && (
+          <TouchableOpacity onPress={() => setItemSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Feather name="x" size={14} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} activeBrand={activeBrand} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} activeBrand={activeBrand} itemSearch={itemSearch} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
@@ -783,6 +824,29 @@ const styles = StyleSheet.create({
   },
   brandBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   brandBarTextActive: { color: Colors.textInverse },
+  itemSearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  itemSearchBarActive: {
+    borderColor: Colors.primary,
+  },
+  itemSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.text,
+    paddingVertical: 0,
+  },
   list: { paddingHorizontal: 20, paddingTop: 8 },
   listEmpty: { flex: 1 },
   modalBackdrop: {
