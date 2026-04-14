@@ -317,16 +317,14 @@ export default function StockUpdScreen() {
   }
 
   async function handleExport() {
-    if (filtered.length === 0) {
-      Alert.alert("Nothing to Export", "No orders match the current filters.");
-      return;
-    }
     try {
       setDownloading(true);
       const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty"];
       const dataRows: (string | number)[][] = [];
-      for (const order of filtered) {
+      const suppliersWithData = new Set<string>();
+      for (const order of orders) {
         for (const item of order.items) {
+          if (item.newStockQty == null) continue;
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           dataRows.push([
             desc,
@@ -335,11 +333,17 @@ export default function StockUpdScreen() {
             item.unitPrice,
             item.stock ?? "",
             item.quantity,
-            item.newStockQty ?? "",
+            item.newStockQty,
           ]);
+          suppliersWithData.add(order.supplierName);
         }
       }
-      const uniqueSuppliers = [...new Set(filtered.map((o) => o.supplierName))].join(", ");
+      if (dataRows.length === 0) {
+        Alert.alert("Nothing to Export", "No items have a New Stock Qty value yet.");
+        setDownloading(false);
+        return;
+      }
+      const uniqueSuppliers = [...suppliersWithData].sort().join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
         ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", ""],
@@ -462,14 +466,14 @@ export default function StockUpdScreen() {
           <TouchableOpacity
             style={styles.exportBtn}
             onPress={handleExport}
-            disabled={downloading || filtered.length === 0}
+            disabled={downloading}
           >
             {downloading ? (
               <ActivityIndicator size="small" color={Colors.primary} />
             ) : (
-              <Feather name="download" size={17} color={filtered.length === 0 ? Colors.textMuted : Colors.primary} />
+              <Feather name="download" size={17} color={Colors.primary} />
             )}
-            <Text style={[styles.exportBtnText, filtered.length === 0 && styles.exportBtnTextDisabled]}>
+            <Text style={styles.exportBtnText}>
               Export
             </Text>
           </TouchableOpacity>
