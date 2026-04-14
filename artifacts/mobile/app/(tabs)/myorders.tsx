@@ -785,7 +785,11 @@ function VendorOrderCard({
           </View>
           {[...order.items]
             .sort((a, b) => {
-              if (a.sortNo != null && b.sortNo != null) return a.sortNo - b.sortNo;
+              const brandA = (a.brand ?? "").toLowerCase();
+              const brandB = (b.brand ?? "").toLowerCase();
+              if (brandA < brandB) return -1;
+              if (brandA > brandB) return 1;
+              if (a.sortNo != null && b.sortNo != null) return b.sortNo - a.sortNo;
               if (a.sortNo != null) return -1;
               if (b.sortNo != null) return 1;
               return 0;
