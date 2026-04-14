@@ -81,7 +81,7 @@ function StockUpdCard({
       if (b.sortNo != null) return 1;
       return 0;
     });
-  }, [order.items, activeBrand]);
+  }, [order.items, activeBrand, itemSearch, negStockOnly]);
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
