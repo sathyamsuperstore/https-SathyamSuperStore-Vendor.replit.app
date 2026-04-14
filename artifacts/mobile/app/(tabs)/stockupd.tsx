@@ -319,14 +319,16 @@ export default function StockUpdScreen() {
   async function handleExport() {
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty"];
+      const colHeader = ["Item No", "Item Description", "Brand", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty"];
       const dataRows: (string | number)[][] = [];
       const suppliersWithData = new Set<string>();
       for (const order of orders) {
         for (const item of order.items) {
           if (item.newStockQty == null) continue;
+          const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           dataRows.push([
+            itemNo,
             desc,
             item.brand ?? "",
             item.unit,
@@ -346,30 +348,30 @@ export default function StockUpdScreen() {
       const uniqueSuppliers = [...suppliersWithData].sort().join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", ""],
-        ["Accounts: 97868-64868",                                                "", "",            "", "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", ""],
-        ["", "", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", ""],
+        ["Accounts: 97868-64868",                                                "", "",            "", "", "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", "", ""],
-        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,     "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+        { wch: 14 }, { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
       ];
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
-        const cellRef = `A${dataStartRow + i}`;
-        if (ws[cellRef]) {
-          ws[cellRef].s = { alignment: { wrapText: true, vertical: "top" } };
+        const cellRefB = `B${dataStartRow + i}`;
+        if (ws[cellRefB]) {
+          ws[cellRefB].s = { alignment: { wrapText: true, vertical: "top" } };
         }
       }
       ws["!pageSetup"] = {
