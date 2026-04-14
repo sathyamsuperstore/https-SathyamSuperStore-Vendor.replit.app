@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -20,8 +20,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus } from "@/context/AppContext";
-import { OrderCard } from "@/components/OrderCard";
+import { useApp, OrderStatus, Order, OrderItem } from "@/context/AppContext";
+import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 
 const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
@@ -33,8 +33,226 @@ const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
+function calcTotal(items: OrderItem[]): number {
+  return items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
+}
+
+function StockUpdCard({
+  order,
+  onSave,
+}: {
+  order: Order;
+  onSave: (id: string, items: OrderItem[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
+  const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
+
+  const sortedItems = useMemo(
+    () =>
+      [...order.items].sort((a, b) => {
+        const ba = (a.brand ?? "").toLowerCase();
+        const bb = (b.brand ?? "").toLowerCase();
+        if (ba < bb) return -1;
+        if (ba > bb) return 1;
+        if (a.sortNo != null && b.sortNo != null) return b.sortNo - a.sortNo;
+        if (a.sortNo != null) return -1;
+        if (b.sortNo != null) return 1;
+        return 0;
+      }),
+    [order.items]
+  );
+
+  const dirty =
+    Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
+    Object.keys(nsqEdits).length > 0;
+
+  function handleSave() {
+    const updated = order.items.map((item) => {
+      const qStr = qtyEdits[item.id];
+      const nStr = nsqEdits[item.id];
+      const qty =
+        qStr !== undefined
+          ? isNaN(parseFloat(qStr)) || qStr.trim() === ""
+            ? item.quantity
+            : parseFloat(qStr)
+          : item.quantity;
+      const nsq =
+        nStr !== undefined
+          ? isNaN(parseFloat(nStr)) || nStr.trim() === ""
+            ? undefined
+            : parseFloat(nStr)
+          : item.newStockQty;
+      return { ...item, quantity: qty, newStockQty: nsq };
+    });
+    onSave(order.id, updated);
+    setQtyEdits({});
+    setNsqEdits({});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  return (
+    <View style={cardSt.card}>
+      <TouchableOpacity
+        style={cardSt.header}
+        onPress={() => setExpanded((v) => !v)}
+        activeOpacity={0.75}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
+          <Text style={cardSt.orderNo}>{order.orderNumber}  ·  {order.items.length} items</Text>
+        </View>
+        <StatusBadge status={order.status} />
+        <Feather
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={Colors.textMuted}
+          style={{ marginLeft: 8 }}
+        />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={cardSt.body}>
+          {/* Table header */}
+          <View style={cardSt.tableHeader}>
+            <Text style={[cardSt.th, { width: 32 }]}>S.No</Text>
+            <Text style={[cardSt.th, { flex: 3 }]}>Item</Text>
+            <Text style={[cardSt.th, cardSt.right, { width: 62 }]}>Ord Qty</Text>
+            <Text style={[cardSt.th, cardSt.right, { width: 72 }]}>New Stock</Text>
+          </View>
+
+          {sortedItems.map((item, idx) => {
+            const desc = item.name.includes(" - ")
+              ? item.name.split(" - ").slice(1).join(" - ")
+              : item.name;
+            const qtyVal = qtyEdits[item.id] ?? String(item.quantity);
+            const nsqVal = nsqEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "");
+            return (
+              <View
+                key={item.id}
+                style={[cardSt.tableRow, idx % 2 === 0 && cardSt.rowAlt]}
+              >
+                <Text style={[cardSt.td, { width: 32, textAlign: "center", color: Colors.textMuted, fontSize: 11 }]}>
+                  {item.sortNo ?? "—"}
+                </Text>
+                <View style={{ flex: 3 }}>
+                  <Text style={cardSt.itemName} numberOfLines={2}>{desc}</Text>
+                  {item.brand ? (
+                    <Text style={cardSt.itemBrand}>{item.brand}</Text>
+                  ) : null}
+                  <Text style={cardSt.itemMeta}>
+                    {item.unit}  ·  MRP {item.unitPrice}
+                    {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
+                  </Text>
+                </View>
+                <TextInput
+                  style={[cardSt.qtyInput, { width: 62 }]}
+                  value={qtyVal}
+                  onChangeText={(v) =>
+                    setQtyEdits((prev) => ({ ...prev, [item.id]: v }))
+                  }
+                  keyboardType="decimal-pad"
+                  selectTextOnFocus
+                />
+                <TextInput
+                  style={[cardSt.qtyInput, { width: 72 }]}
+                  value={nsqVal}
+                  onChangeText={(v) =>
+                    setNsqEdits((prev) => ({ ...prev, [item.id]: v }))
+                  }
+                  placeholder="—"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="decimal-pad"
+                  selectTextOnFocus
+                />
+              </View>
+            );
+          })}
+
+          <TouchableOpacity
+            style={[cardSt.saveBtn, !dirty && cardSt.saveBtnDisabled]}
+            onPress={handleSave}
+            disabled={!dirty}
+            activeOpacity={0.8}
+          >
+            <Feather name="save" size={15} color={dirty ? Colors.textInverse : Colors.textMuted} />
+            <Text style={[cardSt.saveBtnText, !dirty && cardSt.saveBtnTextDisabled]}>
+              Save Changes
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const cardSt = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+  },
+  supplier: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  orderNo: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  body: { borderTopWidth: 1, borderTopColor: Colors.border },
+  tableHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceSecondary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 4,
+  },
+  th: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
+  right: { textAlign: "right" },
+  tableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  rowAlt: { backgroundColor: Colors.surfaceSecondary + "60" },
+  td: { fontSize: 13, color: Colors.text },
+  itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
+  itemMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  qtyInput: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    textAlign: "right",
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  saveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    margin: 12,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  saveBtnDisabled: { backgroundColor: Colors.surfaceSecondary, borderWidth: 1, borderColor: Colors.border },
+  saveBtnText: { fontSize: 14, fontWeight: "700", color: Colors.textInverse },
+  saveBtnTextDisabled: { color: Colors.textMuted },
+});
+
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
@@ -194,6 +412,13 @@ export default function StockUpdScreen() {
     );
   }
 
+  const handleSaveOrder = useCallback(
+    (orderId: string, items: OrderItem[]) => {
+      updateOrder(orderId, { items, totalAmount: calcTotal(items) });
+    },
+    [updateOrder]
+  );
+
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
   const brandActive = activeBrand !== "all";
 
@@ -308,10 +533,9 @@ export default function StockUpdScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const vendorCode = suppliers.find((s) => s.id === item.supplierId)?.vendorCode ?? "";
-          return <OrderCard order={item} vendorCode={vendorCode} />;
-        }}
+        renderItem={({ item }) => (
+          <StockUpdCard order={item} onSave={handleSaveOrder} />
+        )}
         contentContainerStyle={[
           styles.list,
           { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 100 },
