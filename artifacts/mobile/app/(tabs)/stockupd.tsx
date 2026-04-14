@@ -138,9 +138,7 @@ function StockUpdCard({
           {/* Table header */}
           <View style={cardSt.tableHeader}>
             <Text style={[cardSt.th, { width: 32 }]}>S.No</Text>
-            <Text style={[cardSt.th, { flex: 3 }]}>Item</Text>
-            <Text style={[cardSt.th, cardSt.right, { width: 62 }]}>Ord Qty</Text>
-            <Text style={[cardSt.th, cardSt.right, { width: 72 }]}>New Stock</Text>
+            <Text style={[cardSt.th, { flex: 1 }]}>Item Description</Text>
           </View>
 
           {sortedItems.map((item, idx) => {
@@ -154,39 +152,51 @@ function StockUpdCard({
                 key={item.id}
                 style={[cardSt.tableRow, idx % 2 === 0 && cardSt.rowAlt]}
               >
-                <Text style={[cardSt.td, { width: 32, textAlign: "center", color: Colors.textMuted, fontSize: 11 }]}>
-                  {item.sortNo ?? "—"}
-                </Text>
-                <View style={{ flex: 3 }}>
-                  <Text style={cardSt.itemName} numberOfLines={2}>{desc}</Text>
-                  {item.brand ? (
-                    <Text style={cardSt.itemBrand}>{item.brand}</Text>
-                  ) : null}
-                  <Text style={cardSt.itemMeta}>
-                    {item.unit}  ·  MRP {item.unitPrice}
-                    {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
+                {/* Top: S.No + full-width item info */}
+                <View style={cardSt.itemTopRow}>
+                  <Text style={cardSt.sortNoCell}>
+                    {item.sortNo ?? "—"}
                   </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={cardSt.itemName}>{desc}</Text>
+                    {item.brand ? (
+                      <Text style={cardSt.itemBrand}>{item.brand}</Text>
+                    ) : null}
+                    <Text style={cardSt.itemMeta}>
+                      {item.unit}  ·  MRP {item.unitPrice}
+                      {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
+                    </Text>
+                  </View>
                 </View>
-                <TextInput
-                  style={[cardSt.qtyInput, { width: 62 }]}
-                  value={qtyVal}
-                  onChangeText={(v) =>
-                    setQtyEdits((prev) => ({ ...prev, [item.id]: v }))
-                  }
-                  keyboardType="decimal-pad"
-                  selectTextOnFocus
-                />
-                <TextInput
-                  style={[cardSt.qtyInput, { width: 72 }]}
-                  value={nsqVal}
-                  onChangeText={(v) =>
-                    setNsqEdits((prev) => ({ ...prev, [item.id]: v }))
-                  }
-                  placeholder="—"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="decimal-pad"
-                  selectTextOnFocus
-                />
+                {/* Bottom: inputs with labels */}
+                <View style={cardSt.inputRow}>
+                  <View style={cardSt.inputGroup}>
+                    <Text style={cardSt.inputLabel}>Ord Qty</Text>
+                    <TextInput
+                      style={cardSt.qtyInput}
+                      value={qtyVal}
+                      onChangeText={(v) =>
+                        setQtyEdits((prev) => ({ ...prev, [item.id]: v }))
+                      }
+                      keyboardType="decimal-pad"
+                      selectTextOnFocus
+                    />
+                  </View>
+                  <View style={cardSt.inputGroup}>
+                    <Text style={cardSt.inputLabel}>New Stock</Text>
+                    <TextInput
+                      style={cardSt.qtyInput}
+                      value={nsqVal}
+                      onChangeText={(v) =>
+                        setNsqEdits((prev) => ({ ...prev, [item.id]: v }))
+                      }
+                      placeholder="—"
+                      placeholderTextColor={Colors.textMuted}
+                      keyboardType="decimal-pad"
+                      selectTextOnFocus
+                    />
+                  </View>
+                </View>
               </View>
             );
           })}
@@ -236,17 +246,44 @@ const cardSt = StyleSheet.create({
   th: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   right: { textAlign: "right" },
   tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
     paddingHorizontal: 10,
     paddingVertical: 8,
-    gap: 4,
+    gap: 8,
   },
   rowAlt: { backgroundColor: Colors.surfaceSecondary + "60" },
   td: { fontSize: 13, color: Colors.text },
+  itemTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+  },
+  sortNoCell: {
+    width: 28,
+    textAlign: "center",
+    fontSize: 11,
+    color: Colors.textMuted,
+    paddingTop: 2,
+  },
   itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
   itemMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  inputRow: {
+    flexDirection: "row",
+    gap: 10,
+    paddingLeft: 34,
+  },
+  inputGroup: {
+    flex: 1,
+    gap: 4,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   qtyInput: {
     fontSize: 13,
     fontWeight: "700",
@@ -256,7 +293,7 @@ const cardSt = StyleSheet.create({
     borderColor: Colors.primary,
     borderRadius: 6,
     paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
   saveBtn: {
     flexDirection: "row",
