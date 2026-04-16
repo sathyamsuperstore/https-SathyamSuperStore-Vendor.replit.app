@@ -38,7 +38,7 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
-  const [activeBrand, setActiveBrand] = useState<string>("all");
+  const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [downloading, setDownloading] = useState(false);
@@ -59,11 +59,17 @@ export default function OrdersScreen() {
   }, [statusFiltered]);
 
   const filtered = useMemo(() => {
-    if (activeBrand === "all") return statusFiltered;
+    if (activeBrands.length === 0) return statusFiltered;
     return statusFiltered.filter((o) =>
-      o.items.some((item) => item.brand === activeBrand)
+      o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
     );
-  }, [statusFiltered, activeBrand]);
+  }, [statusFiltered, activeBrands]);
+
+  function toggleBrand(brand: string) {
+    setActiveBrands((prev) =>
+      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
+    );
+  }
 
   function brandOrderCount(brand: string): number {
     return statusFiltered.filter((o) =>
@@ -173,7 +179,7 @@ export default function OrdersScreen() {
       if (window.confirm(`Remove All Orders\n\n${msg}`)) {
         clearAllOrders();
         setActiveFilter("all");
-        setActiveBrand("all");
+        setActiveBrands([]);
       }
       return;
     }
@@ -188,7 +194,7 @@ export default function OrdersScreen() {
           onPress: () => {
             clearAllOrders();
             setActiveFilter("all");
-            setActiveBrand("all");
+            setActiveBrands([]);
           },
         },
       ]
@@ -196,7 +202,12 @@ export default function OrdersScreen() {
   }
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
-  const brandActive = activeBrand !== "all";
+  const brandActive = activeBrands.length > 0;
+  const brandBarLabel = activeBrands.length === 0
+    ? "Filter by Brand"
+    : activeBrands.length === 1
+    ? activeBrands[0]
+    : `${activeBrands.length} Brands`;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -262,7 +273,7 @@ export default function OrdersScreen() {
             <TouchableOpacity
               key={f.key}
               style={[styles.filter, isActive && styles.filterActive]}
-              onPress={() => { setActiveFilter(f.key); setActiveBrand("all"); }}
+              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); }}
             >
               <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
                 {f.label}
@@ -293,11 +304,11 @@ export default function OrdersScreen() {
           style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
           numberOfLines={1}
         >
-          {brandActive ? `Brand: ${activeBrand}` : "Filter by Brand"}
+          {brandBarLabel}
         </Text>
         {brandActive ? (
           <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveBrand("all"); }}
+            onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Feather name="x-circle" size={15} color={Colors.textInverse} />
@@ -325,7 +336,7 @@ export default function OrdersScreen() {
             title="No orders found"
             subtitle={
               brandActive
-                ? `No orders with brand "${activeBrand}"`
+                ? `No orders match the selected brand${activeBrands.length !== 1 ? "s" : ""}`
                 : activeFilter === "all"
                 ? "Tap the + button to create your first order"
                 : `No ${activeFilter} orders at the moment`
@@ -352,10 +363,8 @@ export default function OrdersScreen() {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Filter by Brand</Text>
             {brandActive && (
-              <TouchableOpacity
-                onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
-              >
-                <Text style={styles.modalClear}>Clear</Text>
+              <TouchableOpacity onPress={() => setActiveBrands([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -397,14 +406,14 @@ export default function OrdersScreen() {
                   <>
                     {!q && (
                       <TouchableOpacity
-                        style={[styles.brandRow, activeBrand === "all" && styles.brandRowActive]}
-                        onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+                        style={[styles.brandRow, activeBrands.length === 0 && styles.brandRowActive]}
+                        onPress={() => { setActiveBrands([]); setShowBrandModal(false); }}
                       >
-                        <Text style={[styles.brandName, activeBrand === "all" && styles.brandNameActive]}>
+                        <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>
                           All Brands
                         </Text>
                         <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
-                        {activeBrand === "all" && <Feather name="check" size={16} color={Colors.primary} />}
+                        {activeBrands.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
                     {visibleBrands.length === 0 ? (
@@ -415,20 +424,23 @@ export default function OrdersScreen() {
                       </View>
                     ) : (
                       visibleBrands.map((brand) => {
-                        const isActive = activeBrand === brand;
+                        const isSelected = activeBrands.includes(brand);
                         const count = brandOrderCount(brand);
                         return (
                           <TouchableOpacity
                             key={brand}
-                            style={[styles.brandRow, isActive && styles.brandRowActive]}
-                            onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleBrand(brand)}
                           >
-                            <View style={styles.brandDot} />
-                            <Text style={[styles.brandName, isActive && styles.brandNameActive]}>
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>
                               {brand}
                             </Text>
                             <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
-                            {isActive && <Feather name="check" size={16} color={Colors.primary} />}
                           </TouchableOpacity>
                         );
                       })
@@ -438,6 +450,15 @@ export default function OrdersScreen() {
               })()}
             </ScrollView>
           )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowBrandModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeBrands.length === 0 ? "Close" : `Apply (${activeBrands.length} selected)`}
+            </Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
@@ -585,6 +606,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
   modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
   brandSearchWrap: {
     flexDirection: "row",
     alignItems: "center",

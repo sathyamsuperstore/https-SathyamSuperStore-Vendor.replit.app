@@ -174,7 +174,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   const [downloading, setDownloading] = useState(false);
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [showStock, setShowStock] = useState(false);
-  const [activeBrand, setActiveBrand] = useState<string>("all");
+  const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
 
@@ -234,15 +234,23 @@ function OrdersView({ topPt }: { topPt: number }) {
   }, [vendorOrders, activeFilter]);
 
   const filtered = useMemo(() => {
-    if (activeBrand === "all") return statusFiltered;
-    return statusFiltered.filter((o) => o.items.some((item) => item.brand === activeBrand));
-  }, [statusFiltered, activeBrand]);
+    if (activeBrands.length === 0) return statusFiltered;
+    return statusFiltered.filter((o) =>
+      o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
+    );
+  }, [statusFiltered, activeBrands]);
+
+  function toggleBrand(brand: string) {
+    setActiveBrands((prev) =>
+      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
+    );
+  }
 
   function brandOrderCount(brand: string) {
     return statusFiltered.filter((o) => o.items.some((item) => item.brand === brand)).length;
   }
 
-  const brandActive = activeBrand !== "all";
+  const brandActive = activeBrands.length > 0;
 
   const totalValue = useMemo(() => vendorOrders.reduce((s, o) => s + o.totalAmount, 0), [vendorOrders]);
   const pendingCount = useMemo(() => vendorOrders.filter((o) => o.status === "pending").length, [vendorOrders]);
@@ -259,8 +267,8 @@ function OrdersView({ topPt }: { topPt: number }) {
         : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
-        const exportItems = brandActive
-          ? order.items.filter((item) => item.brand === activeBrand)
+        const exportItems = activeBrands.length > 0
+          ? order.items.filter((item) => item.brand != null && activeBrands.includes(item.brand))
           : order.items;
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
@@ -441,11 +449,15 @@ function OrdersView({ topPt }: { topPt: number }) {
         >
           <Feather name="tag" size={14} color={brandActive ? Colors.textInverse : Colors.textSecondary} />
           <Text style={[styles.brandBarText, brandActive && styles.brandBarTextActive]} numberOfLines={1}>
-            {brandActive ? `Brand: ${activeBrand}` : "Filter by Brand"}
+            {activeBrands.length === 0
+              ? "Filter by Brand"
+              : activeBrands.length === 1
+              ? activeBrands[0]
+              : `${activeBrands.length} Brands`}
           </Text>
           {brandActive ? (
             <TouchableOpacity
-              onPress={(e) => { e.stopPropagation?.(); setActiveBrand("all"); }}
+              onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Feather name="x-circle" size={15} color={Colors.textInverse} />
@@ -513,8 +525,8 @@ function OrdersView({ topPt }: { topPt: number }) {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Filter by Brand</Text>
             {brandActive && (
-              <TouchableOpacity onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}>
-                <Text style={styles.modalClear}>Clear</Text>
+              <TouchableOpacity onPress={() => setActiveBrands([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -554,12 +566,12 @@ function OrdersView({ topPt }: { topPt: number }) {
                   <>
                     {!q && (
                       <TouchableOpacity
-                        style={[styles.brandRow, !brandActive && styles.brandRowActive]}
-                        onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+                        style={[styles.brandRow, activeBrands.length === 0 && styles.brandRowActive]}
+                        onPress={() => { setActiveBrands([]); setShowBrandModal(false); }}
                       >
-                        <Text style={[styles.brandName, !brandActive && styles.brandNameActive]}>All Brands</Text>
+                        <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>All Brands</Text>
                         <Text style={styles.brandCount}>{statusFiltered.length} order{statusFiltered.length !== 1 ? "s" : ""}</Text>
-                        {!brandActive && <Feather name="check" size={16} color={Colors.primary} />}
+                        {activeBrands.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
                     {visibleBrands.length === 0 ? (
@@ -570,18 +582,21 @@ function OrdersView({ topPt }: { topPt: number }) {
                       </View>
                     ) : (
                       visibleBrands.map((brand) => {
-                        const isActive = activeBrand === brand;
+                        const isSelected = activeBrands.includes(brand);
                         const count = brandOrderCount(brand);
                         return (
                           <TouchableOpacity
                             key={brand}
-                            style={[styles.brandRow, isActive && styles.brandRowActive]}
-                            onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleBrand(brand)}
                           >
-                            <View style={styles.brandDot} />
-                            <Text style={[styles.brandName, isActive && styles.brandNameActive]}>{brand}</Text>
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>{brand}</Text>
                             <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
-                            {isActive && <Feather name="check" size={16} color={Colors.primary} />}
                           </TouchableOpacity>
                         );
                       })
@@ -591,6 +606,15 @@ function OrdersView({ topPt }: { topPt: number }) {
               })()}
             </ScrollView>
           )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowBrandModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeBrands.length === 0 ? "Close" : `Apply (${activeBrands.length} selected)`}
+            </Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
@@ -971,6 +995,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
   modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
   brandSearchWrap: {
     flexDirection: "row", alignItems: "center", gap: 10,
     marginHorizontal: 20, marginBottom: 8,

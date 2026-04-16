@@ -39,13 +39,13 @@ function calcTotal(items: OrderItem[]): number {
 
 function StockUpdCard({
   order,
-  activeBrand,
+  activeBrands,
   itemSearch,
   negStockOnly,
   onSave,
 }: {
   order: Order;
-  activeBrand: string;
+  activeBrands: string[];
   itemSearch: string;
   negStockOnly: boolean;
   onSave: (id: string, items: OrderItem[]) => void;
@@ -57,9 +57,9 @@ function StockUpdCard({
   const sortedItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     const brandFiltered =
-      activeBrand === "all"
+      activeBrands.length === 0
         ? order.items
-        : order.items.filter((it) => it.brand === activeBrand);
+        : order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand));
     let base = q
       ? brandFiltered.filter((it) => {
           const desc = it.name.includes(" - ")
@@ -81,7 +81,7 @@ function StockUpdCard({
       if (b.sortNo != null) return 1;
       return 0;
     });
-  }, [order.items, activeBrand, itemSearch, negStockOnly]);
+  }, [order.items, activeBrands, itemSearch, negStockOnly]);
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
@@ -121,7 +121,7 @@ function StockUpdCard({
         <View style={{ flex: 1 }}>
           <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
           <Text style={cardSt.orderNo}>
-            {order.orderNumber}  ·  {sortedItems.length}{activeBrand !== "all" ? ` of ${order.items.length}` : ""} items
+            {order.orderNumber}  ·  {sortedItems.length}{activeBrands.length > 0 ? ` of ${order.items.length}` : ""} items
           </Text>
         </View>
         <StatusBadge status={order.status} />
@@ -316,7 +316,7 @@ export default function StockUpdScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
-  const [activeBrand, setActiveBrand] = useState<string>("all");
+  const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
@@ -342,7 +342,8 @@ export default function StockUpdScreen() {
     const q = itemSearch.trim().toLowerCase();
     let result = statusFiltered.filter((o) => {
       const brandOk =
-        activeBrand === "all" || o.items.some((it) => it.brand === activeBrand);
+        activeBrands.length === 0 ||
+        o.items.some((it) => it.brand != null && activeBrands.includes(it.brand));
       if (!brandOk) return false;
       if (!q) return true;
       return o.items.some((it) => {
@@ -355,9 +356,9 @@ export default function StockUpdScreen() {
     if (negStockOnly) {
       result = result.filter((o) => {
         const brandSubset =
-          activeBrand === "all"
+          activeBrands.length === 0
             ? o.items
-            : o.items.filter((it) => it.brand === activeBrand);
+            : o.items.filter((it) => it.brand != null && activeBrands.includes(it.brand));
         const searchSubset = q
           ? brandSubset.filter((it) => {
               const desc = it.name.includes(" - ")
@@ -370,7 +371,13 @@ export default function StockUpdScreen() {
       });
     }
     return result;
-  }, [statusFiltered, activeBrand, itemSearch, negStockOnly]);
+  }, [statusFiltered, activeBrands, itemSearch, negStockOnly]);
+
+  function toggleBrand(brand: string) {
+    setActiveBrands((prev) =>
+      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
+    );
+  }
 
   function brandOrderCount(brand: string): number {
     return statusFiltered.filter((o) =>
@@ -484,7 +491,7 @@ export default function StockUpdScreen() {
       if (window.confirm(`Remove All Orders\n\n${msg}`)) {
         clearAllOrders();
         setActiveFilter("all");
-        setActiveBrand("all");
+        setActiveBrands([]);
       }
       return;
     }
@@ -499,7 +506,7 @@ export default function StockUpdScreen() {
           onPress: () => {
             clearAllOrders();
             setActiveFilter("all");
-            setActiveBrand("all");
+            setActiveBrands([]);
           },
         },
       ]
@@ -514,7 +521,12 @@ export default function StockUpdScreen() {
   );
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
-  const brandActive = activeBrand !== "all";
+  const brandActive = activeBrands.length > 0;
+  const brandBarLabel = activeBrands.length === 0
+    ? "Filter by Brand"
+    : activeBrands.length === 1
+    ? activeBrands[0]
+    : `${activeBrands.length} Brands`;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -580,7 +592,7 @@ export default function StockUpdScreen() {
             <TouchableOpacity
               key={f.key}
               style={[styles.filter, isActive && styles.filterActive]}
-              onPress={() => { setActiveFilter(f.key); setActiveBrand("all"); }}
+              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); }}
             >
               <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
                 {f.label}
@@ -610,11 +622,11 @@ export default function StockUpdScreen() {
           style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
           numberOfLines={1}
         >
-          {brandActive ? `Brand: ${activeBrand}` : "Filter by Brand"}
+          {brandBarLabel}
         </Text>
         {brandActive ? (
           <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveBrand("all"); }}
+            onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Feather name="x-circle" size={15} color={Colors.textInverse} />
@@ -672,7 +684,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} activeBrand={activeBrand} itemSearch={itemSearch} negStockOnly={negStockOnly} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
@@ -685,7 +697,7 @@ export default function StockUpdScreen() {
             title="No orders found"
             subtitle={
               brandActive
-                ? `No orders with brand "${activeBrand}"`
+                ? `No orders match the selected brand${activeBrands.length !== 1 ? "s" : ""}`
                 : activeFilter === "all"
                 ? "Tap the + button to create your first order"
                 : `No ${activeFilter} orders at the moment`
@@ -712,10 +724,8 @@ export default function StockUpdScreen() {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Filter by Brand</Text>
             {brandActive && (
-              <TouchableOpacity
-                onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
-              >
-                <Text style={styles.modalClear}>Clear</Text>
+              <TouchableOpacity onPress={() => setActiveBrands([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -757,14 +767,14 @@ export default function StockUpdScreen() {
                   <>
                     {!q && (
                       <TouchableOpacity
-                        style={[styles.brandRow, activeBrand === "all" && styles.brandRowActive]}
-                        onPress={() => { setActiveBrand("all"); setShowBrandModal(false); }}
+                        style={[styles.brandRow, activeBrands.length === 0 && styles.brandRowActive]}
+                        onPress={() => { setActiveBrands([]); setShowBrandModal(false); }}
                       >
-                        <Text style={[styles.brandName, activeBrand === "all" && styles.brandNameActive]}>
+                        <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>
                           All Brands
                         </Text>
                         <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
-                        {activeBrand === "all" && <Feather name="check" size={16} color={Colors.primary} />}
+                        {activeBrands.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
                     {visibleBrands.length === 0 ? (
@@ -775,20 +785,23 @@ export default function StockUpdScreen() {
                       </View>
                     ) : (
                       visibleBrands.map((brand) => {
-                        const isActive = activeBrand === brand;
+                        const isSelected = activeBrands.includes(brand);
                         const count = brandOrderCount(brand);
                         return (
                           <TouchableOpacity
                             key={brand}
-                            style={[styles.brandRow, isActive && styles.brandRowActive]}
-                            onPress={() => { setActiveBrand(brand); setShowBrandModal(false); }}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleBrand(brand)}
                           >
-                            <View style={styles.brandDot} />
-                            <Text style={[styles.brandName, isActive && styles.brandNameActive]}>
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>
                               {brand}
                             </Text>
                             <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
-                            {isActive && <Feather name="check" size={16} color={Colors.primary} />}
                           </TouchableOpacity>
                         );
                       })
@@ -798,6 +811,15 @@ export default function StockUpdScreen() {
               })()}
             </ScrollView>
           )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowBrandModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeBrands.length === 0 ? "Close" : `Apply (${activeBrands.length} selected)`}
+            </Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
@@ -968,6 +990,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
   modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
   brandSearchWrap: {
     flexDirection: "row",
     alignItems: "center",
