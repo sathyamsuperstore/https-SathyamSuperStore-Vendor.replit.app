@@ -439,7 +439,7 @@ function OrdersView({ topPt }: { topPt: number }) {
       if (Platform.OS === "web") {
         await Print.printAsync({ html });
       } else {
-        const { uri } = await Print.printToFileAsync({ html });
+        const { uri } = await Print.printToFileAsync({ html, fileName: "Sathyam Super Store Purchase Order Form" });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, {
