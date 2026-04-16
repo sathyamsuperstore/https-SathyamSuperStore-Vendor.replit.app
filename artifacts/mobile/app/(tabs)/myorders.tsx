@@ -363,7 +363,7 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloadingPdf(true);
     try {
-      const cols = ["Item Description", "Brand", "UOM", "MRP", "Order Qty"];
+      const cols = ["Item Description", "UOM", "MRP", "Order Qty"];
 
       const rows: string[][] = [];
       for (const order of filtered) {
@@ -372,7 +372,7 @@ function OrdersView({ topPt }: { topPt: number }) {
           : order.items;
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push([desc, item.brand ?? "", item.unit, String(item.unitPrice), String(item.quantity)]);
+          rows.push([desc, item.unit, String(item.unitPrice), String(item.quantity)]);
         }
       }
 
@@ -402,7 +402,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
   th { text-align: center; }
   td { text-align: left; }
-  td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align: right; }
+  td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
   .clearfix::after { content: ""; display: block; clear: both; }
 </style>
