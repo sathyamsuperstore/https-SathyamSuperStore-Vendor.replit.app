@@ -18,6 +18,7 @@ import { Feather } from "@expo/vector-icons";
 import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
+import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
@@ -396,7 +397,9 @@ function OrdersView({ topPt }: { topPt: number }) {
   .letterhead { margin-bottom: 8px; }
   .letterhead .store { font-size: 13pt; font-weight: bold; }
   .letterhead .notice { font-size: 8pt; color: #c00; margin-top: 4px; }
-  .form-label { float: right; font-size: 12pt; font-weight: bold; margin-top: -32px; }
+  .right-block { float: right; text-align: center; }
+  .form-label { font-size: 12pt; font-weight: bold; }
+  .logo { width: 70px; margin-top: 6px; display: block; }
   table { width: 100%; border-collapse: collapse; margin-top: 10px; }
   thead tr { background: #1a56db; color: #fff; }
   th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
@@ -409,8 +412,11 @@ function OrdersView({ topPt }: { topPt: number }) {
 </head>
 <body>
 <div class="letterhead clearfix">
+  <div class="right-block">
+    <div class="form-label">ORDER FORM</div>
+    <img src="${LOGO_BASE64}" class="logo" alt="Logo"/>
+  </div>
   <div class="store">Sathyam Super Store</div>
-  <div class="form-label">ORDER FORM</div>
   <div>2A, Mettupalayam Road, Cheran Nagar</div>
   <div>Coimbatore-641029</div>
   <div>98431-44868</div>
