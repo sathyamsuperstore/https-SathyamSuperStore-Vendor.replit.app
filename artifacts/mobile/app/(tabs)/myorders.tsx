@@ -363,7 +363,7 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloadingPdf(true);
     try {
-      const cols = ["Item Description", "UOM", "MRP", "Order Qty"];
+      const cols = ["Item Description", "MRP", "UOM", "Order Qty"];
 
       const rows: string[][] = [];
       for (const order of filtered) {
@@ -372,7 +372,7 @@ function OrdersView({ topPt }: { topPt: number }) {
           : order.items;
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push([desc, item.unit, String(item.unitPrice), String(item.quantity)]);
+          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity)]);
         }
       }
 
