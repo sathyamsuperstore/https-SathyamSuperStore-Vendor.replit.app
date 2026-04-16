@@ -439,7 +439,10 @@ function OrdersView({ topPt }: { topPt: number }) {
       if (Platform.OS === "web") {
         await Print.printAsync({ html });
       } else {
-        const { uri } = await Print.printToFileAsync({ html, fileName: "Sathyam Super Store Purchase Order Form" });
+        const now = new Date();
+        const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
+        const pdfFileName = `Sathyam Super Store Purchase Order Form_${supplierName}_${ts}`;
+        const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, {
