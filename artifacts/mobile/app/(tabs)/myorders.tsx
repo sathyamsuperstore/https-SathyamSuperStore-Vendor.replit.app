@@ -568,7 +568,7 @@ function OrdersView({ topPt }: { topPt: number }) {
                     {!q && (
                       <TouchableOpacity
                         style={[styles.brandRow, activeBrands.length === 0 && styles.brandRowActive]}
-                        onPress={() => { setActiveBrands([]); setShowBrandModal(false); }}
+                        onPress={() => setActiveBrands([])}
                       >
                         <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>All Brands</Text>
                         <Text style={styles.brandCount}>{statusFiltered.length} order{statusFiltered.length !== 1 ? "s" : ""}</Text>

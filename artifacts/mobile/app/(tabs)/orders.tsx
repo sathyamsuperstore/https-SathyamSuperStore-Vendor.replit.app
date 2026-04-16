@@ -410,7 +410,7 @@ export default function OrdersScreen() {
                     {!q && (
                       <TouchableOpacity
                         style={[styles.brandRow, activeBrands.length === 0 && styles.brandRowActive]}
-                        onPress={() => { setActiveBrands([]); setShowBrandModal(false); }}
+                        onPress={() => setActiveBrands([])}
                       >
                         <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>
                           All Brands
