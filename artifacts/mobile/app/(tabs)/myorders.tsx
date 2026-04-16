@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
@@ -172,6 +173,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   const { currentUser, logout, orders, suppliers } = useApp();
   const insets = useSafeAreaInsets();
   const [downloading, setDownloading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [showStock, setShowStock] = useState(false);
   const [activeBrands, setActiveBrands] = useState<string[]>([]);
@@ -354,6 +356,107 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
   }
 
+  async function handlePdfExport() {
+    if (vendorOrders.length === 0) {
+      Alert.alert("No Orders", "There are no orders to export.");
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const cols = showStock
+        ? ["Item Description", "Brand", "UOM", "MRP", "Min", "Order Qty"]
+        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
+
+      const rows: string[][] = [];
+      for (const order of filtered) {
+        const exportItems = activeBrands.length > 0
+          ? order.items.filter((item) => item.brand != null && activeBrands.includes(item.brand))
+          : order.items;
+        for (const item of exportItems) {
+          const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
+          if (showStock) {
+            rows.push([desc, item.brand ?? "", item.unit, String(item.unitPrice), String(item.min ?? ""), String(item.quantity)]);
+          } else {
+            rows.push([desc, item.brand ?? "", item.unit, String(item.unitPrice), String(item.stock ?? ""), String(item.min ?? ""), String(item.quantity)]);
+          }
+        }
+      }
+
+      const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
+      const exportDate = new Date().toLocaleDateString("en-IN");
+
+      const thCells = cols.map((c) => `<th>${c}</th>`).join("");
+      const tdRows = rows.map((row, i) => {
+        const bg = i % 2 === 0 ? "#ffffff" : "#f7f8fa";
+        const tds = row.map((cell) => `<td>${cell}</td>`).join("");
+        return `<tr style="background:${bg}">${tds}</tr>`;
+      }).join("");
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: A4 portrait; margin: 15mm 12mm; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #111; }
+  .letterhead { margin-bottom: 8px; }
+  .letterhead .store { font-size: 13pt; font-weight: bold; }
+  .letterhead .notice { font-size: 8pt; color: #c00; margin-top: 4px; }
+  .form-label { float: right; font-size: 12pt; font-weight: bold; margin-top: -32px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  thead tr { background: #1a56db; color: #fff; }
+  th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
+  th { text-align: center; }
+  td { text-align: left; }
+  td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) { text-align: right; }
+  .footer { margin-top: 10px; font-size: 8.5pt; }
+  .clearfix::after { content: ""; display: block; clear: both; }
+</style>
+</head>
+<body>
+<div class="letterhead clearfix">
+  <div class="store">Sathyam Super Store</div>
+  <div class="form-label">ORDER FORM</div>
+  <div>2A, Mettupalayam Road, Cheran Nagar</div>
+  <div>Coimbatore-641029</div>
+  <div>98431-44868 &nbsp;|&nbsp; Whatsapp: 97881-44868 &nbsp;|&nbsp; Accounts: 97868-64868</div>
+  <div>GST# : 33ADFFS5244N1ZR</div>
+  <div class="notice">*** ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***</div>
+</div>
+<table>
+  <thead><tr>${thCells}</tr></thead>
+  <tbody>${tdRows}</tbody>
+</table>
+<div class="footer">
+  <div>Supplier : ${supplierName}</div>
+  <div>Order Date : ${exportDate}</div>
+</div>
+</body>
+</html>`;
+
+      if (Platform.OS === "web") {
+        await Print.printAsync({ html });
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Export PDF",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("PDF saved", `File saved to: ${uri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("PDF Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
   function confirmLogout() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
@@ -384,6 +487,18 @@ function OrdersView({ topPt }: { topPt: number }) {
           </View>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.pdfBtn, (downloadingPdf || vendorOrders.length === 0) && { opacity: 0.5 }]}
+            onPress={handlePdfExport}
+            disabled={downloadingPdf || vendorOrders.length === 0}
+          >
+            {downloadingPdf ? (
+              <ActivityIndicator size="small" color="#dc2626" />
+            ) : (
+              <Feather name="file-text" size={17} color="#dc2626" />
+            )}
+            <Text style={styles.pdfBtnText}>{downloadingPdf ? "..." : "PDF"}</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.downloadBtn, downloading && { opacity: 0.6 }]}
             onPress={handleDownload}
@@ -956,6 +1071,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
   },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pdfBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 10, backgroundColor: "#fff1f1", borderWidth: 1, borderColor: "#dc262640",
+  },
+  pdfBtnText: { fontSize: 13, fontWeight: "700", color: "#dc2626" },
   downloadBtn: {
     flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: 10, backgroundColor: Colors.primaryMuted, borderWidth: 1, borderColor: Colors.primary + "40",
