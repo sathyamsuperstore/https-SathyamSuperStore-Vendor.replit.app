@@ -419,7 +419,9 @@ function OrdersView({ topPt }: { topPt: number }) {
   <div class="form-label">ORDER FORM</div>
   <div>2A, Mettupalayam Road, Cheran Nagar</div>
   <div>Coimbatore-641029</div>
-  <div>98431-44868 &nbsp;|&nbsp; Whatsapp: 97881-44868 &nbsp;|&nbsp; Accounts: 97868-64868</div>
+  <div>98431-44868</div>
+  <div>Whatsapp: 97881-44868</div>
+  <div>Accounts: 97868-64868</div>
   <div>GST# : 33ADFFS5244N1ZR</div>
   <div class="notice">*** ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***</div>
 </div>
