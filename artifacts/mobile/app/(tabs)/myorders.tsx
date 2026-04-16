@@ -691,14 +691,18 @@ function VendorOrderCard({
   }
 
   function saveModify() {
-    const newItems = order.items
+    // Items not shown (due to brand filter) must be preserved as-is
+    const hiddenItems = order.items.filter(
+      (i) => !displayItems.some((di) => di.id === i.id)
+    );
+    const selectedDisplayItems = displayItems
       .filter((i) => checkedIds.has(i.id))
       .map((i) => {
         const parsed = parseFloat(editedQtys[i.id] ?? "");
         const qty = !isNaN(parsed) && parsed > 0 ? parsed : i.quantity;
         return { ...i, quantity: qty };
       });
-    if (newItems.length === 0) {
+    if (selectedDisplayItems.length === 0 && hiddenItems.length === 0) {
       if (Platform.OS === "web") {
         window.alert("At least one item must remain in the order.");
       } else {
@@ -706,6 +710,7 @@ function VendorOrderCard({
       }
       return;
     }
+    const newItems = [...hiddenItems, ...selectedDisplayItems];
     const newTotal = newItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     updateOrder(order.id, { items: newItems, totalAmount: newTotal });
     setModifyMode(false);
