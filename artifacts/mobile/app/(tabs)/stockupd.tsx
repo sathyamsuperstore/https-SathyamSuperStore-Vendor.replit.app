@@ -391,8 +391,11 @@ export default function StockUpdScreen() {
       const colHeader = ["Item No", "Item Description", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty"];
       const dataRows: (string | number)[][] = [];
       const suppliersWithData = new Set<string>();
-      for (const order of orders) {
-        for (const item of order.items) {
+      for (const order of filtered) {
+        const exportItems = activeBrands.length > 0
+          ? order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand))
+          : order.items;
+        for (const item of exportItems) {
           if (item.newStockQty == null) continue;
           const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
@@ -523,9 +526,9 @@ export default function StockUpdScreen() {
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
   const brandActive = activeBrands.length > 0;
   const brandBarLabel = activeBrands.length === 0
-    ? "Filter by Brand"
+    ? "All Brands"
     : activeBrands.length === 1
-    ? activeBrands[0]
+    ? "1 Brand"
     : `${activeBrands.length} Brands`;
 
   return (

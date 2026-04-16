@@ -450,9 +450,9 @@ function OrdersView({ topPt }: { topPt: number }) {
           <Feather name="tag" size={14} color={brandActive ? Colors.textInverse : Colors.textSecondary} />
           <Text style={[styles.brandBarText, brandActive && styles.brandBarTextActive]} numberOfLines={1}>
             {activeBrands.length === 0
-              ? "Filter by Brand"
+              ? "All Brands"
               : activeBrands.length === 1
-              ? activeBrands[0]
+              ? "1 Brand"
               : `${activeBrands.length} Brands`}
           </Text>
           {brandActive ? (
