@@ -503,6 +503,7 @@ function OrdersView({ topPt }: { topPt: number }) {
               order={item}
               showStock={showStock}
               onToggleStock={() => setShowStock((v) => !v)}
+              activeBrands={activeBrands}
             />
           )}
         />
@@ -627,10 +628,12 @@ function VendorOrderCard({
   order,
   showStock,
   onToggleStock,
+  activeBrands,
 }: {
   order: Order;
   showStock: boolean;
   onToggleStock: () => void;
+  activeBrands: string[];
 }) {
   const { updateOrderStatus, updateOrder } = useApp();
   const [expanded, setExpanded] = useState(false);
@@ -638,6 +641,14 @@ function VendorOrderCard({
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
   const status = STATUS_COLORS[order.status];
+
+  const displayItems = useMemo(
+    () =>
+      activeBrands.length === 0
+        ? order.items
+        : order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand)),
+    [order.items, activeBrands]
+  );
 
   function handleStatusChange(newStatus: OrderStatus) {
     if (newStatus === order.status) return;
@@ -659,8 +670,8 @@ function VendorOrderCard({
 
   function enterModifyMode() {
     const qtys: Record<string, string> = {};
-    order.items.forEach((i) => { qtys[i.id] = String(i.quantity); });
-    setCheckedIds(new Set(order.items.map((i) => i.id)));
+    displayItems.forEach((i) => { qtys[i.id] = String(i.quantity); });
+    setCheckedIds(new Set(displayItems.map((i) => i.id)));
     setEditedQtys(qtys);
     setModifyMode(true);
   }
@@ -766,7 +777,7 @@ function VendorOrderCard({
           ) : (
             <View style={cardStyles.modifyToolbar}>
               <Text style={cardStyles.modifyHint}>
-                {checkedIds.size} of {order.items.length} selected
+                {checkedIds.size} of {displayItems.length} selected
               </Text>
               <View style={cardStyles.modifyActions}>
                 <TouchableOpacity style={cardStyles.cancelModifyBtn} onPress={cancelModify} activeOpacity={0.8}>
@@ -807,7 +818,7 @@ function VendorOrderCard({
             <Text style={[cardStyles.th, cardStyles.right]}>Min</Text>
             <Text style={[cardStyles.th, cardStyles.right]}>MRP</Text>
           </View>
-          {[...order.items]
+          {[...displayItems]
             .sort((a, b) => {
               const brandA = (a.brand ?? "").toLowerCase();
               const brandB = (b.brand ?? "").toLowerCase();
