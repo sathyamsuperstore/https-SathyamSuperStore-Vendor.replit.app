@@ -92,7 +92,7 @@ function LoginForm({ topPt }: { topPt: number }) {
             style={loginStyles.logoImage}
             resizeMode="contain"
           />
-          <Text style={loginStyles.appName}>Sathyam Super Store</Text>
+          <Text style={loginStyles.appName}>Sathyam Super Store Order Manager</Text>
           <Text style={loginStyles.portalLabel}>Vendor Portal</Text>
         </View>
 
