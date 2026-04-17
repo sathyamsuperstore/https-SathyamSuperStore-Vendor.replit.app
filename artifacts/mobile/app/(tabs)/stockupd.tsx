@@ -42,17 +42,20 @@ function StockUpdCard({
   activeBrands,
   itemSearch,
   negStockOnly,
+  showNotes,
   onSave,
 }: {
   order: Order;
   activeBrands: string[];
   itemSearch: string;
   negStockOnly: boolean;
+  showNotes: boolean;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
 
   const sortedItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -85,12 +88,14 @@ function StockUpdCard({
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
-    Object.keys(nsqEdits).length > 0;
+    Object.keys(nsqEdits).length > 0 ||
+    Object.keys(noteEdits).length > 0;
 
   function handleSave() {
     const updated = order.items.map((item) => {
       const qStr = qtyEdits[item.id];
       const nStr = nsqEdits[item.id];
+      const noteStr = noteEdits[item.id];
       const qty =
         qStr !== undefined
           ? isNaN(parseFloat(qStr)) || qStr.trim() === ""
@@ -103,11 +108,18 @@ function StockUpdCard({
             ? undefined
             : parseFloat(nStr)
           : item.newStockQty;
-      return { ...item, quantity: qty, newStockQty: nsq };
+      const notes =
+        noteStr !== undefined
+          ? noteStr.trim() === ""
+            ? undefined
+            : noteStr.trim()
+          : item.notes;
+      return { ...item, quantity: qty, newStockQty: nsq, notes };
     });
     onSave(order.id, updated);
     setQtyEdits({});
     setNsqEdits({});
+    setNoteEdits({});
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
@@ -147,6 +159,7 @@ function StockUpdCard({
               : item.name;
             const qtyVal = qtyEdits[item.id] ?? String(item.quantity);
             const nsqVal = nsqEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "");
+            const noteVal = noteEdits[item.id] ?? (item.notes ?? "");
             return (
               <View
                 key={item.id}
@@ -201,6 +214,21 @@ function StockUpdCard({
                     />
                   </View>
                 </View>
+                {showNotes && (
+                  <View style={cardSt.notesInputRow}>
+                    <Text style={cardSt.inputLabel}>Notes</Text>
+                    <TextInput
+                      style={cardSt.notesInput}
+                      value={noteVal}
+                      onChangeText={(v) =>
+                        setNoteEdits((prev) => ({ ...prev, [item.id]: v }))
+                      }
+                      placeholder="Add note..."
+                      placeholderTextColor={Colors.textMuted}
+                      multiline
+                    />
+                  </View>
+                )}
               </View>
             );
           })}
@@ -273,6 +301,25 @@ const cardSt = StyleSheet.create({
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
   itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
   itemNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
+  notesInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingLeft: 34,
+    paddingRight: 4,
+  },
+  notesInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minHeight: 32,
+    backgroundColor: Colors.surface,
+  },
   inputRow: {
     flexDirection: "row",
     gap: 10,
@@ -325,6 +372,7 @@ export default function StockUpdScreen() {
   const [brandSearch, setBrandSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [negStockOnly, setNegStockOnly] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const statusFiltered = useMemo(() => {
@@ -668,6 +716,22 @@ export default function StockUpdScreen() {
         )}
       </TouchableOpacity>
 
+      {/* Show Notes toggle */}
+      <TouchableOpacity
+        style={[styles.negStockToggle, showNotes && styles.negStockToggleActive]}
+        onPress={() => setShowNotes((v) => !v)}
+        activeOpacity={0.75}
+      >
+        <Feather
+          name="edit-3"
+          size={14}
+          color={showNotes ? Colors.textInverse : Colors.textSecondary}
+        />
+        <Text style={[styles.negStockToggleText, showNotes && styles.negStockToggleTextActive]}>
+          {showNotes ? "Hide Notes" : "Show Notes"}
+        </Text>
+      </TouchableOpacity>
+
       {/* Item description search bar */}
       <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
         <Feather name="search" size={14} color={itemSearch.length > 0 ? Colors.primary : Colors.textMuted} />
@@ -692,7 +756,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
