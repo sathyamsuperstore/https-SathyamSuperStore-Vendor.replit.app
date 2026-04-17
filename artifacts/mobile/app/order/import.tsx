@@ -33,6 +33,7 @@ interface ParsedRow {
   Stock: number;
   Min: number;
   SortNo: number;
+  Notes: string;
 }
 
 interface VendorGroup {
@@ -172,6 +173,7 @@ export default function ImportOrderScreen() {
         Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
         Min: parseFloat(String(row["Min"] ?? "")) || 0,
         SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
+        Notes: String(row["Notes"] ?? "").trim(),
       }));
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
@@ -238,6 +240,7 @@ export default function ImportOrderScreen() {
         stock: row["Stock"] !== 0 ? row["Stock"] : undefined,
         min: row["Min"] !== 0 ? row["Min"] : undefined,
         sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
+        notes: row["Notes"] || undefined,
       }));
       return {
         supplierId: supplier.id,

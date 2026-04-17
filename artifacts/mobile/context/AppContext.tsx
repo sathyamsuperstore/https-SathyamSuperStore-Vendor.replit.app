@@ -42,6 +42,7 @@ export interface OrderItem {
   min?: number;
   sortNo?: number;
   newStockQty?: number;
+  notes?: string;
 }
 
 export interface Order {

@@ -47,6 +47,7 @@ export default function OrderDetailScreen() {
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -233,6 +234,17 @@ export default function OrderDetailScreen() {
     });
   }
 
+  function saveNote(itemId: string, value: string) {
+    if (!order) return;
+    const trimmed = value.trim();
+    const note = trimmed === "" ? undefined : trimmed;
+    updateOrder(order.id, {
+      items: order.items.map((it) =>
+        it.id === itemId ? { ...it, notes: note } : it
+      ),
+    });
+  }
+
   function handleDelete() {
     Alert.alert("Delete Order", "This action cannot be undone.", [
       { text: "Cancel", style: "cancel" },
@@ -405,6 +417,23 @@ export default function OrderDetailScreen() {
                         selectTextOnFocus
                       />
                     </View>
+                    <View style={styles.notesRow}>
+                      <Text style={styles.newStockLabel}>Notes:</Text>
+                      <TextInput
+                        style={styles.notesInput}
+                        value={noteEdits[item.id] ?? (item.notes ?? "")}
+                        onChangeText={(v) =>
+                          setNoteEdits((prev) => ({ ...prev, [item.id]: v }))
+                        }
+                        onBlur={() => {
+                          const val = noteEdits[item.id];
+                          if (val !== undefined) saveNote(item.id, val);
+                        }}
+                        placeholder="Add note..."
+                        placeholderTextColor={Colors.textMuted}
+                        multiline
+                      />
+                    </View>
                   </View>
                   <Text style={styles.itemTotal}>
                     {formatCurrency(item.quantity * item.unitPrice)}
@@ -532,6 +561,19 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     minWidth: 60,
     maxWidth: 100,
+  },
+  notesRow: { flexDirection: "row", alignItems: "flex-start", marginTop: 6, gap: 8 },
+  notesInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minHeight: 32,
+    backgroundColor: Colors.surface,
   },
   itemTotal: { fontSize: 14, fontWeight: "700", color: Colors.text },
   itemDivider: { height: 1, backgroundColor: Colors.border },

@@ -266,8 +266,8 @@ function OrdersView({ topPt }: { topPt: number }) {
     setDownloading(true);
     try {
       const colHeader = showStock
-        ? ["Item Description", "Brand", "UOM", "MRP", "Min", "Order Qty"]
-        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
+        ? ["Item Description", "Brand", "UOM", "MRP", "Min", "Order Qty", "Notes"]
+        : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         const exportItems = activeBrands.length > 0
@@ -276,15 +276,15 @@ function OrdersView({ topPt }: { topPt: number }) {
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           if (showStock) {
-            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.min ?? "", item.quantity]);
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.min ?? "", item.quantity, item.notes ?? ""]);
           } else {
-            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.stock ?? "", item.min ?? "", item.quantity]);
+            dataRows.push([desc, item.brand ?? "", item.unit, item.unitPrice, item.stock ?? "", item.min ?? "", item.quantity, item.notes ?? ""]);
           }
         }
       }
       const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
       const exportDate = new Date().toLocaleDateString("en-IN");
-      const pad = showStock ? ["", "", "", "", "", ""] : ["", "", "", "", "", "", ""];
+      const pad = showStock ? ["", "", "", "", "", "", ""] : ["", "", "", "", "", "", "", ""];
       const sheetData: (string | number)[][] = [
         ["Sathyam Super Store",                                                  "", "ORDER FORM",  ...pad.slice(3)],
         ["2A,Mettupalayam Road, Cheran Nagar",                                   ...pad.slice(1)],
@@ -303,8 +303,8 @@ function OrdersView({ topPt }: { topPt: number }) {
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = showStock
-        ? [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }]
-        : [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+        ? [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 }]
+        : [{ wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 }];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
@@ -364,7 +364,7 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloadingPdf(true);
     try {
-      const cols = ["Item Description", "MRP", "UOM", "Order Qty"];
+      const cols = ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
 
       const rows: string[][] = [];
       for (const order of filtered) {
@@ -373,7 +373,7 @@ function OrdersView({ topPt }: { topPt: number }) {
           : order.items;
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity)]);
+          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
         }
       }
 
@@ -986,6 +986,9 @@ function VendorOrderCard({
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
                   <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
+                  {item.notes ? (
+                    <Text style={cardStyles.itemNotes}>📝 {item.notes}</Text>
+                  ) : null}
                 </View>
                 {modifyMode ? (
                   <TextInput
@@ -1224,6 +1227,7 @@ const cardStyles = StyleSheet.create({
   th: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   td: { fontSize: 12, color: Colors.text },
   itemNo: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
+  itemNotes: { fontSize: 11, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   right: { flex: 1, textAlign: "right" },
   price: { color: Colors.primary, fontWeight: "700" },
   notes: {

@@ -167,6 +167,9 @@ function StockUpdCard({
                       {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
                       {item.min != null ? `  ·  Min ${item.min}` : ""}
                     </Text>
+                    {item.notes ? (
+                      <Text style={cardSt.itemNotes}>📝 {item.notes}</Text>
+                    ) : null}
                   </View>
                 </View>
                 {/* Bottom: inputs with labels */}
@@ -269,6 +272,7 @@ const cardSt = StyleSheet.create({
   itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
   itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
+  itemNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   inputRow: {
     flexDirection: "row",
     gap: 10,
@@ -388,7 +392,7 @@ export default function StockUpdScreen() {
   async function handleExport() {
     try {
       setDownloading(true);
-      const colHeader = ["Item No", "Item Description", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty"];
+      const colHeader = ["Item No", "Item Description", "UOM", "MRP", "Stock", "Order Qty", "New Stock Qty", "Notes"];
       const dataRows: (string | number)[][] = [];
       const suppliersWithData = new Set<string>();
       for (const order of filtered) {
@@ -407,6 +411,7 @@ export default function StockUpdScreen() {
             item.stock ?? "",
             item.quantity,
             item.newStockQty,
+            item.notes ?? "",
           ]);
           suppliersWithData.add(order.supplierName);
         }
@@ -419,24 +424,24 @@ export default function StockUpdScreen() {
       const uniqueSuppliers = [...suppliersWithData].sort().join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", ""],
-        ["Accounts: 97868-64868",                                                "", "",            "", "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", ""],
-        ["", "", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", ""],
+        ["Accounts: 97868-64868",                                                "", "",            "", "", "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", "", ""],
-        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,     "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 14 }, { wch: 32 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+        { wch: 14 }, { wch: 32 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 20 },
       ];
       const dataStartRow = 11;
       for (let i = 0; i < dataRows.length; i++) {
