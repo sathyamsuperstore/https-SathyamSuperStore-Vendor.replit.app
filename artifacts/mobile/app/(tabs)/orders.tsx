@@ -59,9 +59,14 @@ export default function OrdersScreen() {
   }, [statusFiltered]);
 
   const filtered = useMemo(() => {
-    if (activeBrands.length === 0) return statusFiltered;
-    return statusFiltered.filter((o) =>
-      o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
+    const base =
+      activeBrands.length === 0
+        ? statusFiltered
+        : statusFiltered.filter((o) =>
+            o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
+          );
+    return [...base].sort((a, b) =>
+      (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
   }, [statusFiltered, activeBrands]);
 

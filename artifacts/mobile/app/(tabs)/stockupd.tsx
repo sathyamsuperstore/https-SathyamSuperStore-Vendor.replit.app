@@ -422,7 +422,9 @@ export default function StockUpdScreen() {
         return searchSubset.some((it) => it.stock != null && it.stock < 0);
       });
     }
-    return result;
+    return [...result].sort((a, b) =>
+      (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
+    );
   }, [statusFiltered, activeBrands, itemSearch, negStockOnly]);
 
   function toggleBrand(brand: string) {
