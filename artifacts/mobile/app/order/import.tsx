@@ -112,6 +112,9 @@ export default function ImportOrderScreen() {
       const asset = result.assets[0];
       setFileName(asset.name);
 
+      // Yield to the event loop so the spinner renders before heavy work blocks the main thread
+      await new Promise((r) => setTimeout(r, 50));
+
       let workbook: XLSX.WorkBook;
 
       if (Platform.OS === "web") {
@@ -379,8 +382,11 @@ function VendorGroupCard({
   suppliers: Supplier[];
   onSelectSupplier: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const PREVIEW_LIMIT = 50;
   const subtotal = group.items.reduce((s, i) => s + i.MRP * i["Order Qty"], 0);
+  const previewItems = group.items.slice(0, PREVIEW_LIMIT);
+  const hiddenCount = group.items.length - previewItems.length;
   const selectedSupplier = suppliers.find((s) => s.id === group.supplierId);
   const isAutoMatched = selectedSupplier?.vendorCode.toUpperCase() === group.vendorCode.trim().toUpperCase();
   const isUnmatched = !group.supplierId;
@@ -442,7 +448,7 @@ function VendorGroupCard({
             <Text style={[groupStyles.tableCell, groupStyles.cellNum]}>UOM</Text>
             <Text style={[groupStyles.tableCell, groupStyles.cellNum]}>MRP</Text>
           </View>
-          {group.items.map((item, i) => (
+          {previewItems.map((item, i) => (
             <View key={i} style={[groupStyles.tableRow, i % 2 === 0 && groupStyles.tableRowAlt]}>
               <View style={[groupStyles.tableCellWrap, groupStyles.cellDesc]}>
                 {item["Item No"] ? <Text style={groupStyles.itemNo}>{item["Item No"]}</Text> : null}
@@ -455,6 +461,14 @@ function VendorGroupCard({
               </Text>
             </View>
           ))}
+          {hiddenCount > 0 && (
+            <View style={groupStyles.moreRow}>
+              <Feather name="more-horizontal" size={14} color={Colors.textMuted} />
+              <Text style={groupStyles.moreText}>
+                +{hiddenCount} more item{hiddenCount > 1 ? "s" : ""} (all will be imported)
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -562,6 +576,16 @@ const groupStyles = StyleSheet.create({
   cellDesc: { flex: 3 },
   cellNum: { flex: 1, textAlign: "right" },
   cellPrice: { color: Colors.primary, fontWeight: "700" },
+  moreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+  },
+  moreText: { fontSize: 12, color: Colors.textMuted, fontStyle: "italic" },
 });
 
 const styles = StyleSheet.create({
