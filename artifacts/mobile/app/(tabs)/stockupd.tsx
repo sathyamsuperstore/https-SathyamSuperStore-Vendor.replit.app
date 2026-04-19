@@ -694,45 +694,46 @@ export default function StockUpdScreen() {
         )}
       </TouchableOpacity>
 
-      {/* Negative Stock Only toggle */}
-      <TouchableOpacity
-        style={[styles.negStockToggle, negStockOnly && styles.negStockToggleActive]}
-        onPress={() => setNegStockOnly((v) => !v)}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="trending-down"
-          size={14}
-          color={negStockOnly ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text style={[styles.negStockToggleText, negStockOnly && styles.negStockToggleTextActive]}>
-          Neg. Stock Only
-        </Text>
-        {negStockOnly && (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setNegStockOnly(false); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Feather name="x-circle" size={15} color={Colors.textInverse} />
-          </TouchableOpacity>
-        )}
-      </TouchableOpacity>
+      {/* Toggles row: Neg. Stock Only + Show Notes side by side */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.negStockToggle, styles.toggleHalf, negStockOnly && styles.negStockToggleActive]}
+          onPress={() => setNegStockOnly((v) => !v)}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="trending-down"
+            size={14}
+            color={negStockOnly ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text style={[styles.negStockToggleText, negStockOnly && styles.negStockToggleTextActive]} numberOfLines={1}>
+            Neg. Stock Only
+          </Text>
+          {negStockOnly && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setNegStockOnly(false); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
 
-      {/* Show Notes toggle */}
-      <TouchableOpacity
-        style={[styles.negStockToggle, showNotes && styles.negStockToggleActive]}
-        onPress={() => setShowNotes((v) => !v)}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="edit-3"
-          size={14}
-          color={showNotes ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text style={[styles.negStockToggleText, showNotes && styles.negStockToggleTextActive]}>
-          {showNotes ? "Hide Notes" : "Show Notes"}
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.negStockToggle, styles.toggleHalf, showNotes && styles.negStockToggleActive]}
+          onPress={() => setShowNotes((v) => !v)}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="edit-3"
+            size={14}
+            color={showNotes ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text style={[styles.negStockToggleText, showNotes && styles.negStockToggleTextActive]} numberOfLines={1}>
+            {showNotes ? "Hide Notes" : "Show Notes"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Item description search bar */}
       <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
@@ -1135,6 +1136,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 8,
+  },
+  toggleHalf: {
+    flex: 1,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    justifyContent: "center",
   },
   negStockToggleActive: {
     backgroundColor: Colors.danger,
