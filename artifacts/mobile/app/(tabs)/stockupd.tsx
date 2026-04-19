@@ -159,6 +159,9 @@ function StockUpdCard({
             const desc = item.name.includes(" - ")
               ? item.name.split(" - ").slice(1).join(" - ")
               : item.name;
+            const itemNo = item.name.includes(" - ")
+              ? item.name.split(" - ")[0]
+              : "";
             const qtyVal = qtyEdits[item.id] ?? String(item.quantity);
             const nsqVal = nsqEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "");
             const noteVal = noteEdits[item.id] ?? (item.notes ?? "");
@@ -174,8 +177,10 @@ function StockUpdCard({
                   </Text>
                   <View style={{ flex: 1 }}>
                     <Text style={cardSt.itemName}>{desc}</Text>
-                    {item.brand ? (
-                      <Text style={cardSt.itemBrand}>{item.brand}</Text>
+                    {(item.brand || itemNo) ? (
+                      <Text style={cardSt.itemBrand}>
+                        {item.brand ?? ""}{item.brand && itemNo ? "  ·  " : ""}{itemNo ? `Item No: ${itemNo}` : ""}
+                      </Text>
                     ) : null}
                     <Text style={cardSt.itemMeta}>
                       {item.unit}  ·  MRP {item.unitPrice}
