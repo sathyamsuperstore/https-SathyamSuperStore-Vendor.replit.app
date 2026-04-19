@@ -19,6 +19,8 @@ import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+import * as Print from "expo-print";
+import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderStatus, Order, OrderItem } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -377,6 +379,7 @@ export default function StockUpdScreen() {
   const [negStockOnly, setNegStockOnly] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const statusFiltered = useMemo(() => {
     if (activeFilter === "all") return orders;
@@ -567,6 +570,119 @@ export default function StockUpdScreen() {
     }
   }
 
+  async function handlePdfExport() {
+    if (filtered.length === 0) {
+      Alert.alert("No Orders", "There are no orders to export.");
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const cols = ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
+      const rows: string[][] = [];
+      const suppliersWithData = new Set<string>();
+      for (const order of filtered) {
+        const exportItems = activeBrands.length > 0
+          ? order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand))
+          : order.items;
+        for (const item of exportItems) {
+          const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
+          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
+          suppliersWithData.add(order.supplierName);
+        }
+      }
+      if (rows.length === 0) {
+        Alert.alert("Nothing to Export", "There are no items to export.");
+        setDownloadingPdf(false);
+        return;
+      }
+      const supplierName = [...suppliersWithData].sort().join(", ");
+      const exportDate = new Date().toLocaleDateString("en-IN");
+
+      const escapeHtml = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const thCells = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
+      const tdRows = rows.map((row, i) => {
+        const bg = i % 2 === 0 ? "#ffffff" : "#f7f8fa";
+        const tds = row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("");
+        return `<tr style="background:${bg}">${tds}</tr>`;
+      }).join("");
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: A4 portrait; margin: 15mm 12mm; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #111; }
+  .letterhead { margin-bottom: 8px; }
+  .letterhead .store { font-size: 13pt; font-weight: bold; }
+  .letterhead .notice { font-size: 8pt; color: #c00; margin-top: 4px; }
+  .right-block { float: right; text-align: center; }
+  .form-label { font-size: 12pt; font-weight: bold; }
+  .logo { width: 70px; margin-top: 6px; display: block; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  thead tr { background: #1a56db; color: #fff; }
+  th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
+  th { text-align: center; }
+  td { text-align: left; }
+  td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
+  .footer { margin-top: 10px; font-size: 8.5pt; }
+  .clearfix::after { content: ""; display: block; clear: both; }
+</style>
+</head>
+<body>
+<div class="letterhead clearfix">
+  <div class="right-block">
+    <div class="form-label">ORDER FORM</div>
+    <img src="${LOGO_BASE64}" class="logo" alt="Logo"/>
+  </div>
+  <div class="store">Sathyam Super Store</div>
+  <div>2A, Mettupalayam Road, Cheran Nagar</div>
+  <div>Coimbatore-641029</div>
+  <div>98431-44868</div>
+  <div>Whatsapp: 97881-44868</div>
+  <div>Accounts: 97868-64868</div>
+  <div>GST# : 33ADFFS5244N1ZR</div>
+  <div class="notice">*** ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***</div>
+</div>
+<table>
+  <thead><tr>${thCells}</tr></thead>
+  <tbody>${tdRows}</tbody>
+</table>
+<div class="footer">
+  <div>Supplier : ${escapeHtml(supplierName)}</div>
+  <div>Order Date : ${exportDate}</div>
+</div>
+</body>
+</html>`;
+
+      if (Platform.OS === "web") {
+        await Print.printAsync({ html });
+      } else {
+        const now = new Date();
+        const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
+        const safeSupplier = supplierName.replace(/[^\w\-]+/g, "_").slice(0, 60) || "StockUpd";
+        const pdfFileName = `Sathyam Super Store Purchase Order Form_${safeSupplier}_${ts}`;
+        const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Export PDF",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("PDF saved", `File saved to: ${uri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("PDF Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
   function handleClearAll() {
     if (orders.length === 0) return;
     const msg = `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`;
@@ -640,6 +756,18 @@ export default function StockUpdScreen() {
             <Text style={styles.exportBtnText}>
               Export
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pdfBtn, (downloadingPdf || filtered.length === 0) && { opacity: 0.5 }]}
+            onPress={handlePdfExport}
+            disabled={downloadingPdf || filtered.length === 0}
+          >
+            {downloadingPdf ? (
+              <ActivityIndicator size="small" color="#dc2626" />
+            ) : (
+              <Feather name="file-text" size={16} color="#dc2626" />
+            )}
+            <Text style={styles.pdfBtnText}>{downloadingPdf ? "..." : "PDF"}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.importBtn}
@@ -1112,6 +1240,12 @@ const styles = StyleSheet.create({
   },
   exportBtnText: { fontSize: 14, fontWeight: "700", color: Colors.success ?? "#16A34A" },
   exportBtnTextDisabled: { color: Colors.textMuted },
+  pdfBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca",
+  },
+  pdfBtnText: { fontSize: 13, fontWeight: "700", color: "#dc2626" },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
