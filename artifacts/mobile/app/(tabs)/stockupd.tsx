@@ -370,6 +370,9 @@ export default function StockUpdScreen() {
   const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
+  const [activeVendors, setActiveVendors] = useState<string[]>([]);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [negStockOnly, setNegStockOnly] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -390,9 +393,21 @@ export default function StockUpdScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [statusFiltered]);
 
+  const allVendors = useMemo(() => {
+    const set = new Set<string>();
+    statusFiltered.forEach((o) => {
+      if (o.supplierName) set.add(o.supplierName);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [statusFiltered]);
+
   const filtered = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     let result = statusFiltered.filter((o) => {
+      const vendorOk =
+        activeVendors.length === 0 ||
+        (o.supplierName != null && activeVendors.includes(o.supplierName));
+      if (!vendorOk) return false;
       const brandOk =
         activeBrands.length === 0 ||
         o.items.some((it) => it.brand != null && activeBrands.includes(it.brand));
@@ -425,7 +440,17 @@ export default function StockUpdScreen() {
     return [...result].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeBrands, itemSearch, negStockOnly]);
+  }, [statusFiltered, activeVendors, activeBrands, itemSearch, negStockOnly]);
+
+  function toggleVendor(name: string) {
+    setActiveVendors((prev) =>
+      prev.includes(name) ? prev.filter((v) => v !== name) : [...prev, name]
+    );
+  }
+
+  function vendorOrderCount(name: string): number {
+    return statusFiltered.filter((o) => o.supplierName === name).length;
+  }
 
   function toggleBrand(brand: string) {
     setActiveBrands((prev) =>
@@ -585,6 +610,12 @@ export default function StockUpdScreen() {
     : activeBrands.length === 1
     ? "1 Brand"
     : `${activeBrands.length} Brands`;
+  const vendorActive = activeVendors.length > 0;
+  const vendorBarLabel = activeVendors.length === 0
+    ? "All Vendors"
+    : activeVendors.length === 1
+    ? activeVendors[0]
+    : `${activeVendors.length} Vendors`;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -664,6 +695,35 @@ export default function StockUpdScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Vendor filter row */}
+      <TouchableOpacity
+        style={[styles.brandBar, vendorActive && styles.brandBarActive]}
+        onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
+        activeOpacity={0.75}
+      >
+        <Feather
+          name="users"
+          size={14}
+          color={vendorActive ? Colors.textInverse : Colors.textSecondary}
+        />
+        <Text
+          style={[styles.brandBarText, vendorActive && styles.brandBarTextActive]}
+          numberOfLines={1}
+        >
+          {vendorBarLabel}
+        </Text>
+        {vendorActive ? (
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); setActiveVendors([]); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="x-circle" size={15} color={Colors.textInverse} />
+          </TouchableOpacity>
+        ) : (
+          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+        )}
+      </TouchableOpacity>
 
       {/* Brand filter row */}
       <TouchableOpacity
@@ -893,6 +953,122 @@ export default function StockUpdScreen() {
           >
             <Text style={styles.modalDoneBtnText}>
               {activeBrands.length === 0 ? "Close" : `Apply (${activeBrands.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Vendor filter modal */}
+      <Modal
+        visible={showVendorModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowVendorModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowVendorModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Vendor</Text>
+            {vendorActive && (
+              <TouchableOpacity onPress={() => setActiveVendors([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allVendors.length > 0 && (
+            <View style={styles.brandSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.brandSearchInput}
+                value={vendorSearch}
+                onChangeText={setVendorSearch}
+                placeholder="Search vendors…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {vendorSearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setVendorSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allVendors.length === 0 ? (
+            <View style={styles.noBrands}>
+              <Feather name="users" size={32} color={Colors.textMuted} />
+              <Text style={styles.noBrandsTitle}>No Vendors Yet</Text>
+              <Text style={styles.noBrandsSub}>
+                Import or create orders to filter by vendor.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const q = vendorSearch.trim().toLowerCase();
+                const visibleVendors = q ? allVendors.filter((v) => v.toLowerCase().includes(q)) : allVendors;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[styles.brandRow, activeVendors.length === 0 && styles.brandRowActive]}
+                        onPress={() => setActiveVendors([])}
+                      >
+                        <Text style={[styles.brandName, activeVendors.length === 0 && styles.brandNameActive]}>
+                          All Vendors
+                        </Text>
+                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        {activeVendors.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    )}
+                    {visibleVendors.length === 0 ? (
+                      <View style={styles.noBrands}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noBrandsTitle}>No match</Text>
+                        <Text style={styles.noBrandsSub}>No vendors found for "{vendorSearch}"</Text>
+                      </View>
+                    ) : (
+                      visibleVendors.map((vendor) => {
+                        const isSelected = activeVendors.includes(vendor);
+                        const count = vendorOrderCount(vendor);
+                        return (
+                          <TouchableOpacity
+                            key={vendor}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleVendor(vendor)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]} numberOfLines={1}>
+                              {vendor}
+                            </Text>
+                            <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowVendorModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeVendors.length === 0 ? "Close" : `Apply (${activeVendors.length} selected)`}
             </Text>
           </TouchableOpacity>
         </View>
