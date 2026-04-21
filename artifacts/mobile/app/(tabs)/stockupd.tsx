@@ -41,6 +41,7 @@ function calcTotal(items: OrderItem[]): number {
 
 function StockUpdCard({
   order,
+  vendorCode,
   activeBrands,
   itemSearch,
   negStockOnly,
@@ -48,6 +49,7 @@ function StockUpdCard({
   onSave,
 }: {
   order: Order;
+  vendorCode?: string;
   activeBrands: string[];
   itemSearch: string;
   negStockOnly: boolean;
@@ -135,7 +137,7 @@ function StockUpdCard({
         <View style={{ flex: 1 }}>
           <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
           <Text style={cardSt.orderNo}>
-            {order.orderNumber}  ·  {sortedItems.length}{activeBrands.length > 0 ? ` of ${order.items.length}` : ""} items
+            {vendorCode ? `${vendorCode}  ·  ` : ""}{order.orderNumber}  ·  {sortedItems.length}{activeBrands.length > 0 ? ` of ${order.items.length}` : ""} items
           </Text>
         </View>
         <StatusBadge status={order.status} />
@@ -952,7 +954,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
