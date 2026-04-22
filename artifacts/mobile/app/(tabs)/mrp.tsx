@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  TextInput,
   Alert,
   Platform,
   ActivityIndicator,
@@ -14,66 +15,32 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
+import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
-
-interface MrpRow {
-  itemNo: string;
-  mrp: number;
-  matched: boolean;
-  oldMrp?: number;
-}
+import { useApp, MrpEntry } from "@/context/AppContext";
 
 export default function MrpScreen() {
-  const { orders, applyMrpUpdates } = useApp();
+  const { mrpEntries, saveMrpBatch, clearMrpBatch } = useApp();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [rows, setRows] = useState<MrpRow[]>([]);
+  const [downloading, setDownloading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [appliedSummary, setAppliedSummary] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  const matchedItemNoSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const o of orders) {
-      for (const it of o.items) {
-        if (it.name.includes(" - ")) {
-          set.add(it.name.split(" - ")[0].trim().toUpperCase());
-        }
-      }
-    }
-    return set;
-  }, [orders]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return mrpEntries;
+    return mrpEntries.filter((e) => e.itemNo.toLowerCase().includes(q));
+  }, [mrpEntries, search]);
 
-  const itemNoToOldMrp = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const o of orders) {
-      for (const it of o.items) {
-        if (it.name.includes(" - ")) {
-          const k = it.name.split(" - ")[0].trim().toUpperCase();
-          if (map[k] == null) map[k] = it.unitPrice;
-        }
-      }
-    }
-    return map;
-  }, [orders]);
-
-  const matchedCount = rows.filter((r) => r.matched).length;
-  const unmatchedCount = rows.length - matchedCount;
-  const changedCount = rows.filter(
-    (r) => r.matched && r.oldMrp != null && r.oldMrp !== r.mrp
-  ).length;
-
-  async function pickAndParse() {
+  async function pickAndImport() {
     try {
       setLoading(true);
       setErrors([]);
-      setRows([]);
-      setFileName(null);
-      setAppliedSummary(null);
+      setStatusMsg(null);
 
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -91,8 +58,6 @@ export default function MrpScreen() {
       }
 
       const asset = result.assets[0];
-      setFileName(asset.name);
-
       await new Promise((r) => setTimeout(r, 50));
 
       let workbook: XLSX.WorkBook;
@@ -121,8 +86,8 @@ export default function MrpScreen() {
         workbook = XLSX.read(base64, { type: "base64" });
       }
 
-      // Prefer "MRPBatch" sheet if present, else first sheet
-      let sheetName = workbook.SheetNames.find((n) => n.toLowerCase() === "mrpbatch") ?? workbook.SheetNames[0];
+      const sheetName =
+        workbook.SheetNames.find((n) => n.toLowerCase() === "mrpbatch") ?? workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
@@ -132,7 +97,6 @@ export default function MrpScreen() {
         return;
       }
 
-      // Tolerant column name matching (case-insensitive, trim)
       const firstRow = raw[0];
       const keyMap: Record<string, string> = {};
       for (const k of Object.keys(firstRow)) {
@@ -149,7 +113,7 @@ export default function MrpScreen() {
       }
 
       const seen = new Set<string>();
-      const parsed: MrpRow[] = [];
+      const parsed: MrpEntry[] = [];
       const localErrors: string[] = [];
       for (let i = 0; i < raw.length; i++) {
         const r = raw[i];
@@ -164,13 +128,7 @@ export default function MrpScreen() {
         const upper = itemNo.toUpperCase();
         if (seen.has(upper)) continue;
         seen.add(upper);
-        const matched = matchedItemNoSet.has(upper);
-        parsed.push({
-          itemNo,
-          mrp,
-          matched,
-          oldMrp: matched ? itemNoToOldMrp[upper] : undefined,
-        });
+        parsed.push({ itemNo, mrp });
       }
 
       if (parsed.length === 0) {
@@ -179,63 +137,80 @@ export default function MrpScreen() {
         return;
       }
 
-      // Sort: matched-with-changes first, then matched-no-change, then unmatched
-      parsed.sort((a, b) => {
-        const aRank = a.matched ? (a.oldMrp !== a.mrp ? 0 : 1) : 2;
-        const bRank = b.matched ? (b.oldMrp !== b.mrp ? 0 : 1) : 2;
-        if (aRank !== bRank) return aRank - bRank;
-        return a.itemNo.localeCompare(b.itemNo);
-      });
-
-      setRows(parsed);
+      parsed.sort((a, b) => a.itemNo.localeCompare(b.itemNo, undefined, { sensitivity: "base" }));
+      saveMrpBatch(parsed);
+      setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      setErrors([e?.message ?? "Failed to parse file"]);
+      setErrors([e?.message ?? "Failed to import file"]);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleApply() {
-    if (rows.length === 0) return;
-    if (changedCount === 0) {
-      const msg = "No matching items in Orders need an MRP change.";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Nothing to Update", msg);
-      return;
-    }
-    const confirmMsg = `Update MRP for ${changedCount} item${changedCount !== 1 ? "s" : ""} across orders. This will recalculate order totals. Continue?`;
-    const doApply = () => {
-      try {
-        setApplying(true);
-        const map: Record<string, number> = {};
-        for (const r of rows) map[r.itemNo] = r.mrp;
-        const res = applyMrpUpdates(map);
-        const summary = `Updated ${res.itemsUpdated} item${res.itemsUpdated !== 1 ? "s" : ""} across ${res.ordersUpdated} order${res.ordersUpdated !== 1 ? "s" : ""}.`;
-        setAppliedSummary(summary);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch (e: any) {
-        Alert.alert("Update Failed", e?.message ?? "Unknown error");
-      } finally {
-        setApplying(false);
-      }
+  function handleClear() {
+    if (mrpEntries.length === 0) return;
+    const msg = `Remove all ${mrpEntries.length} MRP entries? This cannot be undone.`;
+    const doClear = () => {
+      clearMrpBatch();
+      setStatusMsg(null);
+      setErrors([]);
+      setSearch("");
     };
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMsg)) doApply();
+      if (window.confirm(msg)) doClear();
       return;
     }
-    Alert.alert("Apply MRP Updates", confirmMsg, [
+    Alert.alert("Clear MRP", msg, [
       { text: "Cancel", style: "cancel" },
-      { text: "Apply", onPress: doApply },
+      { text: "Clear", style: "destructive", onPress: doClear },
     ]);
   }
 
-  function handleClear() {
-    setRows([]);
-    setFileName(null);
-    setErrors([]);
-    setAppliedSummary(null);
+  async function handleExport() {
+    if (mrpEntries.length === 0) return;
+    try {
+      setDownloading(true);
+      const data: (string | number)[][] = [
+        ["ItemNo", "MRP"],
+        ...mrpEntries.map((e) => [e.itemNo, e.mrp]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = [{ wch: 18 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "MRPBatch");
+      const fileName = `MRPBatch_${Date.now()}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export MRPBatch",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
@@ -244,12 +219,27 @@ export default function MrpScreen() {
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>MRP</Text>
-        {rows.length > 0 && (
-          <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-            <Feather name="x" size={16} color={Colors.danger} />
-            <Text style={styles.clearBtnText}>Clear</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.headerActions}>
+          {mrpEntries.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={handleExport}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Feather name="download" size={16} color={Colors.primary} />
+                )}
+                <Text style={styles.exportBtnText}>Export</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
+                <Feather name="trash-2" size={15} color={Colors.danger} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -263,12 +253,12 @@ export default function MrpScreen() {
           <Text style={styles.cardTitle}>Import MRPBatch</Text>
           <Text style={styles.cardSub}>
             Excel file with columns <Text style={styles.mono}>ItemNo</Text> and{" "}
-            <Text style={styles.mono}>MRP</Text>. Each ItemNo is matched to items in your Orders by item number; matching items get the new MRP and order totals are recalculated.
+            <Text style={styles.mono}>MRP</Text>. Imported data is stored independently of the Orders table.
           </Text>
 
           <TouchableOpacity
             style={[styles.pickBtn, loading && { opacity: 0.6 }]}
-            onPress={pickAndParse}
+            onPress={pickAndImport}
             disabled={loading}
           >
             {loading ? (
@@ -276,15 +266,10 @@ export default function MrpScreen() {
             ) : (
               <Feather name="upload" size={18} color={Colors.textInverse} />
             )}
-            <Text style={styles.pickBtnText}>{loading ? "Reading file..." : "Choose Excel File"}</Text>
+            <Text style={styles.pickBtnText}>
+              {loading ? "Reading file..." : mrpEntries.length > 0 ? "Re-Import (Replace)" : "Choose Excel File"}
+            </Text>
           </TouchableOpacity>
-
-          {fileName && (
-            <View style={styles.fileRow}>
-              <Feather name="file" size={14} color={Colors.textMuted} />
-              <Text style={styles.fileName} numberOfLines={1}>{fileName}</Text>
-            </View>
-          )}
         </View>
 
         {errors.length > 0 && (
@@ -298,91 +283,71 @@ export default function MrpScreen() {
           </View>
         )}
 
-        {appliedSummary && (
+        {statusMsg && (
           <View style={styles.successBox}>
             <Feather name="check-circle" size={16} color={Colors.success ?? "#16A34A"} />
-            <Text style={styles.successText}>{appliedSummary}</Text>
+            <Text style={styles.successText}>{statusMsg}</Text>
           </View>
         )}
 
-        {rows.length > 0 && (
+        {mrpEntries.length > 0 && (
           <>
-            <View style={styles.statsRow}>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{rows.length}</Text>
-                <Text style={styles.statLabel}>Rows</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statNum, { color: Colors.success ?? "#16A34A" }]}>{matchedCount}</Text>
-                <Text style={styles.statLabel}>Matched</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statNum, { color: Colors.danger }]}>{unmatchedCount}</Text>
-                <Text style={styles.statLabel}>Unmatched</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statNum, { color: Colors.primary }]}>{changedCount}</Text>
-                <Text style={styles.statLabel}>To Update</Text>
-              </View>
+            <View style={styles.searchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search by Item No…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {search.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
 
-            <TouchableOpacity
-              style={[styles.applyBtn, (applying || changedCount === 0) && { opacity: 0.5 }]}
-              onPress={handleApply}
-              disabled={applying || changedCount === 0}
-            >
-              {applying ? (
-                <ActivityIndicator size="small" color={Colors.textInverse} />
-              ) : (
-                <Feather name="check" size={18} color={Colors.textInverse} />
-              )}
-              <Text style={styles.applyBtnText}>
-                {applying ? "Applying..." : changedCount === 0 ? "No Changes to Apply" : `Apply ${changedCount} MRP Update${changedCount !== 1 ? "s" : ""}`}
+            <View style={styles.statsRow}>
+              <Text style={styles.statText}>
+                {filtered.length} of {mrpEntries.length} entr{mrpEntries.length !== 1 ? "ies" : "y"}
               </Text>
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.tableCard}>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, { flex: 2 }]}>ItemNo</Text>
-                <Text style={[styles.th, { flex: 1.2, textAlign: "right" }]}>Old MRP</Text>
-                <Text style={[styles.th, { flex: 1.2, textAlign: "right" }]}>New MRP</Text>
-                <Text style={[styles.th, { width: 70, textAlign: "center" }]}>Status</Text>
+                <Text style={[styles.th, { flex: 1.2, textAlign: "right" }]}>MRP</Text>
               </View>
-              {rows.map((r, i) => {
-                const changed = r.matched && r.oldMrp != null && r.oldMrp !== r.mrp;
-                return (
+              {filtered.length === 0 ? (
+                <View style={styles.noRows}>
+                  <Feather name="search" size={24} color={Colors.textMuted} />
+                  <Text style={styles.noRowsText}>No items match "{search}"</Text>
+                </View>
+              ) : (
+                filtered.map((r, i) => (
                   <View
                     key={`${r.itemNo}-${i}`}
                     style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
                   >
                     <Text style={[styles.td, { flex: 2 }]} numberOfLines={1}>{r.itemNo}</Text>
-                    <Text style={[styles.td, { flex: 1.2, textAlign: "right" }]}>
-                      {r.matched && r.oldMrp != null ? r.oldMrp.toFixed(2) : "—"}
-                    </Text>
-                    <Text style={[styles.td, { flex: 1.2, textAlign: "right", fontWeight: changed ? "700" : "400", color: changed ? Colors.primary : Colors.text }]}>
+                    <Text style={[styles.td, { flex: 1.2, textAlign: "right", fontWeight: "600" }]}>
                       {r.mrp.toFixed(2)}
                     </Text>
-                    <View style={{ width: 70, alignItems: "center" }}>
-                      {!r.matched ? (
-                        <Text style={[styles.badge, { backgroundColor: "#fef2f2", color: Colors.danger }]}>No match</Text>
-                      ) : changed ? (
-                        <Text style={[styles.badge, { backgroundColor: "#eff6ff", color: Colors.primary }]}>Update</Text>
-                      ) : (
-                        <Text style={[styles.badge, { backgroundColor: "#f1f5f9", color: Colors.textMuted }]}>Same</Text>
-                      )}
-                    </View>
                   </View>
-                );
-              })}
+                ))
+              )}
             </View>
           </>
         )}
 
-        {rows.length === 0 && !loading && (
+        {mrpEntries.length === 0 && !loading && (
           <View style={styles.emptyHint}>
             <Feather name="info" size={14} color={Colors.textMuted} />
             <Text style={styles.emptyHintText}>
-              Pick an Excel file to preview MRP changes before applying.
+              Pick an Excel file to load the MRP table.
             </Text>
           </View>
         )}
@@ -402,12 +367,18 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
-  clearBtn: {
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  exportBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.primaryLight ?? "#E0EAFF",
+    borderWidth: 1, borderColor: Colors.primary + "40",
+  },
+  exportBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  clearBtn: {
+    width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center",
     backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca",
   },
-  clearBtnText: { color: Colors.danger, fontWeight: "700", fontSize: 13 },
   body: { padding: 16, gap: 14 },
   card: {
     backgroundColor: Colors.surface ?? "#fff",
@@ -422,8 +393,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary, paddingVertical: 12, borderRadius: 10,
   },
   pickBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 15 },
-  fileRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  fileName: { flex: 1, fontSize: 13, color: Colors.textSecondary },
   errorBox: {
     flexDirection: "row", gap: 10, padding: 12,
     backgroundColor: "#fef2f2", borderRadius: 10,
@@ -436,19 +405,15 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "#bbf7d0",
   },
   successText: { color: Colors.success ?? "#16A34A", fontWeight: "600", fontSize: 13, flex: 1 },
-  statsRow: { flexDirection: "row", gap: 8 },
-  statBox: {
-    flex: 1, backgroundColor: Colors.surface ?? "#fff",
-    borderRadius: 10, padding: 12, alignItems: "center",
+  searchWrap: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: Colors.surface ?? "#fff",
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
     borderWidth: 1, borderColor: Colors.border,
   },
-  statNum: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  statLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  applyBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.success ?? "#16A34A", paddingVertical: 14, borderRadius: 10,
-  },
-  applyBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 15 },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
+  statsRow: { paddingHorizontal: 4 },
+  statText: { fontSize: 12, color: Colors.textMuted },
   tableCard: {
     backgroundColor: Colors.surface ?? "#fff",
     borderRadius: 12, overflow: "hidden",
@@ -465,10 +430,8 @@ const styles = StyleSheet.create({
   },
   rowAlt: { backgroundColor: Colors.background },
   td: { fontSize: 13, color: Colors.text },
-  badge: {
-    fontSize: 10, fontWeight: "700",
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: "hidden",
-  },
+  noRows: { padding: 24, alignItems: "center", gap: 6 },
+  noRowsText: { fontSize: 13, color: Colors.textMuted },
   emptyHint: {
     flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center",
     padding: 12,

@@ -82,7 +82,14 @@ interface AppContextType {
   deleteAppUser: (id: string) => void;
   addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[] };
   addUsersBatch: (items: Omit<AppUser, "id" | "createdAt">[]) => { added: number; skipped: string[] };
-  applyMrpUpdates: (mrpMap: Record<string, number>) => { itemsUpdated: number; ordersUpdated: number; matchedItemNos: string[]; unmatchedItemNos: string[] };
+  mrpEntries: MrpEntry[];
+  saveMrpBatch: (entries: MrpEntry[]) => void;
+  clearMrpBatch: () => void;
+}
+
+export interface MrpEntry {
+  itemNo: string;
+  mrp: number;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -90,6 +97,7 @@ const AppContext = createContext<AppContextType | null>(null);
 const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
+const MRP_KEY = "@mrpBatch";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -107,6 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
 
   useEffect(() => {
     loadData();
@@ -114,20 +123,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
         AsyncStorage.getItem(SESSION_KEY),
+        AsyncStorage.getItem(MRP_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
       const loadedOrders = ordersData ? JSON.parse(ordersData) : [];
       const loadedUsers: AppUser[] = usersData ? JSON.parse(usersData) : [];
+      const loadedMrp: MrpEntry[] = mrpData ? JSON.parse(mrpData) : [];
 
       setSuppliers(loadedSuppliers);
       setOrders(loadedOrders);
       setAppUsers(loadedUsers);
+      setMrpEntries(loadedMrp);
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -137,6 +149,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSuppliers([]);
       setOrders([]);
     }
+  }
+
+  async function saveMrpBatch(entries: MrpEntry[]) {
+    setMrpEntries(entries);
+    await AsyncStorage.setItem(MRP_KEY, JSON.stringify(entries));
+  }
+
+  async function clearMrpBatch() {
+    setMrpEntries([]);
+    await AsyncStorage.removeItem(MRP_KEY);
   }
 
   function login(userId: string, password: string): { success: boolean; error?: string } {
@@ -292,46 +314,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrders([]);
   }
 
-  function applyMrpUpdates(mrpMap: Record<string, number>): { itemsUpdated: number; ordersUpdated: number; matchedItemNos: string[]; unmatchedItemNos: string[] } {
-    const normalized: Record<string, number> = {};
-    for (const k of Object.keys(mrpMap)) {
-      normalized[k.trim().toUpperCase()] = mrpMap[k];
-    }
-    const matched = new Set<string>();
-    let itemsUpdated = 0;
-    let ordersUpdated = 0;
-    const next = orders.map((o) => {
-      let changed = false;
-      const newItems = o.items.map((it) => {
-        const itemNo = it.name.includes(" - ") ? it.name.split(" - ")[0].trim().toUpperCase() : "";
-        if (itemNo && normalized[itemNo] != null) {
-          matched.add(itemNo);
-          const newPrice = normalized[itemNo];
-          if (it.unitPrice !== newPrice) {
-            changed = true;
-            itemsUpdated++;
-            return { ...it, unitPrice: newPrice };
-          }
-        }
-        return it;
-      });
-      if (changed) {
-        ordersUpdated++;
-        return {
-          ...o,
-          items: newItems,
-          totalAmount: calculateTotal(newItems),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return o;
-    });
-    if (ordersUpdated > 0) saveOrders(next);
-    const matchedItemNos = Array.from(matched);
-    const unmatchedItemNos = Object.keys(normalized).filter((k) => !matched.has(k));
-    return { itemsUpdated, ordersUpdated, matchedItemNos, unmatchedItemNos };
-  }
-
   function updateOrderStatus(id: string, status: OrderStatus) {
     saveOrders(
       orders.map((o) =>
@@ -363,7 +345,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteAppUser,
         addSuppliersBatch,
         addUsersBatch,
-        applyMrpUpdates,
+        mrpEntries,
+        saveMrpBatch,
+        clearMrpBatch,
       }}
     >
       {children}
