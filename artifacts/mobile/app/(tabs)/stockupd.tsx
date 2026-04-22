@@ -585,7 +585,10 @@ export default function StockUpdScreen() {
       };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "StockUpd");
-      const fileName = `stockupd_export_${Date.now()}.xlsx`;
+      const _d = new Date();
+      const _pad = (n: number) => String(n).padStart(2, "0");
+      const _ts = `${_pad(_d.getDate())}${_pad(_d.getMonth() + 1)}${_d.getFullYear()} ${_pad(_d.getHours())}${_pad(_d.getMinutes())}`;
+      const fileName = `Sathyam Super Store - ${_ts}.xlsx`;
       if (Platform.OS === "web") {
         const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
         const blob = new Blob([wbout], { type: "application/octet-stream" });
@@ -709,8 +712,10 @@ export default function StockUpdScreen() {
       } else {
         const now = new Date();
         const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
-        const safeSupplier = supplierName.replace(/[^\w\-]+/g, "_").slice(0, 60) || "StockUpd";
-        const pdfFileName = `Sathyam Super Store Purchase Order Form_${safeSupplier}_${ts}`;
+        const _d2 = new Date();
+        const _pad2 = (n: number) => String(n).padStart(2, "0");
+        const _ts2 = `${_pad2(_d2.getDate())}${_pad2(_d2.getMonth() + 1)}${_d2.getFullYear()} ${_pad2(_d2.getHours())}${_pad2(_d2.getMinutes())}`;
+        const pdfFileName = `Sathyam Super Store - ${_ts2}`;
         const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {

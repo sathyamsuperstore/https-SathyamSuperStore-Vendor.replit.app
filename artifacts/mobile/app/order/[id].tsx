@@ -190,7 +190,10 @@ export default function OrderDetailScreen() {
         Name: "_xlnm.Print_Titles",
         Ref: "Order!$10:$10",
       });
-      const fileName = `${order.orderNumber.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.xlsx`;
+      const _d = new Date();
+      const _pad = (n: number) => String(n).padStart(2, "0");
+      const _ts = `${_pad(_d.getDate())}${_pad(_d.getMonth() + 1)}${_d.getFullYear()} ${_pad(_d.getHours())}${_pad(_d.getMinutes())}`;
+      const fileName = `Sathyam Super Store - ${_ts}.xlsx`;
       if (Platform.OS === "web") {
         const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
         const blob = new Blob([wbout], { type: "application/octet-stream" });
