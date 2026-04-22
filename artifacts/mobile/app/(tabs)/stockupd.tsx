@@ -46,6 +46,7 @@ function StockUpdCard({
   itemSearch,
   negStockOnly,
   showNotes,
+  mrpMap,
   onSave,
 }: {
   order: Order;
@@ -54,6 +55,7 @@ function StockUpdCard({
   itemSearch: string;
   negStockOnly: boolean;
   showNotes: boolean;
+  mrpMap: Record<string, number>;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -181,7 +183,7 @@ function StockUpdCard({
                     <Text style={cardSt.itemName}>{desc}</Text>
                     {(item.brand || itemNo) ? (
                       <Text style={cardSt.itemBrand}>
-                        {item.brand ?? ""}{item.brand && itemNo ? "  ·  " : ""}{itemNo ? `Item No: ${itemNo}` : ""}
+                        {item.brand ?? ""}{item.brand && itemNo ? "  ·  " : ""}{itemNo ? `Item No: ${itemNo}` : ""}{itemNo && mrpMap[itemNo.trim().toUpperCase()] != null ? `  ·  MRP ₹${mrpMap[itemNo.trim().toUpperCase()].toFixed(2)}` : ""}
                       </Text>
                     ) : null}
                     <Text style={cardSt.itemMeta}>
@@ -372,7 +374,12 @@ const cardSt = StyleSheet.create({
 });
 
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers, updateOrder } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder, mrpEntries } = useApp();
+  const mrpMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const e of mrpEntries) m[e.itemNo.trim().toUpperCase()] = e.mrp;
+    return m;
+  }, [mrpEntries]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
@@ -954,7 +961,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} mrpMap={mrpMap} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
