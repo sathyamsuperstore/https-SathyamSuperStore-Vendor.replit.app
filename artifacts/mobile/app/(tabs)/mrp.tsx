@@ -112,7 +112,7 @@ export default function MrpScreen() {
         return;
       }
 
-      const seen = new Set<string>();
+      const seenPair = new Set<string>();
       const parsed: MrpEntry[] = [];
       const localErrors: string[] = [];
       for (let i = 0; i < raw.length; i++) {
@@ -125,9 +125,9 @@ export default function MrpScreen() {
           localErrors.push(`Row ${i + 2}: invalid MRP "${mrpStr}" for ItemNo ${itemNo}`);
           continue;
         }
-        const upper = itemNo.toUpperCase();
-        if (seen.has(upper)) continue;
-        seen.add(upper);
+        const key = `${itemNo.toUpperCase()}|${mrp}`;
+        if (seenPair.has(key)) continue;
+        seenPair.add(key);
         parsed.push({ itemNo, mrp });
       }
 
