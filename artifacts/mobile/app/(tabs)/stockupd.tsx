@@ -46,6 +46,7 @@ function StockUpdCard({
   itemSearch,
   negStockOnly,
   showNotes,
+  multipleMrpOnly,
   mrpMap,
   onSave,
 }: {
@@ -55,6 +56,7 @@ function StockUpdCard({
   itemSearch: string;
   negStockOnly: boolean;
   showNotes: boolean;
+  multipleMrpOnly: boolean;
   mrpMap: Record<string, number[]>;
   onSave: (id: string, items: OrderItem[]) => void;
 }) {
@@ -80,6 +82,12 @@ function StockUpdCard({
     if (negStockOnly) {
       base = base.filter((it) => it.stock != null && it.stock < 0);
     }
+    if (multipleMrpOnly) {
+      base = base.filter((it) => {
+        const itemNo = it.name.includes(" - ") ? it.name.split(" - ")[0].trim().toUpperCase() : "";
+        return itemNo !== "" && mrpMap[itemNo]?.length > 0;
+      });
+    }
     return [...base].sort((a, b) => {
       const ba = (a.brand ?? "").toLowerCase();
       const bb = (b.brand ?? "").toLowerCase();
@@ -90,7 +98,7 @@ function StockUpdCard({
       if (b.sortNo != null) return 1;
       return 0;
     });
-  }, [order.items, activeBrands, itemSearch, negStockOnly]);
+  }, [order.items, activeBrands, itemSearch, negStockOnly, multipleMrpOnly, mrpMap]);
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
@@ -396,6 +404,7 @@ export default function StockUpdScreen() {
   const [vendorSearch, setVendorSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [negStockOnly, setNegStockOnly] = useState(false);
+  const [multipleMrpOnly, setMultipleMrpOnly] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -459,10 +468,30 @@ export default function StockUpdScreen() {
         return searchSubset.some((it) => it.stock != null && it.stock < 0);
       });
     }
+    if (multipleMrpOnly) {
+      result = result.filter((o) => {
+        const brandSubset =
+          activeBrands.length === 0
+            ? o.items
+            : o.items.filter((it) => it.brand != null && activeBrands.includes(it.brand));
+        const searchSubset = q
+          ? brandSubset.filter((it) => {
+              const desc = it.name.includes(" - ")
+                ? it.name.split(" - ").slice(1).join(" - ")
+                : it.name;
+              return desc.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+            })
+          : brandSubset;
+        return searchSubset.some((it) => {
+          const itemNo = it.name.includes(" - ") ? it.name.split(" - ")[0].trim().toUpperCase() : "";
+          return itemNo !== "" && mrpMap[itemNo]?.length > 0;
+        });
+      });
+    }
     return [...result].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeVendors, activeBrands, itemSearch, negStockOnly]);
+  }, [statusFiltered, activeVendors, activeBrands, itemSearch, negStockOnly, multipleMrpOnly, mrpMap]);
 
   function toggleVendor(name: string) {
     setActiveVendors((prev) =>
@@ -942,6 +971,32 @@ export default function StockUpdScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* MultipleMRP filter row */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.negStockToggle, { flex: 1 }, multipleMrpOnly && styles.negStockToggleActive]}
+          onPress={() => setMultipleMrpOnly((v) => !v)}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="layers"
+            size={14}
+            color={multipleMrpOnly ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text style={[styles.negStockToggleText, multipleMrpOnly && styles.negStockToggleTextActive]} numberOfLines={1}>
+            MultipleMRP
+          </Text>
+          {multipleMrpOnly && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setMultipleMrpOnly(false); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+      </View>
+
       {/* Item description search bar */}
       <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
         <Feather name="search" size={14} color={itemSearch.length > 0 ? Colors.primary : Colors.textMuted} />
@@ -966,7 +1021,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} mrpMap={mrpMap} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
