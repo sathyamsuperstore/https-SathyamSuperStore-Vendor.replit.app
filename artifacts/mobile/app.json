@@ -17,7 +17,8 @@
       "supportsTablet": false
     },
     "android": {
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "edgeToEdgeEnabled": false
     },
     "web": {
       "favicon": "./assets/images/icon.png"
