@@ -82,6 +82,7 @@ interface AppContextType {
   deleteAppUser: (id: string) => void;
   addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[] };
   addUsersBatch: (items: Omit<AppUser, "id" | "createdAt">[]) => { added: number; skipped: string[] };
+  applyMrpUpdates: (mrpMap: Record<string, number>) => { itemsUpdated: number; ordersUpdated: number; matchedItemNos: string[]; unmatchedItemNos: string[] };
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -291,6 +292,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrders([]);
   }
 
+  function applyMrpUpdates(mrpMap: Record<string, number>): { itemsUpdated: number; ordersUpdated: number; matchedItemNos: string[]; unmatchedItemNos: string[] } {
+    const normalized: Record<string, number> = {};
+    for (const k of Object.keys(mrpMap)) {
+      normalized[k.trim().toUpperCase()] = mrpMap[k];
+    }
+    const matched = new Set<string>();
+    let itemsUpdated = 0;
+    let ordersUpdated = 0;
+    const next = orders.map((o) => {
+      let changed = false;
+      const newItems = o.items.map((it) => {
+        const itemNo = it.name.includes(" - ") ? it.name.split(" - ")[0].trim().toUpperCase() : "";
+        if (itemNo && normalized[itemNo] != null) {
+          matched.add(itemNo);
+          const newPrice = normalized[itemNo];
+          if (it.unitPrice !== newPrice) {
+            changed = true;
+            itemsUpdated++;
+            return { ...it, unitPrice: newPrice };
+          }
+        }
+        return it;
+      });
+      if (changed) {
+        ordersUpdated++;
+        return {
+          ...o,
+          items: newItems,
+          totalAmount: calculateTotal(newItems),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return o;
+    });
+    if (ordersUpdated > 0) saveOrders(next);
+    const matchedItemNos = Array.from(matched);
+    const unmatchedItemNos = Object.keys(normalized).filter((k) => !matched.has(k));
+    return { itemsUpdated, ordersUpdated, matchedItemNos, unmatchedItemNos };
+  }
+
   function updateOrderStatus(id: string, status: OrderStatus) {
     saveOrders(
       orders.map((o) =>
@@ -322,6 +363,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteAppUser,
         addSuppliersBatch,
         addUsersBatch,
+        applyMrpUpdates,
       }}
     >
       {children}

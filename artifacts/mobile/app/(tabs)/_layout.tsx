@@ -35,6 +35,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "square.and.arrow.up", selected: "square.and.arrow.up.fill" }} />
         <Label>StockUpd</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="mrp">
+        <Icon sf={{ default: "indianrupeesign.circle", selected: "indianrupeesign.circle.fill" }} />
+        <Label>MRP</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -140,6 +144,18 @@ function ClassicTabLayout() {
               <SymbolView name="square.and.arrow.up" tintColor={color} size={24} />
             ) : (
               <Feather name="upload-cloud" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="mrp"
+        options={{
+          title: "MRP",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="indianrupeesign.circle" tintColor={color} size={24} />
+            ) : (
+              <Feather name="dollar-sign" size={22} color={color} />
             ),
         }}
       />
