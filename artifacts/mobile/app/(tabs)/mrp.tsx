@@ -256,20 +256,30 @@ export default function MrpScreen() {
             <Text style={styles.mono}>MRP</Text>. Imported data is stored independently of the Orders table.
           </Text>
 
-          <TouchableOpacity
-            style={[styles.pickBtn, loading && { opacity: 0.6 }]}
-            onPress={pickAndImport}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={Colors.textInverse} />
-            ) : (
-              <Feather name="upload" size={18} color={Colors.textInverse} />
-            )}
-            <Text style={styles.pickBtnText}>
-              {loading ? "Reading file..." : mrpEntries.length > 0 ? "Re-Import (Replace)" : "Choose Excel File"}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.pickBtn, loading && { opacity: 0.6 }, { flex: 1 }]}
+              onPress={pickAndImport}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={Colors.textInverse} />
+              ) : (
+                <Feather name="upload" size={18} color={Colors.textInverse} />
+              )}
+              <Text style={styles.pickBtnText}>
+                {loading ? "Reading file..." : mrpEntries.length > 0 ? "Re-Import (Replace)" : "Choose Excel File"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.deleteBtn, mrpEntries.length === 0 && { opacity: 0.4 }]}
+              onPress={handleClear}
+              disabled={mrpEntries.length === 0}
+            >
+              <Feather name="trash-2" size={18} color={Colors.textInverse} />
+              <Text style={styles.deleteBtnText}>Delete All</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {errors.length > 0 && (
@@ -388,11 +398,17 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
   cardSub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   mono: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontWeight: "600", color: Colors.text },
+  actionRow: { flexDirection: "row", gap: 8 },
   pickBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.primary, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: Colors.primary, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,
   },
   pickBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 15 },
+  deleteBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: Colors.danger, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,
+  },
+  deleteBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 14 },
   errorBox: {
     flexDirection: "row", gap: 10, padding: 12,
     backgroundColor: "#fef2f2", borderRadius: 10,
