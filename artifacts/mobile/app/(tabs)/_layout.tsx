@@ -56,11 +56,11 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: Colors.tabBarActive,
         tabBarInactiveTintColor: Colors.tabBarInactive,
         tabBarStyle: {
-          position: "absolute",
+          ...(isIOS || isWeb ? { position: "absolute" } : {}),
           backgroundColor: isIOS ? "transparent" : isDark ? "#000" : "#fff",
-          borderTopWidth: isWeb ? 1 : 0,
+          borderTopWidth: isWeb || !isIOS ? 1 : 0,
           borderTopColor: isDark ? "#333" : Colors.border,
-          elevation: 0,
+          elevation: isIOS ? 0 : 8,
           ...(isWeb ? { height: 84 } : {}),
         },
         tabBarBackground: () =>
