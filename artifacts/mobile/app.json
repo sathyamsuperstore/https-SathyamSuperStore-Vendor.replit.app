@@ -38,6 +38,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b03b64f6-10af-487d-b3cb-7dbf0dc32795"
+      }
+    },
+    "owner": "sathyamsuperstore"
   }
 }

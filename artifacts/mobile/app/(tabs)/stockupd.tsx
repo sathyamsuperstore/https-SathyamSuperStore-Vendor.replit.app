@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -414,15 +414,29 @@ export default function StockUpdScreen() {
     return orders.filter((o) => o.status === activeFilter);
   }, [orders, activeFilter]);
 
+  const vendorScopedOrders = useMemo(() => {
+    if (activeVendors.length === 0) return statusFiltered;
+    return statusFiltered.filter(
+      (o) => o.supplierName != null && activeVendors.includes(o.supplierName)
+    );
+  }, [statusFiltered, activeVendors]);
+
   const allBrands = useMemo(() => {
     const set = new Set<string>();
-    statusFiltered.forEach((o) =>
+    vendorScopedOrders.forEach((o) =>
       o.items.forEach((item) => {
         if (item.brand) set.add(item.brand);
       })
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [statusFiltered]);
+  }, [vendorScopedOrders]);
+
+  useEffect(() => {
+    if (activeBrands.length === 0) return;
+    const allowed = new Set(allBrands);
+    const next = activeBrands.filter((b) => allowed.has(b));
+    if (next.length !== activeBrands.length) setActiveBrands(next);
+  }, [allBrands, activeBrands]);
 
   const allVendors = useMemo(() => {
     const set = new Set<string>();
@@ -510,7 +524,7 @@ export default function StockUpdScreen() {
   }
 
   function brandOrderCount(brand: string): number {
-    return statusFiltered.filter((o) =>
+    return vendorScopedOrders.filter((o) =>
       o.items.some((item) => item.brand === brand)
     ).length;
   }
