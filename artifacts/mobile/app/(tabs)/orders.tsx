@@ -225,54 +225,55 @@ export default function OrdersScreen() {
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Orders</Text>
-        <View style={styles.headerActions}>
-          {orders.length > 0 && (
-            <TouchableOpacity style={styles.clearAllBtn} onPress={handleClearAll}>
-              <Feather name="trash-2" size={16} color={Colors.danger} />
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => router.push("/order/new")}
+        >
+          <Feather name="plus" size={20} color={Colors.textInverse} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.exportBtn}
+          onPress={handleExport}
+          disabled={downloading || filtered.length === 0}
+        >
+          {downloading ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Feather name="download" size={16} color={filtered.length === 0 ? Colors.textMuted : Colors.success ?? Colors.primary} />
           )}
-          <TouchableOpacity
-            style={styles.exportBtn}
-            onPress={handleExport}
-            disabled={downloading || filtered.length === 0}
-          >
-            {downloading ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : (
-              <Feather name="download" size={17} color={filtered.length === 0 ? Colors.textMuted : Colors.primary} />
-            )}
-            <Text style={[styles.exportBtnText, filtered.length === 0 && styles.exportBtnTextDisabled]}>
-              Export
-            </Text>
+          <Text style={[styles.exportBtnText, filtered.length === 0 && styles.exportBtnTextDisabled]}>
+            Export
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.importBtn}
+          onPress={() => router.push("/order/import")}
+        >
+          <Feather name="upload" size={16} color={Colors.primary} />
+          <Text style={styles.importBtnText}>Excel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.txtBtn}
+          onPress={() => router.push("/order/import?format=txt")}
+        >
+          <Feather name="file-text" size={16} color={Colors.accent} />
+          <Text style={styles.txtBtnText}>TXT</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.driveBtn}
+          onPress={() => router.push("/drive-import")}
+        >
+          <Feather name="hard-drive" size={16} color="#1a73e8" />
+          <Text style={styles.driveBtnText}>Drive</Text>
+        </TouchableOpacity>
+        {orders.length > 0 && (
+          <TouchableOpacity style={styles.clearAllBtn} onPress={handleClearAll}>
+            <Feather name="trash-2" size={16} color={Colors.danger} />
+            <Text style={styles.clearAllBtnText}>Delete</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.importBtn}
-            onPress={() => router.push("/order/import")}
-          >
-            <Feather name="upload" size={17} color={Colors.primary} />
-            <Text style={styles.importBtnText}>Import</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.txtBtn}
-            onPress={() => router.push("/order/import?format=txt")}
-          >
-            <Feather name="file-text" size={17} color={Colors.accent} />
-            <Text style={styles.txtBtnText}>TXT</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.driveBtn}
-            onPress={() => router.push("/drive-import")}
-          >
-            <Feather name="hard-drive" size={17} color="#1a73e8" />
-            <Text style={styles.driveBtnText}>DriveImport</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => router.push("/order/new")}
-          >
-            <Feather name="plus" size={20} color={Colors.textInverse} />
-          </TouchableOpacity>
-        </View>
+        )}
       </View>
 
       {/* Status + Brand filter pills */}
@@ -492,69 +493,78 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 8,
+    gap: 8,
+  },
   clearAllBtn: {
-    width: 38,
-    height: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: Colors.dangerLight,
-    alignItems: "center",
-    justifyContent: "center",
     borderWidth: 1,
     borderColor: Colors.danger + "30",
   },
+  clearAllBtnText: { fontSize: 13, fontWeight: "700", color: Colors.danger },
   exportBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: Colors.successLight ?? "#DCFCE7",
     borderWidth: 1,
     borderColor: Colors.success ? Colors.success + "40" : "#16A34A40",
   },
-  exportBtnText: { fontSize: 14, fontWeight: "700", color: Colors.success ?? "#16A34A" },
+  exportBtnText: { fontSize: 13, fontWeight: "700", color: Colors.success ?? "#16A34A" },
   exportBtnTextDisabled: { color: Colors.textMuted },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: Colors.primaryMuted,
     borderWidth: 1,
     borderColor: Colors.primary + "30",
   },
-  importBtnText: { fontSize: 14, fontWeight: "700", color: Colors.primary },
+  importBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
   txtBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: (Colors.accent ?? "#0EA5A4") + "1A",
     borderWidth: 1,
     borderColor: (Colors.accent ?? "#0EA5A4") + "30",
   },
-  txtBtnText: { fontSize: 14, fontWeight: "700", color: Colors.accent ?? "#0EA5A4" },
+  txtBtnText: { fontSize: 13, fontWeight: "700", color: Colors.accent ?? "#0EA5A4" },
   driveBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: "#e8f0fe",
     borderWidth: 1,
     borderColor: "#1a73e830",
   },
-  driveBtnText: { fontSize: 14, fontWeight: "700", color: "#1a73e8" },
+  driveBtnText: { fontSize: 13, fontWeight: "700", color: "#1a73e8" },
   addBtn: {
     width: 42,
     height: 42,
