@@ -10,7 +10,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { useRouter, Stack } from "expo-router";
+import { useRouter, Stack, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -68,6 +68,83 @@ function generateItemId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
 }
 
+// Detect the most-likely separator on the header line: tab > pipe > semicolon > comma.
+// We pick whichever produces the most fields (and at least 2).
+function detectSeparator(headerLine: string): string {
+  const candidates = ["\t", "|", ";", ","];
+  let best = "\t";
+  let bestCount = 0;
+  for (const sep of candidates) {
+    const count = splitDelimited(headerLine, sep).length;
+    if (count > bestCount) {
+      bestCount = count;
+      best = sep;
+    }
+  }
+  return bestCount >= 2 ? best : "\t";
+}
+
+// CSV-aware split that handles double-quoted fields containing the separator.
+// For tab/pipe/semicolon files this still works correctly.
+function splitDelimited(line: string, sep: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === sep) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+// Parse a TXT/TSV/CSV string into rows of {header: value} objects, matching the
+// shape that XLSX.utils.sheet_to_json produces so the rest of the import flow
+// (validation, vendor grouping, supplier matching) works unchanged.
+function parseDelimitedText(text: string): Record<string, string>[] {
+  // Strip BOM and normalise newlines.
+  const cleaned = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  const rawLines = cleaned.split("\n");
+  // Drop trailing empty lines.
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === "") {
+    rawLines.pop();
+  }
+  if (rawLines.length === 0) return [];
+
+  const sep = detectSeparator(rawLines[0]);
+  const headers = splitDelimited(rawLines[0], sep).map((h) => h.trim());
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    if (line.trim() === "") continue;
+    const cells = splitDelimited(line, sep);
+    const row: Record<string, string> = {};
+    for (let c = 0; c < headers.length; c++) {
+      row[headers[c]] = (cells[c] ?? "").trim();
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 function addDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -82,6 +159,8 @@ export default function ImportOrderScreen() {
   const { suppliers, addOrdersBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ format?: string }>();
+  const isTxtMode = params.format === "txt";
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string>("");
@@ -101,13 +180,17 @@ export default function ImportOrderScreen() {
       setVendorGroups([]);
       setFileName(null);
 
+      const pickerTypes = isTxtMode
+        ? ["text/plain", "text/tab-separated-values", "text/csv", "application/octet-stream", "*/*"]
+        : [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "application/octet-stream",
+            "*/*",
+          ];
+
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-excel",
-          "application/octet-stream",
-          "*/*",
-        ],
+        type: pickerTypes,
         copyToCacheDirectory: true,
       });
 
@@ -122,68 +205,58 @@ export default function ImportOrderScreen() {
       setProgress("Reading file...");
       await yieldToUI();
 
-      let workbook: XLSX.WorkBook;
+      let rows: Record<string, unknown>[];
 
-      if (Platform.OS === "web") {
-        // On web, expo-document-picker gives a blob: URI — read via FileReader
-        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("GET", asset.uri, true);
-          xhr.responseType = "arraybuffer";
-          xhr.onload = () => resolve(xhr.response as ArrayBuffer);
-          xhr.onerror = () => {
-            fetch(asset.uri)
-              .then((r) => r.arrayBuffer())
-              .then(resolve)
-              .catch(reject);
-          };
-          xhr.send();
-        });
-        setProgress("Parsing spreadsheet...");
-        await yieldToUI();
-        workbook = XLSX.read(new Uint8Array(arrayBuffer), {
-          type: "array",
-          cellFormula: false,
-          cellHTML: false,
-          cellStyles: false,
-          cellNF: false,
-          cellText: false,
-        });
-      } else {
-        // Prefer the new File API which reads raw bytes directly — much faster
-        // than base64 on Android (no double-encoding, no JS string allocation).
-        let bytes: Uint8Array | null = null;
-        try {
-          const f = new FsFile(asset.uri);
-          const ab = await f.arrayBuffer();
-          bytes = new Uint8Array(ab);
-        } catch {
-          // Fallback: legacy base64 read for content:// or older Android paths
-          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: "base64" as any,
-          });
-          if (!base64 || base64.length === 0) {
-            throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
+      if (isTxtMode) {
+        // TXT / TSV / CSV path — read as UTF-8 string and parse with our own
+        // delimited-text parser (auto-detects tab / pipe / semicolon / comma).
+        let text = "";
+        if (Platform.OS === "web") {
+          const resp = await fetch(asset.uri);
+          text = await resp.text();
+        } else {
+          try {
+            text = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: "utf8" as any,
+            });
+          } catch {
+            // Fallback: read as base64 then decode (rare on Android with content://).
+            const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: "base64" as any,
+            });
+            if (!b64) throw new Error("Could not read file content.");
+            const bin = globalThis.atob ? globalThis.atob(b64) : Buffer.from(b64, "base64").toString("binary");
+            text = bin;
           }
-          await yieldToUI();
-          setProgress("Parsing spreadsheet...");
-          await yieldToUI();
-          workbook = XLSX.read(base64, {
-            type: "base64",
-            cellFormula: false,
-            cellHTML: false,
-            cellStyles: false,
-            cellNF: false,
-            cellText: false,
-          });
-          bytes = null;
         }
+        if (!text || text.trim() === "") {
+          throw new Error("The text file is empty.");
+        }
+        await yieldToUI();
+        setProgress("Parsing text file...");
+        await yieldToUI();
+        rows = parseDelimitedText(text);
+      } else {
+        let workbook: XLSX.WorkBook;
 
-        if (bytes) {
-          await yieldToUI();
+        if (Platform.OS === "web") {
+          // On web, expo-document-picker gives a blob: URI — read via XHR
+          const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", asset.uri, true);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = () => resolve(xhr.response as ArrayBuffer);
+            xhr.onerror = () => {
+              fetch(asset.uri)
+                .then((r) => r.arrayBuffer())
+                .then(resolve)
+                .catch(reject);
+            };
+            xhr.send();
+          });
           setProgress("Parsing spreadsheet...");
           await yieldToUI();
-          workbook = XLSX.read(bytes, {
+          workbook = XLSX.read(new Uint8Array(arrayBuffer), {
             type: "array",
             cellFormula: false,
             cellHTML: false,
@@ -192,20 +265,62 @@ export default function ImportOrderScreen() {
             cellText: false,
           });
         } else {
-          // workbook already assigned in fallback path
-          // (TS narrowing: assert it was set)
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          workbook = workbook!;
+          // Prefer the new File API which reads raw bytes directly — much faster
+          // than base64 on Android (no double-encoding, no JS string allocation).
+          let bytes: Uint8Array | null = null;
+          try {
+            const f = new FsFile(asset.uri);
+            const ab = await f.arrayBuffer();
+            bytes = new Uint8Array(ab);
+          } catch {
+            // Fallback: legacy base64 read for content:// or older Android paths
+            const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: "base64" as any,
+            });
+            if (!base64 || base64.length === 0) {
+              throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
+            }
+            await yieldToUI();
+            setProgress("Parsing spreadsheet...");
+            await yieldToUI();
+            workbook = XLSX.read(base64, {
+              type: "base64",
+              cellFormula: false,
+              cellHTML: false,
+              cellStyles: false,
+              cellNF: false,
+              cellText: false,
+            });
+            bytes = null;
+          }
+
+          if (bytes) {
+            await yieldToUI();
+            setProgress("Parsing spreadsheet...");
+            await yieldToUI();
+            workbook = XLSX.read(bytes, {
+              type: "array",
+              cellFormula: false,
+              cellHTML: false,
+              cellStyles: false,
+              cellNF: false,
+              cellText: false,
+            });
+          } else {
+            // workbook already assigned in fallback path
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            workbook = workbook!;
+          }
         }
+
+        await yieldToUI();
+        setProgress("Reading rows...");
+        await yieldToUI();
+
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
       }
-
-      await yieldToUI();
-      setProgress("Reading rows...");
-      await yieldToUI();
-
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
       if (rows.length === 0) {
         setErrors(["The file appears to be empty or has no data rows."]);
@@ -357,7 +472,12 @@ export default function ImportOrderScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Import from Excel", headerBackTitle: "Back" }} />
+      <Stack.Screen
+        options={{
+          title: isTxtMode ? "Import from Text File" : "Import from Excel",
+          headerBackTitle: "Back",
+        }}
+      />
       <View style={[styles.container, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) }]}>
         <ScrollView
           style={styles.scroll}
@@ -387,8 +507,14 @@ export default function ImportOrderScreen() {
                 <View style={styles.fileIconWrap}>
                   <Feather name="upload" size={28} color={Colors.primary} />
                 </View>
-                <Text style={styles.dropTitle}>Tap to select Excel file</Text>
-                <Text style={styles.dropHint}>Supports .xlsx and .xls files</Text>
+                <Text style={styles.dropTitle}>
+                  {isTxtMode ? "Tap to select text file" : "Tap to select Excel file"}
+                </Text>
+                <Text style={styles.dropHint}>
+                  {isTxtMode
+                    ? "Supports .txt, .tsv, .csv (tab, comma, pipe or semicolon separated)"
+                    : "Supports .xlsx and .xls files"}
+                </Text>
                 <View style={styles.columnsList}>
                   {["VendorCode", "Item No", "Item Description", "UOM", "MRP", "Min", "Order Qty"].map((col) => (
                     <View key={col} style={styles.colChip}>

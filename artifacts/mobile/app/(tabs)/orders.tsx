@@ -253,6 +253,13 @@ export default function OrdersScreen() {
             <Text style={styles.importBtnText}>Import</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.txtBtn}
+            onPress={() => router.push("/order/import?format=txt")}
+          >
+            <Feather name="file-text" size={17} color={Colors.accent} />
+            <Text style={styles.txtBtnText}>TXT</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.driveBtn}
             onPress={() => router.push("/drive-import")}
           >
@@ -524,6 +531,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + "30",
   },
   importBtnText: { fontSize: 14, fontWeight: "700", color: Colors.primary },
+  txtBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: (Colors.accent ?? "#0EA5A4") + "1A",
+    borderWidth: 1,
+    borderColor: (Colors.accent ?? "#0EA5A4") + "30",
+  },
+  txtBtnText: { fontSize: 14, fontWeight: "700", color: Colors.accent ?? "#0EA5A4" },
   driveBtn: {
     flexDirection: "row",
     alignItems: "center",
