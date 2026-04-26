@@ -660,12 +660,26 @@ export default function ImportOrderScreen() {
   const filteredGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q && !unmatchedOnly) return vendorGroups;
+    // Build supplier lookup once so the per-group match stays O(1) — keeps
+    // the filter snappy on large imports (500+ vendor groups).
+    const supplierById = new Map<string, Supplier>();
+    if (q) {
+      for (const s of suppliers) supplierById.set(s.id, s);
+    }
     return vendorGroups.filter((g) => {
       if (unmatchedOnly && g.supplierId) return false;
-      if (q && !g.vendorCode.toLowerCase().includes(q)) return false;
+      if (q) {
+        if (g.vendorCode.toLowerCase().includes(q)) return true;
+        const supplier = g.supplierId ? supplierById.get(g.supplierId) : undefined;
+        if (supplier) {
+          if (supplier.name && supplier.name.toLowerCase().includes(q)) return true;
+          if (supplier.contactName && supplier.contactName.toLowerCase().includes(q)) return true;
+        }
+        return false;
+      }
       return true;
     });
-  }, [vendorGroups, searchQuery, unmatchedOnly]);
+  }, [vendorGroups, searchQuery, unmatchedOnly, suppliers]);
 
   const isFiltering = searchQuery.trim().length > 0 || unmatchedOnly;
 
@@ -776,7 +790,7 @@ export default function ImportOrderScreen() {
                       style={styles.searchInput}
                       value={searchQuery}
                       onChangeText={setSearchQuery}
-                      placeholder="Search vendor code…"
+                      placeholder="Search vendor code or supplier…"
                       placeholderTextColor={Colors.textMuted}
                       autoCorrect={false}
                       autoCapitalize="none"
