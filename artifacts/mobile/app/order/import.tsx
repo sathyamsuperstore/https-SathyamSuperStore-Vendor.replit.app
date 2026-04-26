@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -380,30 +380,49 @@ export default function ImportOrderScreen() {
       setProgress("Grouping by vendor...");
       await yieldToUI();
 
-      const groupMap: Record<string, ParsedRow[]> = {};
+      const groupMap: Record<string, ParsedRow[]> = Object.create(null);
       for (const row of validRows) {
         if (!groupMap[row.VendorCode]) groupMap[row.VendorCode] = [];
         groupMap[row.VendorCode].push(row);
       }
 
-      const groups: VendorGroup[] = Object.entries(groupMap).map(([vendorCode, items]) => {
-        const matchedSupplier = suppliers.find(
-          (s) => s.vendorCode.toUpperCase() === vendorCode.trim().toUpperCase()
-        ) ?? suppliers.find(
-          (s) =>
-            s.name.toLowerCase() === vendorCode.toLowerCase() ||
-            s.contactName.toLowerCase() === vendorCode.toLowerCase()
-        );
-        return {
+      // Pre-build supplier lookup maps once — turns the per-group match from
+      // O(suppliers) to O(1). Without this, large vendor counts × supplier
+      // counts can take seconds and trigger the Android ANR watchdog.
+      const supplierByCode = new Map<string, Supplier>();
+      const supplierByNameOrContact = new Map<string, Supplier>();
+      for (const s of suppliers) {
+        if (s.vendorCode) supplierByCode.set(s.vendorCode.toUpperCase(), s);
+        if (s.name) supplierByNameOrContact.set(s.name.toLowerCase(), s);
+        if (s.contactName) supplierByNameOrContact.set(s.contactName.toLowerCase(), s);
+      }
+
+      const entries = Object.entries(groupMap);
+      const groups: VendorGroup[] = new Array(entries.length);
+      const GROUP_CHUNK = 200;
+      for (let i = 0; i < entries.length; i++) {
+        const [vendorCode, items] = entries[i];
+        const upper = vendorCode.trim().toUpperCase();
+        const lower = vendorCode.toLowerCase();
+        const matchedSupplier = supplierByCode.get(upper) ?? supplierByNameOrContact.get(lower);
+        groups[i] = {
           vendorCode,
           items,
           supplierId: matchedSupplier?.id ?? "",
           syncDate: items[0]?.SyncDate || undefined,
           beat: items[0]?.Beat || undefined,
         };
-      });
+        if (i > 0 && i % GROUP_CHUNK === 0) {
+          setProgress(`Grouping vendor ${i} / ${entries.length}...`);
+          await yieldToUI();
+        }
+      }
 
+      setProgress(`Preparing display for ${groups.length} vendor${groups.length > 1 ? "s" : ""}...`);
+      await yieldToUI();
       setVendorGroups(groups);
+      // Yield so the initial render commits before we clear the progress text.
+      await yieldToUI();
       setProgress("");
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
@@ -414,11 +433,14 @@ export default function ImportOrderScreen() {
     }
   }
 
-  function setGroupSupplier(vendorCode: string, supplierId: string) {
+  // Stable reference so React.memo on VendorGroupCard actually skips re-renders
+  // when other parent state changes (otherwise an inline closure here would
+  // create a new prop identity for every card on every render).
+  const setGroupSupplier = useCallback((vendorCode: string, supplierId: string) => {
     setVendorGroups((prev) =>
       prev.map((g) => (g.vendorCode === vendorCode ? { ...g, supplierId } : g))
     );
-  }
+  }, []);
 
   function validateAndCreate() {
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
@@ -561,7 +583,7 @@ export default function ImportOrderScreen() {
                   key={group.vendorCode}
                   group={group}
                   suppliers={suppliers}
-                  onSelectSupplier={(sid) => setGroupSupplier(group.vendorCode, sid)}
+                  onSelectSupplier={setGroupSupplier}
                 />
               ))}
             </>
@@ -583,16 +605,29 @@ export default function ImportOrderScreen() {
   );
 }
 
-function VendorGroupCard({
+const VendorGroupCard = React.memo(function VendorGroupCard({
   group,
   suppliers,
   onSelectSupplier,
 }: {
   group: VendorGroup;
   suppliers: Supplier[];
-  onSelectSupplier: (id: string) => void;
+  onSelectSupplier: (vendorCode: string, supplierId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Lazy-render the supplier picker: by default we render only the linked
+  // supplier (1 button). Without this, every card eagerly rendered all
+  // suppliers, causing 1000s of TouchableOpacity components on first paint
+  // and freezing the JS thread for many seconds on Android.
+  // Default: open the picker for unmatched groups so the user can pick one.
+  const [pickerOpen, setPickerOpen] = useState(!group.supplierId);
+  // Re-sync the picker if group.supplierId changes externally — e.g. if React
+  // reuses a card instance across imports with the same vendorCode key.
+  // Without this, an unmatched card carried over from a previous render could
+  // stay collapsed even though the user needs to pick a supplier.
+  useEffect(() => {
+    if (!group.supplierId) setPickerOpen(true);
+  }, [group.supplierId]);
   const PREVIEW_LIMIT = 50;
   const subtotal = group.items.reduce((s, i) => s + i.MRP * i["Order Qty"], 0);
   const previewItems = group.items.slice(0, PREVIEW_LIMIT);
@@ -630,24 +665,52 @@ function VendorGroupCard({
       <View style={groupStyles.supplierRow}>
         <Feather name="link" size={14} color={isUnmatched ? Colors.warning : Colors.textMuted} />
         <Text style={groupStyles.supplierLabel}>Linked supplier:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={groupStyles.supplierOptions}>
-          {suppliers.map((s) => (
-            <TouchableOpacity
-              key={s.id}
-              style={[groupStyles.supplierBtn, group.supplierId === s.id && groupStyles.supplierBtnActive]}
-              onPress={() => onSelectSupplier(s.id)}
-            >
-              {s.vendorCode ? (
-                <Text style={[groupStyles.supplierBtnCode, group.supplierId === s.id && groupStyles.supplierBtnCodeActive]}>
-                  {s.vendorCode}
+        {!pickerOpen ? (
+          // Compact: linked supplier as a single chip + a "Change" button.
+          <View style={groupStyles.supplierCompactRow}>
+            {selectedSupplier ? (
+              <View style={[groupStyles.supplierBtn, groupStyles.supplierBtnActive]}>
+                {selectedSupplier.vendorCode ? (
+                  <Text style={[groupStyles.supplierBtnCode, groupStyles.supplierBtnCodeActive]}>
+                    {selectedSupplier.vendorCode}
+                  </Text>
+                ) : null}
+                <Text style={[groupStyles.supplierBtnText, groupStyles.supplierBtnTextActive]}>
+                  {selectedSupplier.name}
                 </Text>
-              ) : null}
-              <Text style={[groupStyles.supplierBtnText, group.supplierId === s.id && groupStyles.supplierBtnTextActive]}>
-                {s.name}
-              </Text>
+              </View>
+            ) : (
+              <Text style={groupStyles.supplierNone}>None</Text>
+            )}
+            <TouchableOpacity style={groupStyles.changeBtn} onPress={() => setPickerOpen(true)}>
+              <Feather name="edit-2" size={12} color={Colors.primary} />
+              <Text style={groupStyles.changeBtnText}>Change</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          </View>
+        ) : (
+          // Expanded: full supplier picker (only mounted on demand).
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={groupStyles.supplierOptions}>
+            {suppliers.map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                style={[groupStyles.supplierBtn, group.supplierId === s.id && groupStyles.supplierBtnActive]}
+                onPress={() => {
+                  onSelectSupplier(group.vendorCode, s.id);
+                  setPickerOpen(false);
+                }}
+              >
+                {s.vendorCode ? (
+                  <Text style={[groupStyles.supplierBtnCode, group.supplierId === s.id && groupStyles.supplierBtnCodeActive]}>
+                    {s.vendorCode}
+                  </Text>
+                ) : null}
+                <Text style={[groupStyles.supplierBtnText, group.supplierId === s.id && groupStyles.supplierBtnTextActive]}>
+                  {s.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </View>
 
       {expanded && (
@@ -683,9 +746,29 @@ function VendorGroupCard({
       )}
     </View>
   );
-}
+});
 
 const groupStyles = StyleSheet.create({
+  supplierCompactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+    flexWrap: "wrap",
+  },
+  supplierNone: { fontSize: 12, color: Colors.warning, fontStyle: "italic" },
+  changeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  changeBtnText: { fontSize: 11, fontWeight: "700", color: Colors.primary },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
