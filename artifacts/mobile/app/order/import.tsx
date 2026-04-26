@@ -185,8 +185,32 @@ export default function ImportOrderScreen() {
   const [canCancel, setCanCancel] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelRef = useRef(false);
+  // Brief confirmation banner shown after a successful cancel so the user
+  // knows nothing was saved. Auto-dismisses after a few seconds; we keep a
+  // ref to the timeout so we can cancel it on unmount or when the user
+  // starts another action / dismisses manually.
+  const [showCanceled, setShowCanceled] = useState(false);
+  const canceledTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
+
+  const clearCanceledMessage = useCallback(() => {
+    if (canceledTimeoutRef.current) {
+      clearTimeout(canceledTimeoutRef.current);
+      canceledTimeoutRef.current = null;
+    }
+    setShowCanceled(false);
+  }, []);
+
+  // Cleanup the auto-dismiss timer if the screen unmounts mid-countdown.
+  useEffect(() => {
+    return () => {
+      if (canceledTimeoutRef.current) {
+        clearTimeout(canceledTimeoutRef.current);
+        canceledTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Helper: yield to UI thread so spinner/progress can render between heavy steps.
   // Without this, Android's ANR watchdog can kill the JS thread on large files.
@@ -201,6 +225,9 @@ export default function ImportOrderScreen() {
       setFileName(null);
       setSearchQuery("");
       setUnmatchedOnly(false);
+      // Picking a new file is a fresh action — clear any leftover cancel
+      // confirmation from a previous attempt.
+      clearCanceledMessage();
 
       const pickerTypes = isTxtMode
         ? ["text/plain", "text/tab-separated-values", "text/csv", "application/octet-stream", "*/*"]
@@ -497,6 +524,13 @@ export default function ImportOrderScreen() {
     }
     creatingRef.current = true;
     cancelRef.current = false;
+    // Re-tapping Create is a fresh action — clear any stale cancel banner.
+    clearCanceledMessage();
+    // Set true only at an early-return cancel checkpoint, so `finally` knows
+    // unambiguously that we bailed out before the persist call ran. This is
+    // strictly safer than reading `cancelRef.current` in `finally`, which
+    // could in theory be set after the point-of-no-return.
+    let canceledBeforePersist = false;
 
     try {
       setCreating(true);
@@ -506,7 +540,10 @@ export default function ImportOrderScreen() {
       setCreateProgress(`Preparing ${total} order${total > 1 ? "s" : ""}...`);
       // Yield once so the spinner appears before we start building inputs.
       await yieldToUI();
-      if (cancelRef.current) return;
+      if (cancelRef.current) {
+        canceledBeforePersist = true;
+        return;
+      }
 
       // Build a fast supplier lookup so we don't scan suppliers per group.
       const supplierById = new Map<string, Supplier>();
@@ -549,14 +586,20 @@ export default function ImportOrderScreen() {
         if ((i + 1) % BUILD_CHUNK === 0 && i + 1 < total) {
           setCreateProgress(`Preparing ${i + 1} / ${total} orders...`);
           await yieldToUI();
-          if (cancelRef.current) return;
+          if (cancelRef.current) {
+            canceledBeforePersist = true;
+            return;
+          }
         }
       }
 
       // Final cancel checkpoint right before the point of no return. After
       // this we hide the Cancel button — addOrdersBatchAsync persists rows
       // and we can't safely interrupt it.
-      if (cancelRef.current) return;
+      if (cancelRef.current) {
+        canceledBeforePersist = true;
+        return;
+      }
       setCanCancel(false);
 
       setCreateProgress(`Saving ${total} order${total > 1 ? "s" : ""}...`);
@@ -584,6 +627,21 @@ export default function ImportOrderScreen() {
       setCancelRequested(false);
       creatingRef.current = false;
       cancelRef.current = false;
+      // Only show the banner if we actually returned at one of the early
+      // cancel checkpoints — never after a successful save or a thrown error,
+      // even in the (very rare) case where cancelRef was flipped late.
+      if (canceledBeforePersist) {
+        // Show the inline confirmation and auto-dismiss after a few seconds.
+        // Replace any previous timer so the banner shows for the full duration.
+        if (canceledTimeoutRef.current) {
+          clearTimeout(canceledTimeoutRef.current);
+        }
+        setShowCanceled(true);
+        canceledTimeoutRef.current = setTimeout(() => {
+          setShowCanceled(false);
+          canceledTimeoutRef.current = null;
+        }, 4000);
+      }
     }
   }
 
@@ -804,6 +862,21 @@ export default function ImportOrderScreen() {
             {creating && createProgress ? (
               <Text style={styles.createProgressText}>{createProgress}</Text>
             ) : null}
+            {showCanceled && !creating && (
+              <View style={styles.canceledBanner}>
+                <Feather name="info" size={14} color={Colors.textMuted} />
+                <Text style={styles.canceledBannerText}>
+                  Canceled — no orders saved
+                </Text>
+                <TouchableOpacity
+                  onPress={clearCanceledMessage}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Dismiss canceled message"
+                >
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.footerActions}>
               <TouchableOpacity
                 style={[styles.createBtn, creating && styles.createBtnDisabled]}
@@ -1224,6 +1297,24 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: "center",
     marginBottom: 8,
+  },
+  canceledBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 10,
+  },
+  canceledBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textSecondary,
   },
   filterStack: { gap: 10 },
   searchWrap: {
