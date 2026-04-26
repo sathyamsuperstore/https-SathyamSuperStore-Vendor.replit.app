@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -156,7 +156,7 @@ function formatCurrency(n: number): string {
 }
 
 export default function ImportOrderScreen() {
-  const { suppliers, addOrdersBatch } = useApp();
+  const { suppliers, addOrdersBatchAsync } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ format?: string }>();
@@ -167,6 +167,14 @@ export default function ImportOrderScreen() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [vendorGroups, setVendorGroups] = useState<VendorGroup[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  // Creating-orders flow (separate from parse `loading` so the lists stay
+  // visible while the footer button shows progress).
+  const [creating, setCreating] = useState(false);
+  const [createProgress, setCreateProgress] = useState<string>("");
+  // Synchronous mutex: setCreating is async-scheduled, so two rapid taps can
+  // both pass the `if (creating) return` check before the next render. The
+  // ref flips synchronously and prevents duplicate order creation.
+  const creatingRef = useRef(false);
 
   // Helper: yield to UI thread so spinner/progress can render between heavy steps.
   // Without this, Android's ANR watchdog can kill the JS thread on large files.
@@ -456,47 +464,86 @@ export default function ImportOrderScreen() {
     [suppliers, setGroupSupplier]
   );
 
-  function validateAndCreate() {
+  async function validateAndCreate() {
+    // Synchronous guard against double-tap (state-based check would race).
+    if (creatingRef.current) return;
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
     if (unmatched.length > 0) {
       Alert.alert("Missing Supplier", `Please select a supplier for: ${unmatched.map((g) => g.vendorCode).join(", ")}`);
       return;
     }
+    creatingRef.current = true;
 
-    const orderInputs = vendorGroups.map((group) => {
-      const supplier = suppliers.find((s) => s.id === group.supplierId)!;
-      const items: OrderItem[] = group.items.map((row) => ({
-        id: generateItemId(),
-        name: `${row["Item No"] ? row["Item No"] + " - " : ""}${row["Item Description"]}`,
-        brand: row["Brand"] || undefined,
-        quantity: row["Order Qty"] || 1,
-        unit: row["UOM"] || "pcs",
-        unitPrice: row["MRP"] || 0,
-        stock: row["Stock"] !== 0 ? row["Stock"] : undefined,
-        min: row["Min"] !== 0 ? row["Min"] : undefined,
-        sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
-        notes: row["Notes"] || undefined,
-      }));
-      return {
-        supplierId: supplier.id,
-        supplierName: supplier.name,
-        status: "pending" as const,
-        items,
-        notes: `Imported from ${fileName ?? "Excel file"} · Vendor Code: ${group.vendorCode}`,
-        expectedDelivery: addDays(7),
-        syncDate: group.syncDate,
-        beat: group.beat,
-      };
-    });
-    addOrdersBatch(orderInputs);
+    try {
+      setCreating(true);
+      const total = vendorGroups.length;
+      setCreateProgress(`Preparing ${total} order${total > 1 ? "s" : ""}...`);
+      // Yield once so the spinner appears before we start building inputs.
+      await yieldToUI();
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const successMsg = `${vendorGroups.length} order${vendorGroups.length > 1 ? "s" : ""} created successfully.`;
-    if (Platform.OS === "web") {
-      window.alert(`Orders Created\n\n${successMsg}`);
-      router.back();
-    } else {
-      Alert.alert("Orders Created", successMsg, [{ text: "OK", onPress: () => router.back() }]);
+      // Build a fast supplier lookup so we don't scan suppliers per group.
+      const supplierById = new Map<string, Supplier>();
+      for (const s of suppliers) supplierById.set(s.id, s);
+
+      const orderInputs: ReturnType<typeof buildInput>[] = new Array(total);
+      function buildInput(group: VendorGroup) {
+        const supplier = supplierById.get(group.supplierId)!;
+        const items: OrderItem[] = group.items.map((row) => ({
+          id: generateItemId(),
+          name: `${row["Item No"] ? row["Item No"] + " - " : ""}${row["Item Description"]}`,
+          brand: row["Brand"] || undefined,
+          quantity: row["Order Qty"] || 1,
+          unit: row["UOM"] || "pcs",
+          unitPrice: row["MRP"] || 0,
+          stock: row["Stock"] !== 0 ? row["Stock"] : undefined,
+          min: row["Min"] !== 0 ? row["Min"] : undefined,
+          sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
+          notes: row["Notes"] || undefined,
+        }));
+        return {
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          status: "pending" as const,
+          items,
+          notes: `Imported from ${fileName ?? "Excel file"} · Vendor Code: ${group.vendorCode}`,
+          expectedDelivery: addDays(7),
+          syncDate: group.syncDate,
+          beat: group.beat,
+        };
+      }
+
+      // Build inputs in chunks so the UI thread can paint progress between batches.
+      const BUILD_CHUNK = 50;
+      for (let i = 0; i < total; i++) {
+        orderInputs[i] = buildInput(vendorGroups[i]);
+        if (i > 0 && i % BUILD_CHUNK === 0) {
+          setCreateProgress(`Preparing ${i} / ${total} orders...`);
+          await yieldToUI();
+        }
+      }
+
+      setCreateProgress(`Saving ${total} order${total > 1 ? "s" : ""}...`);
+      await yieldToUI();
+
+      await addOrdersBatchAsync(orderInputs, async (processed, t) => {
+        setCreateProgress(`Saving ${processed} / ${t} orders...`);
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const successMsg = `${total} order${total > 1 ? "s" : ""} created successfully.`;
+      if (Platform.OS === "web") {
+        window.alert(`Orders Created\n\n${successMsg}`);
+        router.back();
+      } else {
+        Alert.alert("Orders Created", successMsg, [{ text: "OK", onPress: () => router.back() }]);
+      }
+    } catch (e: any) {
+      const msg = e?.message ?? String(e) ?? "Unknown error";
+      Alert.alert("Failed to Create Orders", msg);
+    } finally {
+      setCreating(false);
+      setCreateProgress("");
+      creatingRef.current = false;
     }
   }
 
@@ -608,10 +655,24 @@ export default function ImportOrderScreen() {
 
         {vendorGroups.length > 0 && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
-            <TouchableOpacity style={styles.createBtn} onPress={validateAndCreate}>
-              <Feather name="check-circle" size={18} color={Colors.textInverse} />
+            {creating && createProgress ? (
+              <Text style={styles.createProgressText}>{createProgress}</Text>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.createBtn, creating && styles.createBtnDisabled]}
+              onPress={validateAndCreate}
+              disabled={creating}
+              activeOpacity={creating ? 1 : 0.7}
+            >
+              {creating ? (
+                <ActivityIndicator size="small" color={Colors.textInverse} />
+              ) : (
+                <Feather name="check-circle" size={18} color={Colors.textInverse} />
+              )}
               <Text style={styles.createBtnText}>
-                Create {vendorGroups.length} Order{vendorGroups.length > 1 ? "s" : ""}
+                {creating
+                  ? `Creating ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}...`
+                  : `Create ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -975,5 +1036,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
   },
+  createBtnDisabled: { opacity: 0.7 },
   createBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
+  createProgressText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textMuted,
+    textAlign: "center",
+    marginBottom: 8,
+  },
 });

@@ -73,6 +73,10 @@ interface AppContextType {
   deleteSupplier: (id: string) => void;
   addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => void;
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => void;
+  addOrdersBatchAsync: (
+    orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[],
+    onProgress?: (processed: number, total: number) => void | Promise<void>
+  ) => Promise<void>;
   updateOrder: (id: string, order: Partial<Order>) => void;
   deleteOrder: (id: string) => void;
   clearAllOrders: () => void;
@@ -291,6 +295,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrders([...newOrders, ...orders]);
   }
 
+  // Async chunked variant for very large imports. Builds the new Order objects
+  // in CHUNK-sized batches with `await setTimeout(0)` between chunks so the JS
+  // thread can render the spinner / progress text in the caller. Reports
+  // progress after each chunk via the optional callback. The actual state
+  // commit (saveOrders) happens once at the end — there's no good way to chunk
+  // that without showing partial state — but the yield right before it lets the
+  // UI commit the latest progress message before the heavy reconciliation.
+  async function addOrdersBatchAsync(
+    orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[],
+    onProgress?: (processed: number, total: number) => void | Promise<void>
+  ) {
+    const now = new Date().toISOString();
+    const total = orderInputs.length;
+    const newOrders: Order[] = new Array(total);
+    const CHUNK = 100;
+    for (let i = 0; i < total; i++) {
+      const order = orderInputs[i];
+      newOrders[i] = {
+        ...order,
+        id: generateId(),
+        orderNumber: generateOrderNumber(),
+        totalAmount: calculateTotal(order.items),
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (i > 0 && i % CHUNK === 0) {
+        if (onProgress) await onProgress(i, total);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    if (onProgress) await onProgress(total, total);
+    await new Promise((r) => setTimeout(r, 0));
+    // Persist to AsyncStorage FIRST, then update in-memory state. If the
+    // storage write throws, we don't want to leave orders in memory that
+    // weren't actually saved — the caller would show a "failed" alert while
+    // the data appears in the UI, and the next app launch would lose it.
+    const updated = [...newOrders, ...orders];
+    await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
+    setOrders(updated);
+  }
+
   function updateOrder(id: string, data: Partial<Order>) {
     saveOrders(
       orders.map((o) =>
@@ -336,6 +381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteSupplier,
         addOrder,
         addOrdersBatch,
+        addOrdersBatchAsync,
         updateOrder,
         deleteOrder,
         clearAllOrders,
