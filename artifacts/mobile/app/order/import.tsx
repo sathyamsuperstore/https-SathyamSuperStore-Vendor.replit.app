@@ -516,8 +516,8 @@ export default function ImportOrderScreen() {
       const BUILD_CHUNK = 50;
       for (let i = 0; i < total; i++) {
         orderInputs[i] = buildInput(vendorGroups[i]);
-        if (i > 0 && i % BUILD_CHUNK === 0) {
-          // i+1 items have been written by this point.
+        // Report at clean milestones: 50/N, 100/N, ...
+        if ((i + 1) % BUILD_CHUNK === 0 && i + 1 < total) {
           setCreateProgress(`Preparing ${i + 1} / ${total} orders...`);
           await yieldToUI();
         }

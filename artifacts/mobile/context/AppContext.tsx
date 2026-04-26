@@ -328,8 +328,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         createdAt: now,
         updatedAt: now,
       };
-      if (i > 0 && i % CHUNK === 0) {
-        // i+1 items have been written by this point.
+      // Report at clean milestones: 100/N, 200/N, ...
+      if ((i + 1) % CHUNK === 0 && i + 1 < total) {
         if (onProgress) await onProgress(i + 1, total);
         await new Promise((r) => setTimeout(r, 0));
       }
