@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SESSION_KEY = "@currentUserId";
@@ -117,6 +117,14 @@ function generateOrderNumber(): string {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  // Mirror of the latest orders for async paths that may run long enough
+  // for `orders` from the closure to become stale (e.g. addOrdersBatchAsync).
+  // Without this, a concurrent order mutation during a large import could be
+  // overwritten by the stale closure value at commit time.
+  const ordersRef = useRef<Order[]>([]);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
@@ -331,7 +339,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // storage write throws, we don't want to leave orders in memory that
     // weren't actually saved — the caller would show a "failed" alert while
     // the data appears in the UI, and the next app launch would lose it.
-    const updated = [...newOrders, ...orders];
+    // Merge against the LATEST orders via ordersRef, not the closure-captured
+    // `orders`, so concurrent additions during this long-running async path
+    // aren't lost.
+    const updated = [...newOrders, ...ordersRef.current];
     await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
     setOrders(updated);
   }
