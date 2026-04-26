@@ -442,6 +442,20 @@ export default function ImportOrderScreen() {
     );
   }, []);
 
+  // Stable callbacks for FlatList so React.memo on VendorGroupCard can skip
+  // re-renders when other parent state (loading, progress, etc.) changes.
+  const keyExtractor = useCallback((g: VendorGroup) => g.vendorCode, []);
+  const renderVendorGroup = useCallback(
+    ({ item }: { item: VendorGroup }) => (
+      <VendorGroupCard
+        group={item}
+        suppliers={suppliers}
+        onSelectSupplier={setGroupSupplier}
+      />
+    ),
+    [suppliers, setGroupSupplier]
+  );
+
   function validateAndCreate() {
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
     if (unmatched.length > 0) {
@@ -501,94 +515,96 @@ export default function ImportOrderScreen() {
         }}
       />
       <View style={[styles.container, { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 0) }]}>
-        <ScrollView
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity
-            style={[styles.dropZone, !!fileName && styles.dropZoneSuccess]}
-            onPress={pickAndParse}
-            activeOpacity={0.7}
-          >
-            {loading ? (
-              <>
-                <ActivityIndicator color={Colors.primary} size="large" />
-                {progress ? <Text style={styles.progressText}>{progress}</Text> : null}
-              </>
-            ) : fileName ? (
-              <>
-                <View style={styles.fileIconWrap}>
-                  <Feather name="file-text" size={28} color={Colors.accent} />
-                </View>
-                <Text style={styles.fileName}>{fileName}</Text>
-                <Text style={styles.fileHint}>Tap to pick a different file</Text>
-              </>
-            ) : (
-              <>
-                <View style={styles.fileIconWrap}>
-                  <Feather name="upload" size={28} color={Colors.primary} />
-                </View>
-                <Text style={styles.dropTitle}>
-                  {isTxtMode ? "Tap to select text file" : "Tap to select Excel file"}
-                </Text>
-                <Text style={styles.dropHint}>
-                  {isTxtMode
-                    ? "Supports .txt, .tsv, .csv (tab, comma, pipe or semicolon separated)"
-                    : "Supports .xlsx and .xls files"}
-                </Text>
-                <View style={styles.columnsList}>
-                  {["VendorCode", "Item No", "Item Description", "UOM", "MRP", "Min", "Order Qty"].map((col) => (
-                    <View key={col} style={styles.colChip}>
-                      <Text style={styles.colChipText}>{col}</Text>
+          data={vendorGroups}
+          keyExtractor={keyExtractor}
+          renderItem={renderVendorGroup}
+          // Virtualization tuning: keep memory bounded on huge imports (500+
+          // vendors) by only mounting cards near the viewport. Defaults are
+          // already reasonable; these values just make the trade-off explicit.
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === "android"}
+          ListHeaderComponent={
+            <View style={styles.headerStack}>
+              <TouchableOpacity
+                style={[styles.dropZone, !!fileName && styles.dropZoneSuccess]}
+                onPress={pickAndParse}
+                activeOpacity={0.7}
+              >
+                {loading ? (
+                  <>
+                    <ActivityIndicator color={Colors.primary} size="large" />
+                    {progress ? <Text style={styles.progressText}>{progress}</Text> : null}
+                  </>
+                ) : fileName ? (
+                  <>
+                    <View style={styles.fileIconWrap}>
+                      <Feather name="file-text" size={28} color={Colors.accent} />
                     </View>
-                  ))}
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
+                    <Text style={styles.fileName}>{fileName}</Text>
+                    <Text style={styles.fileHint}>Tap to pick a different file</Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.fileIconWrap}>
+                      <Feather name="upload" size={28} color={Colors.primary} />
+                    </View>
+                    <Text style={styles.dropTitle}>
+                      {isTxtMode ? "Tap to select text file" : "Tap to select Excel file"}
+                    </Text>
+                    <Text style={styles.dropHint}>
+                      {isTxtMode
+                        ? "Supports .txt, .tsv, .csv (tab, comma, pipe or semicolon separated)"
+                        : "Supports .xlsx and .xls files"}
+                    </Text>
+                    <View style={styles.columnsList}>
+                      {["VendorCode", "Item No", "Item Description", "UOM", "MRP", "Min", "Order Qty"].map((col) => (
+                        <View key={col} style={styles.colChip}>
+                          <Text style={styles.colChipText}>{col}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </TouchableOpacity>
 
-          {errors.length > 0 && (
-            <View style={styles.errorCard}>
-              <Feather name="alert-circle" size={16} color={Colors.danger} />
-              <View style={{ flex: 1 }}>
-                {errors.map((e, i) => (
-                  <Text key={i} style={styles.errorText}>{e}</Text>
-                ))}
-              </View>
+              {errors.length > 0 && (
+                <View style={styles.errorCard}>
+                  <Feather name="alert-circle" size={16} color={Colors.danger} />
+                  <View style={{ flex: 1 }}>
+                    {errors.map((e, i) => (
+                      <Text key={i} style={styles.errorText}>{e}</Text>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {vendorGroups.length > 0 && (
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryValue}>{vendorGroups.length}</Text>
+                    <Text style={styles.summaryLabel}>Vendor{vendorGroups.length > 1 ? "s" : ""}</Text>
+                  </View>
+                  <View style={styles.summaryDivider} />
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryValue}>{totalItems}</Text>
+                    <Text style={styles.summaryLabel}>Items</Text>
+                  </View>
+                  <View style={styles.summaryDivider} />
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryValue}>{formatCurrency(totalValue)}</Text>
+                    <Text style={styles.summaryLabel}>Total Value</Text>
+                  </View>
+                </View>
+              )}
             </View>
-          )}
-
-          {vendorGroups.length > 0 && (
-            <>
-              <View style={styles.summaryRow}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{vendorGroups.length}</Text>
-                  <Text style={styles.summaryLabel}>Vendor{vendorGroups.length > 1 ? "s" : ""}</Text>
-                </View>
-                <View style={styles.summaryDivider} />
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{totalItems}</Text>
-                  <Text style={styles.summaryLabel}>Items</Text>
-                </View>
-                <View style={styles.summaryDivider} />
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{formatCurrency(totalValue)}</Text>
-                  <Text style={styles.summaryLabel}>Total Value</Text>
-                </View>
-              </View>
-
-              {vendorGroups.map((group) => (
-                <VendorGroupCard
-                  key={group.vendorCode}
-                  group={group}
-                  suppliers={suppliers}
-                  onSelectSupplier={setGroupSupplier}
-                />
-              ))}
-            </>
-          )}
-        </ScrollView>
+          }
+        />
 
         {vendorGroups.length > 0 && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
@@ -885,6 +901,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 16, paddingBottom: 24 },
+  // Container for dropZone + errors + summary inside FlatList's header.
+  // Mirrors the `gap: 16` from `scrollContent` so spacing between those blocks
+  // stays the same now that the parent is a FlatList instead of a ScrollView.
+  headerStack: { gap: 16 },
   dropZone: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
