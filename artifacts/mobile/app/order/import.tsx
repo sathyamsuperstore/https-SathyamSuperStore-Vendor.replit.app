@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   FlatList,
@@ -175,6 +176,8 @@ export default function ImportOrderScreen() {
   // both pass the `if (creating) return` check before the next render. The
   // ref flips synchronously and prevents duplicate order creation.
   const creatingRef = useRef(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [unmatchedOnly, setUnmatchedOnly] = useState(false);
 
   // Helper: yield to UI thread so spinner/progress can render between heavy steps.
   // Without this, Android's ANR watchdog can kill the JS thread on large files.
@@ -187,6 +190,8 @@ export default function ImportOrderScreen() {
       setErrors([]);
       setVendorGroups([]);
       setFileName(null);
+      setSearchQuery("");
+      setUnmatchedOnly(false);
 
       const pickerTypes = isTxtMode
         ? ["text/plain", "text/tab-separated-values", "text/csv", "application/octet-stream", "*/*"]
@@ -553,6 +558,24 @@ export default function ImportOrderScreen() {
     (s, g) => s + g.items.reduce((is, i) => is + i.MRP * i["Order Qty"], 0),
     0
   );
+  const unmatchedCount = useMemo(
+    () => vendorGroups.reduce((n, g) => (g.supplierId ? n : n + 1), 0),
+    [vendorGroups]
+  );
+
+  // Filter the vendor groups for display only — totals above and the
+  // "Create N Orders" button below still operate on the full list.
+  const filteredGroups = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q && !unmatchedOnly) return vendorGroups;
+    return vendorGroups.filter((g) => {
+      if (unmatchedOnly && g.supplierId) return false;
+      if (q && !g.vendorCode.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [vendorGroups, searchQuery, unmatchedOnly]);
+
+  const isFiltering = searchQuery.trim().length > 0 || unmatchedOnly;
 
   return (
     <>
@@ -567,9 +590,11 @@ export default function ImportOrderScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          data={vendorGroups}
+          data={filteredGroups}
           keyExtractor={keyExtractor}
           renderItem={renderVendorGroup}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           // Virtualization tuning: keep memory bounded on huge imports (500+
           // vendors) by only mounting cards near the viewport. Defaults are
           // already reasonable; these values just make the trade-off explicit.
@@ -648,6 +673,92 @@ export default function ImportOrderScreen() {
                     <Text style={styles.summaryValue}>{formatCurrency(totalValue)}</Text>
                     <Text style={styles.summaryLabel}>Total Value</Text>
                   </View>
+                </View>
+              )}
+
+              {vendorGroups.length > 0 && (
+                <View style={styles.filterStack}>
+                  <View style={styles.searchWrap}>
+                    <Feather name="search" size={15} color={Colors.textMuted} />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder="Search vendor code…"
+                      placeholderTextColor={Colors.textMuted}
+                      autoCorrect={false}
+                      autoCapitalize="none"
+                      clearButtonMode="while-editing"
+                    />
+                    {searchQuery.length > 0 && Platform.OS !== "ios" && (
+                      <TouchableOpacity
+                        onPress={() => setSearchQuery("")}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Feather name="x" size={14} color={Colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View style={styles.filterChipsRow}>
+                    <TouchableOpacity
+                      style={[styles.filterChip, unmatchedOnly && styles.filterChipActive]}
+                      onPress={() => setUnmatchedOnly((v) => !v)}
+                      activeOpacity={0.7}
+                    >
+                      <Feather
+                        name="alert-circle"
+                        size={12}
+                        color={unmatchedOnly ? Colors.textInverse : Colors.warning}
+                      />
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          unmatchedOnly && styles.filterChipTextActive,
+                        ]}
+                      >
+                        Needs supplier
+                      </Text>
+                      <View
+                        style={[
+                          styles.filterChipBadge,
+                          unmatchedOnly && styles.filterChipBadgeActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipBadgeText,
+                            unmatchedOnly && styles.filterChipBadgeTextActive,
+                          ]}
+                        >
+                          {unmatchedCount}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {isFiltering && (
+                      <Text style={styles.filterCountLabel}>
+                        Showing {filteredGroups.length} of {vendorGroups.length}
+                      </Text>
+                    )}
+                  </View>
+
+                  {isFiltering && filteredGroups.length === 0 && (
+                    <View style={styles.emptyFilter}>
+                      <Feather name="search" size={20} color={Colors.textMuted} />
+                      <Text style={styles.emptyFilterText}>
+                        No vendors match the current filter.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSearchQuery("");
+                          setUnmatchedOnly(false);
+                        }}
+                      >
+                        <Text style={styles.emptyFilterClear}>Clear filters</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -1046,4 +1157,69 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
+  filterStack: { gap: 10 },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: Platform.OS === "ios" ? 0 : 6,
+  },
+  filterChipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  filterChipText: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  filterChipTextActive: { color: Colors.textInverse },
+  filterChipBadge: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    backgroundColor: Colors.warningLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterChipBadgeActive: { backgroundColor: "rgba(255,255,255,0.25)" },
+  filterChipBadgeText: { fontSize: 10, fontWeight: "800", color: Colors.warning },
+  filterChipBadgeTextActive: { color: Colors.textInverse },
+  filterCountLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  emptyFilter: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 20,
+    alignItems: "center",
+    gap: 8,
+  },
+  emptyFilterText: { fontSize: 13, color: Colors.textMuted, textAlign: "center" },
+  emptyFilterClear: { fontSize: 13, fontWeight: "700", color: Colors.primary },
 });
