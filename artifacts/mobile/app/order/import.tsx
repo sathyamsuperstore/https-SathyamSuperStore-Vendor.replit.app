@@ -176,6 +176,15 @@ export default function ImportOrderScreen() {
   // both pass the `if (creating) return` check before the next render. The
   // ref flips synchronously and prevents duplicate order creation.
   const creatingRef = useRef(false);
+  // Cancel-in-progress flow. `canCancel` controls whether the Cancel button
+  // is visible (true while we're still building inputs / before the point of
+  // no return). `cancelRequested` reflects that the user has tapped Cancel
+  // and we're waiting for the next chunk boundary to bail out — used purely
+  // for UI feedback (disabled button + "Canceling..." label). The ref flips
+  // synchronously so the loop can check it without waiting for re-render.
+  const [canCancel, setCanCancel] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const cancelRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
 
@@ -469,6 +478,15 @@ export default function ImportOrderScreen() {
     [suppliers, setGroupSupplier]
   );
 
+  // Tap handler for the Cancel button. Flips the synchronous ref so the
+  // build loop bails at the next chunk boundary, plus state for UI feedback.
+  const requestCancel = useCallback(() => {
+    if (!cancelRef.current) {
+      cancelRef.current = true;
+      setCancelRequested(true);
+    }
+  }, []);
+
   async function validateAndCreate() {
     // Synchronous guard against double-tap (state-based check would race).
     if (creatingRef.current) return;
@@ -478,13 +496,17 @@ export default function ImportOrderScreen() {
       return;
     }
     creatingRef.current = true;
+    cancelRef.current = false;
 
     try {
       setCreating(true);
+      setCanCancel(true);
+      setCancelRequested(false);
       const total = vendorGroups.length;
       setCreateProgress(`Preparing ${total} order${total > 1 ? "s" : ""}...`);
       // Yield once so the spinner appears before we start building inputs.
       await yieldToUI();
+      if (cancelRef.current) return;
 
       // Build a fast supplier lookup so we don't scan suppliers per group.
       const supplierById = new Map<string, Supplier>();
@@ -518,6 +540,8 @@ export default function ImportOrderScreen() {
       }
 
       // Build inputs in chunks so the UI thread can paint progress between batches.
+      // Each chunk boundary is also a cancel checkpoint — if the user tapped
+      // Cancel, bail out before doing more work and before persisting anything.
       const BUILD_CHUNK = 50;
       for (let i = 0; i < total; i++) {
         orderInputs[i] = buildInput(vendorGroups[i]);
@@ -525,8 +549,15 @@ export default function ImportOrderScreen() {
         if ((i + 1) % BUILD_CHUNK === 0 && i + 1 < total) {
           setCreateProgress(`Preparing ${i + 1} / ${total} orders...`);
           await yieldToUI();
+          if (cancelRef.current) return;
         }
       }
+
+      // Final cancel checkpoint right before the point of no return. After
+      // this we hide the Cancel button — addOrdersBatchAsync persists rows
+      // and we can't safely interrupt it.
+      if (cancelRef.current) return;
+      setCanCancel(false);
 
       setCreateProgress(`Saving ${total} order${total > 1 ? "s" : ""}...`);
       await yieldToUI();
@@ -549,7 +580,10 @@ export default function ImportOrderScreen() {
     } finally {
       setCreating(false);
       setCreateProgress("");
+      setCanCancel(false);
+      setCancelRequested(false);
       creatingRef.current = false;
+      cancelRef.current = false;
     }
   }
 
@@ -770,23 +804,38 @@ export default function ImportOrderScreen() {
             {creating && createProgress ? (
               <Text style={styles.createProgressText}>{createProgress}</Text>
             ) : null}
-            <TouchableOpacity
-              style={[styles.createBtn, creating && styles.createBtnDisabled]}
-              onPress={validateAndCreate}
-              disabled={creating}
-              activeOpacity={creating ? 1 : 0.7}
-            >
-              {creating ? (
-                <ActivityIndicator size="small" color={Colors.textInverse} />
-              ) : (
-                <Feather name="check-circle" size={18} color={Colors.textInverse} />
+            <View style={styles.footerActions}>
+              <TouchableOpacity
+                style={[styles.createBtn, creating && styles.createBtnDisabled]}
+                onPress={validateAndCreate}
+                disabled={creating}
+                activeOpacity={creating ? 1 : 0.7}
+              >
+                {creating ? (
+                  <ActivityIndicator size="small" color={Colors.textInverse} />
+                ) : (
+                  <Feather name="check-circle" size={18} color={Colors.textInverse} />
+                )}
+                <Text style={styles.createBtnText}>
+                  {creating
+                    ? `Creating ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}...`
+                    : `Create ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}`}
+                </Text>
+              </TouchableOpacity>
+              {creating && canCancel && (
+                <TouchableOpacity
+                  style={[styles.cancelBtn, cancelRequested && styles.cancelBtnDisabled]}
+                  onPress={requestCancel}
+                  disabled={cancelRequested}
+                  activeOpacity={cancelRequested ? 1 : 0.7}
+                >
+                  <Feather name="x" size={16} color={Colors.danger} />
+                  <Text style={styles.cancelBtnText}>
+                    {cancelRequested ? "Canceling..." : "Cancel"}
+                  </Text>
+                </TouchableOpacity>
               )}
-              <Text style={styles.createBtnText}>
-                {creating
-                  ? `Creating ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}...`
-                  : `Create ${vendorGroups.length} Order${vendorGroups.length > 1 ? "s" : ""}`}
-              </Text>
-            </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -1139,7 +1188,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
   },
+  footerActions: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 10,
+  },
   createBtn: {
+    flex: 1,
     backgroundColor: Colors.primary,
     borderRadius: 14,
     padding: 16,
@@ -1150,6 +1205,19 @@ const styles = StyleSheet.create({
   },
   createBtnDisabled: { opacity: 0.7 },
   createBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.danger,
+    backgroundColor: Colors.surface,
+  },
+  cancelBtnDisabled: { opacity: 0.6 },
+  cancelBtnText: { fontSize: 14, fontWeight: "700", color: Colors.danger },
   createProgressText: {
     fontSize: 13,
     fontWeight: "600",
