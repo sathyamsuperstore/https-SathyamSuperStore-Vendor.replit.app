@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import { File as FsFile } from "expo-file-system";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
@@ -83,13 +84,19 @@ export default function ImportOrderScreen() {
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string>("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [vendorGroups, setVendorGroups] = useState<VendorGroup[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
 
+  // Helper: yield to UI thread so spinner/progress can render between heavy steps.
+  // Without this, Android's ANR watchdog can kill the JS thread on large files.
+  const yieldToUI = () => new Promise((r) => setTimeout(r, 0));
+
   async function pickAndParse() {
     try {
       setLoading(true);
+      setProgress("Opening file picker...");
       setErrors([]);
       setVendorGroups([]);
       setFileName(null);
@@ -106,14 +113,14 @@ export default function ImportOrderScreen() {
 
       if (result.canceled) {
         setLoading(false);
+        setProgress("");
         return;
       }
 
       const asset = result.assets[0];
       setFileName(asset.name);
-
-      // Yield to the event loop so the spinner renders before heavy work blocks the main thread
-      await new Promise((r) => setTimeout(r, 50));
+      setProgress("Reading file...");
+      await yieldToUI();
 
       let workbook: XLSX.WorkBook;
 
@@ -125,7 +132,6 @@ export default function ImportOrderScreen() {
           xhr.responseType = "arraybuffer";
           xhr.onload = () => resolve(xhr.response as ArrayBuffer);
           xhr.onerror = () => {
-            // Fallback: try fetch if XHR fails
             fetch(asset.uri)
               .then((r) => r.arrayBuffer())
               .then(resolve)
@@ -133,16 +139,69 @@ export default function ImportOrderScreen() {
           };
           xhr.send();
         });
-        workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
-      } else {
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: "base64" as any,
+        setProgress("Parsing spreadsheet...");
+        await yieldToUI();
+        workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+          type: "array",
+          cellFormula: false,
+          cellHTML: false,
+          cellStyles: false,
+          cellNF: false,
+          cellText: false,
         });
-        if (!base64 || base64.length === 0) {
-          throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
+      } else {
+        // Prefer the new File API which reads raw bytes directly — much faster
+        // than base64 on Android (no double-encoding, no JS string allocation).
+        let bytes: Uint8Array | null = null;
+        try {
+          const f = new FsFile(asset.uri);
+          const ab = await f.arrayBuffer();
+          bytes = new Uint8Array(ab);
+        } catch {
+          // Fallback: legacy base64 read for content:// or older Android paths
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: "base64" as any,
+          });
+          if (!base64 || base64.length === 0) {
+            throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
+          }
+          await yieldToUI();
+          setProgress("Parsing spreadsheet...");
+          await yieldToUI();
+          workbook = XLSX.read(base64, {
+            type: "base64",
+            cellFormula: false,
+            cellHTML: false,
+            cellStyles: false,
+            cellNF: false,
+            cellText: false,
+          });
+          bytes = null;
         }
-        workbook = XLSX.read(base64, { type: "base64" });
+
+        if (bytes) {
+          await yieldToUI();
+          setProgress("Parsing spreadsheet...");
+          await yieldToUI();
+          workbook = XLSX.read(bytes, {
+            type: "array",
+            cellFormula: false,
+            cellHTML: false,
+            cellStyles: false,
+            cellNF: false,
+            cellText: false,
+          });
+        } else {
+          // workbook already assigned in fallback path
+          // (TS narrowing: assert it was set)
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          workbook = workbook!;
+        }
       }
+
+      await yieldToUI();
+      setProgress("Reading rows...");
+      await yieldToUI();
 
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
@@ -151,6 +210,7 @@ export default function ImportOrderScreen() {
       if (rows.length === 0) {
         setErrors(["The file appears to be empty or has no data rows."]);
         setLoading(false);
+        setProgress("");
         return;
       }
 
@@ -160,31 +220,50 @@ export default function ImportOrderScreen() {
       if (missing.length > 0) {
         setErrors([`Missing required columns: ${missing.join(", ")}`]);
         setLoading(false);
+        setProgress("");
         return;
       }
 
-      const parsed: ParsedRow[] = rows.map((row, i) => ({
-        VendorCode: String(row["VendorCode"] ?? "").trim(),
-        "Item No": String(row["Item No"] ?? "").trim(),
-        "Item Description": String(row["Item Description"] ?? "").trim(),
-        UOM: String(row["UOM"] ?? "pcs").trim(),
-        MRP: parseFloat(String(row["MRP"] ?? "0")) || 0,
-        "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
-        SyncDate: parseExcelDate(row["SyncDate"]),
-        Brand: String(row["Brand"] ?? "").trim(),
-        Beat: String(row["Beat"] ?? "").trim(),
-        Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
-        Min: parseFloat(String(row["Min"] ?? "")) || 0,
-        SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
-        Notes: String(row["Notes"] ?? "").trim(),
-      }));
+      setProgress(`Processing ${rows.length} rows...`);
+      await yieldToUI();
+
+      // Process rows in chunks so we yield to the UI thread on very large files.
+      const CHUNK = 500;
+      const parsed: ParsedRow[] = new Array(rows.length);
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        parsed[i] = {
+          VendorCode: String(row["VendorCode"] ?? "").trim(),
+          "Item No": String(row["Item No"] ?? "").trim(),
+          "Item Description": String(row["Item Description"] ?? "").trim(),
+          UOM: String(row["UOM"] ?? "pcs").trim(),
+          MRP: parseFloat(String(row["MRP"] ?? "0")) || 0,
+          "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
+          SyncDate: parseExcelDate(row["SyncDate"]),
+          Brand: String(row["Brand"] ?? "").trim(),
+          Beat: String(row["Beat"] ?? "").trim(),
+          Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
+          Min: parseFloat(String(row["Min"] ?? "")) || 0,
+          SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
+          Notes: String(row["Notes"] ?? "").trim(),
+        };
+        if (i > 0 && i % CHUNK === 0) {
+          setProgress(`Processing ${i} / ${rows.length} rows...`);
+          await yieldToUI();
+        }
+      }
 
       const validRows = parsed.filter((r) => r.VendorCode && r["Item Description"]);
       if (validRows.length === 0) {
         setErrors(["No valid rows found. Make sure VendorCode and Item Description are filled."]);
         setLoading(false);
+        setProgress("");
         return;
       }
+
+      await yieldToUI();
+      setProgress("Grouping by vendor...");
+      await yieldToUI();
 
       const groupMap: Record<string, ParsedRow[]> = {};
       for (const row of validRows) {
@@ -210,9 +289,11 @@ export default function ImportOrderScreen() {
       });
 
       setVendorGroups(groups);
+      setProgress("");
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
       setErrors([`Failed to parse file: ${msg}`]);
+      setProgress("");
     } finally {
       setLoading(false);
     }
@@ -289,7 +370,10 @@ export default function ImportOrderScreen() {
             activeOpacity={0.7}
           >
             {loading ? (
-              <ActivityIndicator color={Colors.primary} size="large" />
+              <>
+                <ActivityIndicator color={Colors.primary} size="large" />
+                {progress ? <Text style={styles.progressText}>{progress}</Text> : null}
+              </>
             ) : fileName ? (
               <>
                 <View style={styles.fileIconWrap}>
@@ -616,6 +700,7 @@ const styles = StyleSheet.create({
   dropHint: { fontSize: 13, color: Colors.textMuted },
   fileName: { fontSize: 15, fontWeight: "700", color: Colors.text, textAlign: "center" },
   fileHint: { fontSize: 12, color: Colors.textMuted },
+  progressText: { fontSize: 13, fontWeight: "600", color: Colors.primary, marginTop: 8, textAlign: "center" },
   columnsList: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6, marginTop: 8 },
   colChip: {
     paddingHorizontal: 10,

@@ -128,7 +128,17 @@ export default function DriveImportScreen() {
     if (!resp.ok) throw new Error(`Download failed (HTTP ${resp.status}). Make sure the file is shared as "Anyone with the link".`);
     const arrayBuffer = await resp.arrayBuffer();
     if (arrayBuffer.byteLength === 0) throw new Error("Downloaded file is empty.");
-    return XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+    // Yield to UI thread so the importing spinner can render before the synchronous
+    // XLSX parse blocks the JS thread (prevents Android ANR on large files).
+    await new Promise((r) => setTimeout(r, 0));
+    return XLSX.read(new Uint8Array(arrayBuffer), {
+      type: "array",
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+      cellNF: false,
+      cellText: false,
+    });
   }
 
   async function importEntry(entry: FileEntry): Promise<{ message: string }> {
