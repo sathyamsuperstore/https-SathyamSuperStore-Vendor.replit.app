@@ -506,15 +506,21 @@ export default function ImportOrderScreen() {
   // Stable callbacks for FlatList so React.memo on VendorGroupCard can skip
   // re-renders when other parent state (loading, progress, etc.) changes.
   const keyExtractor = useCallback((g: VendorGroup) => g.vendorCode, []);
+  // Pass the trimmed search query so cards can highlight the matching
+  // substring. We trim once here (outside the per-card render) so the prop
+  // identity stays stable when the user types only whitespace and so each
+  // card doesn't repeat the trim work on every render.
+  const highlightQuery = searchQuery.trim();
   const renderVendorGroup = useCallback(
     ({ item }: { item: VendorGroup }) => (
       <VendorGroupCard
         group={item}
         suppliers={suppliers}
         onSelectSupplier={setGroupSupplier}
+        highlightQuery={highlightQuery}
       />
     ),
-    [suppliers, setGroupSupplier]
+    [suppliers, setGroupSupplier, highlightQuery]
   );
 
   // Tap handler for the Cancel button. Flips the synchronous ref so the
@@ -1192,14 +1198,43 @@ export default function ImportOrderScreen() {
   );
 }
 
+// Render `text` with the (case-insensitive) first occurrence of `query`
+// wrapped in a highlighted <Text> span. Returns the raw string when there's
+// no query or no match so callers don't pay any allocation cost. Used to
+// show the user *which* part of a vendor card matched the active search.
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query || !text) return text;
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const idx = lower.indexOf(q);
+  if (idx === -1) return text;
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + q.length);
+  const after = text.slice(idx + q.length);
+  return (
+    <>
+      {before}
+      <Text style={groupStyles.highlight}>{match}</Text>
+      {after}
+    </>
+  );
+}
+
+function textIncludes(text: string | undefined, query: string): boolean {
+  if (!text || !query) return false;
+  return text.toLowerCase().includes(query.toLowerCase());
+}
+
 const VendorGroupCard = React.memo(function VendorGroupCard({
   group,
   suppliers,
   onSelectSupplier,
+  highlightQuery,
 }: {
   group: VendorGroup;
   suppliers: Supplier[];
   onSelectSupplier: (vendorCode: string, supplierId: string) => void;
+  highlightQuery: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Lazy-render the supplier picker: by default we render only the linked
@@ -1222,13 +1257,28 @@ const VendorGroupCard = React.memo(function VendorGroupCard({
   const selectedSupplier = suppliers.find((s) => s.id === group.supplierId);
   const isAutoMatched = selectedSupplier?.vendorCode.toUpperCase() === group.vendorCode.trim().toUpperCase();
   const isUnmatched = !group.supplierId;
+  // If the active search matched on the linked supplier's contact name (and
+  // the contact name isn't otherwise visible on the card), surface a small
+  // tag so the user understands why this card appeared in the filtered list.
+  // We gate strictly against the fields the import filter actually checks
+  // (vendor code, supplier name, contact name) — adding non-filter fields
+  // here would falsely suppress the explanation when a card slipped in via
+  // contactName but coincidentally also matches an unrelated visible field.
+  const contactMatched =
+    !!highlightQuery &&
+    !!selectedSupplier &&
+    textIncludes(selectedSupplier.contactName, highlightQuery) &&
+    !textIncludes(group.vendorCode, highlightQuery) &&
+    !textIncludes(selectedSupplier.name, highlightQuery);
 
   return (
     <View style={[groupStyles.card, isUnmatched && groupStyles.cardUnmatched]}>
       <TouchableOpacity style={groupStyles.header} onPress={() => setExpanded((e) => !e)} activeOpacity={0.7}>
         <View style={groupStyles.headerLeft}>
           <View style={groupStyles.vendorBadge}>
-            <Text style={groupStyles.vendorCode}>{group.vendorCode}</Text>
+            <Text style={groupStyles.vendorCode}>
+              {highlightMatch(group.vendorCode, highlightQuery)}
+            </Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={groupStyles.itemCount}>{group.items.length} item{group.items.length !== 1 ? "s" : ""}</Text>
@@ -1259,11 +1309,14 @@ const VendorGroupCard = React.memo(function VendorGroupCard({
               <View style={[groupStyles.supplierBtn, groupStyles.supplierBtnActive]}>
                 {selectedSupplier.vendorCode ? (
                   <Text style={[groupStyles.supplierBtnCode, groupStyles.supplierBtnCodeActive]}>
+                    {/* No highlight: the import filter doesn't match against
+                        the linked supplier's vendor code, so highlighting it
+                        could imply a match that didn't drive inclusion. */}
                     {selectedSupplier.vendorCode}
                   </Text>
                 ) : null}
                 <Text style={[groupStyles.supplierBtnText, groupStyles.supplierBtnTextActive]}>
-                  {selectedSupplier.name}
+                  {highlightMatch(selectedSupplier.name, highlightQuery)}
                 </Text>
               </View>
             ) : (
@@ -1273,6 +1326,17 @@ const VendorGroupCard = React.memo(function VendorGroupCard({
               <Feather name="edit-2" size={12} color={Colors.primary} />
               <Text style={groupStyles.changeBtnText}>Change</Text>
             </TouchableOpacity>
+            {contactMatched && selectedSupplier ? (
+              <View style={groupStyles.contactMatchTag}>
+                <Feather name="user" size={10} color={Colors.primary} />
+                <Text style={groupStyles.contactMatchTagText}>
+                  Contact:{" "}
+                  <Text style={groupStyles.contactMatchTagName}>
+                    {highlightMatch(selectedSupplier.contactName, highlightQuery)}
+                  </Text>
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : (
           // Expanded: full supplier picker (only mounted on demand).
@@ -1356,6 +1420,32 @@ const groupStyles = StyleSheet.create({
     borderColor: Colors.primary + "30",
   },
   changeBtnText: { fontSize: 11, fontWeight: "700", color: Colors.primary },
+  // Highlight style applied to the substring of vendor code / supplier name /
+  // contact name that matched the active search query. Yellow background
+  // matches the existing "warning"/attention palette without competing with
+  // the green "success" or red "danger" colors already used on the card.
+  highlight: {
+    backgroundColor: Colors.warningLight,
+    color: Colors.text,
+    fontWeight: "800",
+  },
+  // Small chip surfaced on the supplier row when the search matched on the
+  // linked supplier's contact name (which isn't otherwise visible on the
+  // card). Lets the user see at a glance *why* this card slipped into the
+  // filtered list.
+  contactMatchTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  contactMatchTagText: { fontSize: 11, color: Colors.textSecondary, fontWeight: "500" },
+  contactMatchTagName: { fontWeight: "700", color: Colors.text },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
