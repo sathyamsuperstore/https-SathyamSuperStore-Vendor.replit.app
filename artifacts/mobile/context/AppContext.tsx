@@ -107,6 +107,9 @@ interface AppContextType {
   mrpEntries: MrpEntry[];
   saveMrpBatch: (entries: MrpEntry[]) => Promise<void>;
   clearMrpBatch: () => Promise<void>;
+  latestPurchases: LatestPurchaseEntry[];
+  saveLatestPurchasesBatch: (entries: LatestPurchaseEntry[]) => Promise<void>;
+  clearLatestPurchases: () => Promise<void>;
 }
 
 export interface MrpEntry {
@@ -114,12 +117,63 @@ export interface MrpEntry {
   mrp: number;
 }
 
+// Canonical column order for the Latest Purchases sheet. Used by the
+// importer (header lookup), the table view (column order), and the
+// exporter (output column order) so the three never drift apart.
+export const LATEST_PURCHASES_FIELDS = [
+  "VendorPayment",
+  "PromoMRP",
+  "PromoCode",
+  "NoBatches",
+  "Vendor",
+  "Offer Price",
+  "Item No",
+  "BrandCode",
+  "CategoryCode",
+  "Item Description",
+  "Offer End Date",
+  "SoldQnty",
+  "Weight",
+  "GidNo",
+  "GRNDate",
+  "InvoiceDate",
+  "VendorCode",
+  "Product Name",
+  "ITaxPer1",
+  "Sort No",
+  "Stock",
+  "New Item Date",
+  "PromoPrice",
+  "PromoEndDate",
+  "LQty",
+  "MRP",
+  "RodeoMRP",
+  "SP",
+  "RodeoSP",
+  "Cost",
+  "Tax",
+  "CESS",
+  "MRP Margin",
+  "Customer Margin",
+  "Shop Margin",
+  "MRPDiff",
+  "LatestPO",
+  "Batch",
+  "Uni Promo",
+] as const;
+
+// Each row is a flexible map: numeric-looking cells get parsed to number,
+// everything else (dates, IDs, text) stays as the original string. This
+// keeps imports forgiving when a sheet has odd cells in numeric columns.
+export type LatestPurchaseEntry = Record<string, string | number>;
+
 const AppContext = createContext<AppContextType | null>(null);
 
 const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
+const LATEST_PURCHASES_KEY = "@latestPurchases";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -163,6 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
+  const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
 
   useEffect(() => {
     loadData();
@@ -170,23 +225,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
         AsyncStorage.getItem(SESSION_KEY),
         AsyncStorage.getItem(MRP_KEY),
+        AsyncStorage.getItem(LATEST_PURCHASES_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
       const loadedOrders = ordersData ? JSON.parse(ordersData) : [];
       const loadedUsers: AppUser[] = usersData ? JSON.parse(usersData) : [];
       const loadedMrp: MrpEntry[] = mrpData ? JSON.parse(mrpData) : [];
+      const loadedLatestPurchases: LatestPurchaseEntry[] = latestPurchasesData
+        ? JSON.parse(latestPurchasesData)
+        : [];
 
       setSuppliers(loadedSuppliers);
       setOrders(loadedOrders);
       setAppUsers(loadedUsers);
       setMrpEntries(loadedMrp);
+      setLatestPurchases(loadedLatestPurchases);
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -211,6 +271,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function clearMrpBatch() {
     await AsyncStorage.removeItem(MRP_KEY);
     setMrpEntries([]);
+  }
+
+  // Latest Purchases helpers mirror the MRP write-first pattern: persist to
+  // AsyncStorage first so the on-screen state never shows a "save" that
+  // wasn't actually written (matches the rest of the data layer).
+  async function saveLatestPurchasesBatch(entries: LatestPurchaseEntry[]) {
+    await AsyncStorage.setItem(LATEST_PURCHASES_KEY, JSON.stringify(entries));
+    setLatestPurchases(entries);
+  }
+
+  async function clearLatestPurchases() {
+    await AsyncStorage.removeItem(LATEST_PURCHASES_KEY);
+    setLatestPurchases([]);
   }
 
   async function login(userId: string, password: string): Promise<{ success: boolean; error?: string }> {
@@ -485,6 +558,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         mrpEntries,
         saveMrpBatch,
         clearMrpBatch,
+        latestPurchases,
+        saveLatestPurchasesBatch,
+        clearLatestPurchases,
       }}
     >
       {children}

@@ -39,6 +39,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "indianrupeesign.circle", selected: "indianrupeesign.circle.fill" }} />
         <Label>MRP</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="latest-purchases">
+        <Icon sf={{ default: "cart", selected: "cart.fill" }} />
+        <Label>Latest Purchases</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -156,6 +160,18 @@ function ClassicTabLayout() {
               <SymbolView name="indianrupeesign.circle" tintColor={color} size={24} />
             ) : (
               <Feather name="dollar-sign" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="latest-purchases"
+        options={{
+          title: "Latest Purchases",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="cart" tintColor={color} size={24} />
+            ) : (
+              <Feather name="shopping-cart" size={22} color={color} />
             ),
         }}
       />
