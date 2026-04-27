@@ -39,6 +39,68 @@ const NUMERIC_FIELDS = new Set<string>([
   "Weight",
 ]);
 
+// Columns the source spreadsheet stores as date types. Excel surfaces these
+// either as JS Date objects (when read with cellDates:true) or as raw
+// serial numbers (e.g. 45123 for 2023-07-12), neither of which renders
+// usefully if we just String()-stringify them. Normalised to "DD/MM/YYYY".
+const DATE_FIELDS = new Set<string>(["GidDate", "DODate", "CreatedDate"]);
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function formatDDMMYYYY(d: Date): string {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Coerce a raw Excel date cell into a stable "DD/MM/YYYY" display string.
+// Accepts: JS Date (cellDates:true path), Excel serial number (Lotus
+// 1-2-3 epoch via the canonical 25569 offset), or strings already formatted
+// as DD/MM/YYYY, DD-MM-YYYY, or ISO YYYY-MM-DD. Anything unparseable falls
+// back to the original string so we never silently destroy user data.
+function coerceDate(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "";
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? "" : formatDDMMYYYY(v);
+  }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // Excel serial → ms since epoch. 25569 = days between 1899-12-30
+    // (Excel's effective epoch including the 1900 leap-year bug) and
+    // 1970-01-01 (Unix epoch).
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? String(v) : formatDDMMYYYY(d);
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (s === "") return "";
+    // DD/MM/YYYY or DD-MM-YYYY (also handles 2-digit years).
+    const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m1) {
+      const day = parseInt(m1[1], 10);
+      const mon = parseInt(m1[2], 10);
+      let yr = parseInt(m1[3], 10);
+      if (yr < 100) yr += 2000;
+      const d = new Date(yr, mon - 1, day);
+      if (!isNaN(d.getTime())) return formatDDMMYYYY(d);
+    }
+    // ISO YYYY-MM-DD (or YYYY-MM-DDTHH:mm:ss).
+    const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m2) {
+      const yr = parseInt(m2[1], 10);
+      const mon = parseInt(m2[2], 10);
+      const day = parseInt(m2[3], 10);
+      const d = new Date(yr, mon - 1, day);
+      if (!isNaN(d.getTime())) return formatDDMMYYYY(d);
+    }
+    // Last resort: native Date parser (handles "Jul 12, 2023" etc.).
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return formatDDMMYYYY(d);
+    return s;
+  }
+  return String(v);
+}
+
 // Per-column display widths for the horizontally scrollable table. Wider
 // columns are reserved for free-text fields that frequently overflow
 // (Item Description, Brand, Category); narrow columns for short numerics
@@ -192,7 +254,7 @@ export default function LatestPurchasesScreen() {
           };
           xhr.send();
         });
-        workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+        workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array", cellDates: true });
       } else {
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
           encoding: "base64" as any,
@@ -200,7 +262,7 @@ export default function LatestPurchasesScreen() {
         if (!base64 || base64.length === 0) {
           throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
         }
-        workbook = XLSX.read(base64, { type: "base64" });
+        workbook = XLSX.read(base64, { type: "base64", cellDates: true });
       }
 
       const sheetName =
@@ -261,6 +323,13 @@ export default function LatestPurchasesScreen() {
             continue;
           }
           const v = r[sourceKey];
+          if (DATE_FIELDS.has(field)) {
+            // Pass the raw cell value (Date / number / string) so the
+            // coercer can pick the right branch — String()-stringifying
+            // first would lose Date objects and Excel serial numbers.
+            entry[field] = coerceDate(v);
+            continue;
+          }
           const str = v === undefined || v === null ? "" : String(v);
           if (NUMERIC_FIELDS.has(field) && str.trim() !== "") {
             const n = parseFloat(str);
