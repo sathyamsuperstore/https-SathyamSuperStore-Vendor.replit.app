@@ -17,7 +17,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
+import { useApp, showStorageErrorAlert } from "@/context/AppContext";
 
 const REQUIRED_COLS = ["VendorCode", "VendorName"];
 const ALL_COLS = ["VendorCode", "VendorName", "VendorGstNo", "ContactName", "Email", "Phone", "Address", "VendorCategory"];
@@ -137,41 +137,45 @@ export default function ImportSuppliersScreen() {
       suppliers.some((s) => s.vendorCode.toUpperCase() === p.vendorCode.toUpperCase())
     );
 
-    const doImport = () => {
-      const { added, skipped } = addSuppliersBatch(parsed.map((p) => ({
-        vendorCode: p.vendorCode,
-        name: p.name,
-        vendorGstNo: p.vendorGstNo,
-        contactName: p.contactName,
-        email: p.email,
-        phone: p.phone,
-        address: p.address,
-        category: p.category,
-      })));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const msg = skipped.length > 0
-        ? `${added} supplier${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate VendorCode): ${skipped.join(", ")}`
-        : `${added} supplier${added !== 1 ? "s" : ""} added successfully.`;
-      if (Platform.OS === "web") {
-        window.alert(`Import Complete\n\n${msg}`);
-        router.back();
-      } else {
-        Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+    const doImport = async () => {
+      try {
+        const { added, skipped } = await addSuppliersBatch(parsed.map((p) => ({
+          vendorCode: p.vendorCode,
+          name: p.name,
+          vendorGstNo: p.vendorGstNo,
+          contactName: p.contactName,
+          email: p.email,
+          phone: p.phone,
+          address: p.address,
+          category: p.category,
+        })));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const msg = skipped.length > 0
+          ? `${added} supplier${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate VendorCode): ${skipped.join(", ")}`
+          : `${added} supplier${added !== 1 ? "s" : ""} added successfully.`;
+        if (Platform.OS === "web") {
+          window.alert(`Import Complete\n\n${msg}`);
+          router.back();
+        } else {
+          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+        }
+      } catch {
+        showStorageErrorAlert();
       }
     };
 
     if (existingConflicts.length > 0) {
       const conflictMsg = `${existingConflicts.length} supplier(s) already exist with the same VendorCode and will be skipped:\n${existingConflicts.map((p) => p.vendorCode).join(", ")}\n\nContinue?`;
       if (Platform.OS === "web") {
-        if (window.confirm(`Duplicate VendorCodes\n\n${conflictMsg}`)) doImport();
+        if (window.confirm(`Duplicate VendorCodes\n\n${conflictMsg}`)) void doImport();
       } else {
         Alert.alert("Duplicate VendorCodes", conflictMsg, [
           { text: "Cancel", style: "cancel" },
-          { text: "Continue", onPress: doImport },
+          { text: "Continue", onPress: () => void doImport() },
         ]);
       }
     } else {
-      doImport();
+      void doImport();
     }
   }
 

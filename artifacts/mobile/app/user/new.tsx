@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, UserType } from "@/context/AppContext";
+import { useApp, UserType, showStorageErrorAlert } from "@/context/AppContext";
 
 const USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
@@ -47,7 +47,10 @@ export default function NewUserScreen() {
     }
   }
 
-  function handleSubmit() {
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (saving) return;
     if (!userId.trim()) {
       Alert.alert("Missing Field", "UserID is required.");
       return;
@@ -63,17 +66,24 @@ export default function NewUserScreen() {
       Alert.alert("Duplicate UserID", "A user with this UserID already exists.");
       return;
     }
-    addAppUser({
-      userId: userId.trim(),
-      password,
-      userType,
-      vendorCode: vendorCode.trim(),
-      vendorName: vendorName.trim(),
-      vendorMobileNo1: vendorMobileNo1.trim(),
-      vendorMobileNo2: vendorMobileNo2.trim(),
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    setSaving(true);
+    try {
+      await addAppUser({
+        userId: userId.trim(),
+        password,
+        userType,
+        vendorCode: vendorCode.trim(),
+        vendorName: vendorName.trim(),
+        vendorMobileNo1: vendorMobileNo1.trim(),
+        vendorMobileNo2: vendorMobileNo2.trim(),
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch {
+      showStorageErrorAlert();
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

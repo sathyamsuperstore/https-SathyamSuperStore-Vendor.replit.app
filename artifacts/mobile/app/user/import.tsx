@@ -17,7 +17,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, UserType } from "@/context/AppContext";
+import { useApp, UserType, showStorageErrorAlert } from "@/context/AppContext";
 
 const REQUIRED_COLS = ["UserID", "Password"];
 const ALL_COLS = ["UserID", "Password", "UserType", "VendorCode", "VendorName", "VendorMobileNo1", "VendorMobileNo2"];
@@ -140,40 +140,44 @@ export default function ImportUsersScreen() {
       appUsers.some((u) => u.userId.toLowerCase() === p.userId.toLowerCase())
     );
 
-    const doImport = () => {
-      const { added, skipped } = addUsersBatch(parsed.map((p) => ({
-        userId: p.userId,
-        password: p.password,
-        userType: p.userType,
-        vendorCode: p.vendorCode,
-        vendorName: p.vendorName,
-        vendorMobileNo1: p.vendorMobileNo1,
-        vendorMobileNo2: p.vendorMobileNo2,
-      })));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const msg = skipped.length > 0
-        ? `${added} user${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate UserID): ${skipped.join(", ")}`
-        : `${added} user${added !== 1 ? "s" : ""} added successfully.`;
-      if (Platform.OS === "web") {
-        window.alert(`Import Complete\n\n${msg}`);
-        router.back();
-      } else {
-        Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+    const doImport = async () => {
+      try {
+        const { added, skipped } = await addUsersBatch(parsed.map((p) => ({
+          userId: p.userId,
+          password: p.password,
+          userType: p.userType,
+          vendorCode: p.vendorCode,
+          vendorName: p.vendorName,
+          vendorMobileNo1: p.vendorMobileNo1,
+          vendorMobileNo2: p.vendorMobileNo2,
+        })));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const msg = skipped.length > 0
+          ? `${added} user${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate UserID): ${skipped.join(", ")}`
+          : `${added} user${added !== 1 ? "s" : ""} added successfully.`;
+        if (Platform.OS === "web") {
+          window.alert(`Import Complete\n\n${msg}`);
+          router.back();
+        } else {
+          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+        }
+      } catch {
+        showStorageErrorAlert();
       }
     };
 
     if (existingConflicts.length > 0) {
       const conflictMsg = `${existingConflicts.length} user(s) already exist with the same UserID and will be skipped:\n${existingConflicts.map((p) => p.userId).join(", ")}\n\nContinue?`;
       if (Platform.OS === "web") {
-        if (window.confirm(`Duplicate UserIDs\n\n${conflictMsg}`)) doImport();
+        if (window.confirm(`Duplicate UserIDs\n\n${conflictMsg}`)) void doImport();
       } else {
         Alert.alert("Duplicate UserIDs", conflictMsg, [
           { text: "Cancel", style: "cancel" },
-          { text: "Continue", onPress: doImport },
+          { text: "Continue", onPress: () => void doImport() },
         ]);
       }
     } else {
-      doImport();
+      void doImport();
     }
   }
 

@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
+import { useApp, showStorageErrorAlert } from "@/context/AppContext";
 
 const CATEGORIES = ["Grocery", "FMCG", "Packaging", "Logistics", "Services", "Other"];
 
@@ -34,7 +34,10 @@ export default function NewSupplierScreen() {
   const vendorCodeDuplicate = vendorCode.trim().length > 0 &&
     suppliers.some((s) => s.vendorCode.toUpperCase() === vendorCode.trim().toUpperCase());
 
-  function handleSubmit() {
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (saving) return;
     if (!name.trim()) {
       Alert.alert("Missing Field", "Company name is required.");
       return;
@@ -47,9 +50,16 @@ export default function NewSupplierScreen() {
       Alert.alert("Duplicate Vendor Code", `"${vendorCode.trim().toUpperCase()}" is already assigned to another supplier. Vendor Code must be unique.`);
       return;
     }
-    addSupplier({ name, vendorCode: vendorCode.trim().toUpperCase(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    setSaving(true);
+    try {
+      await addSupplier({ name, vendorCode: vendorCode.trim().toUpperCase(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch {
+      showStorageErrorAlert();
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderItem } from "@/context/AppContext";
+import { useApp, OrderItem, showStorageErrorAlert } from "@/context/AppContext";
 
 function generateItemId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -87,20 +87,30 @@ export default function NewOrderScreen() {
     return true;
   }
 
-  function handleSubmit() {
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (saving) return;
     if (!validate()) return;
     const supplier = suppliers.find((s) => s.id === supplierId)!;
-    addOrder({
-      supplierId,
-      supplierName: supplier.name,
-      status: "pending",
-      items,
-      notes,
-      expectedDelivery: new Date(expectedDelivery).toISOString(),
-      beat: beat.trim() || undefined,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    setSaving(true);
+    try {
+      await addOrder({
+        supplierId,
+        supplierName: supplier.name,
+        status: "pending",
+        items,
+        notes,
+        expectedDelivery: new Date(expectedDelivery).toISOString(),
+        beat: beat.trim() || undefined,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch {
+      showStorageErrorAlert();
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

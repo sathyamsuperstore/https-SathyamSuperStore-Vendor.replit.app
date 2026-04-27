@@ -20,7 +20,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus } from "@/context/AppContext";
+import { useApp, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -184,14 +184,22 @@ export default function OrdersScreen() {
     }
   }
 
+  async function doClearAll() {
+    try {
+      await clearAllOrders();
+      setActiveFilter("all");
+      setActiveBrands([]);
+    } catch {
+      showStorageErrorAlert();
+    }
+  }
+
   function handleClearAll() {
     if (orders.length === 0) return;
     const msg = `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`;
     if (Platform.OS === "web") {
       if (window.confirm(`Remove All Orders\n\n${msg}`)) {
-        clearAllOrders();
-        setActiveFilter("all");
-        setActiveBrands([]);
+        void doClearAll();
       }
       return;
     }
@@ -204,9 +212,7 @@ export default function OrdersScreen() {
           text: "Remove All",
           style: "destructive",
           onPress: () => {
-            clearAllOrders();
-            setActiveFilter("all");
-            setActiveBrands([]);
+            void doClearAll();
           },
         },
       ]

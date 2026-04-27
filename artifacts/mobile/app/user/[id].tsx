@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, AppUser, UserType } from "@/context/AppContext";
+import { useApp, AppUser, UserType, showStorageErrorAlert } from "@/context/AppContext";
 
 const USER_TYPES: UserType[] = ["Admin", "Vendor", "Manager", "Staff"];
 
@@ -48,7 +48,7 @@ export default function UserDetailScreen() {
       (u) => u.id !== id && u.userId.toLowerCase() === form.userId!.trim().toLowerCase()
     );
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.userId?.trim()) {
       Alert.alert("Missing Field", "UserID is required.");
       return;
@@ -64,16 +64,20 @@ export default function UserDetailScreen() {
       Alert.alert("Duplicate UserID", "A user with this UserID already exists.");
       return;
     }
-    updateAppUser(user.id, {
-      ...form,
-      userId: form.userId!.trim(),
-      vendorCode: form.vendorCode?.trim() ?? "",
-      vendorName: form.vendorName?.trim() ?? "",
-      vendorMobileNo1: form.vendorMobileNo1?.trim() ?? "",
-      vendorMobileNo2: form.vendorMobileNo2?.trim() ?? "",
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setEditing(false);
+    try {
+      await updateAppUser(user.id, {
+        ...form,
+        userId: form.userId!.trim(),
+        vendorCode: form.vendorCode?.trim() ?? "",
+        vendorName: form.vendorName?.trim() ?? "",
+        vendorMobileNo1: form.vendorMobileNo1?.trim() ?? "",
+        vendorMobileNo2: form.vendorMobileNo2?.trim() ?? "",
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditing(false);
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
   function handleDelete() {
@@ -82,9 +86,13 @@ export default function UserDetailScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          deleteAppUser(user.id);
-          router.back();
+        onPress: async () => {
+          try {
+            await deleteAppUser(user.id);
+            router.back();
+          } catch {
+            showStorageErrorAlert();
+          }
         },
       },
     ]);

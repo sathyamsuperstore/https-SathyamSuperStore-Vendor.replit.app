@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, Supplier } from "@/context/AppContext";
+import { useApp, Supplier, showStorageErrorAlert } from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
 
 const CATEGORIES = ["Grocery", "FMCG", "Packaging", "Logistics", "Services", "Other"];
@@ -60,7 +60,7 @@ export default function SupplierDetailScreen() {
         s.vendorCode.toUpperCase() === form.vendorCode!.trim().toUpperCase()
     );
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.name?.trim()) {
       Alert.alert("Missing Field", "Company name is required.");
       return;
@@ -73,9 +73,13 @@ export default function SupplierDetailScreen() {
       Alert.alert("Duplicate Vendor Code", `"${form.vendorCode!.trim().toUpperCase()}" is already assigned to another supplier. Vendor Code must be unique.`);
       return;
     }
-    updateSupplier(supplier!.id, { ...form, vendorCode: form.vendorCode!.trim().toUpperCase() });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setEditing(false);
+    try {
+      await updateSupplier(supplier!.id, { ...form, vendorCode: form.vendorCode!.trim().toUpperCase() });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditing(false);
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
   function handleDelete() {
@@ -84,9 +88,13 @@ export default function SupplierDetailScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          deleteSupplier(supplier!.id);
-          router.back();
+        onPress: async () => {
+          try {
+            await deleteSupplier(supplier!.id);
+            router.back();
+          } catch {
+            showStorageErrorAlert();
+          }
         },
       },
     ]);

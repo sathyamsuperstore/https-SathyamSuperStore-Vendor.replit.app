@@ -18,7 +18,7 @@ import * as XLSX from "xlsx-js-style";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, MrpEntry } from "@/context/AppContext";
+import { useApp, MrpEntry, showStorageErrorAlert } from "@/context/AppContext";
 
 export default function MrpScreen() {
   const { mrpEntries, saveMrpBatch, clearMrpBatch } = useApp();
@@ -138,7 +138,7 @@ export default function MrpScreen() {
       }
 
       parsed.sort((a, b) => a.itemNo.localeCompare(b.itemNo, undefined, { sensitivity: "base" }));
-      saveMrpBatch(parsed);
+      await saveMrpBatch(parsed);
       setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -152,19 +152,23 @@ export default function MrpScreen() {
   function handleClear() {
     if (mrpEntries.length === 0) return;
     const msg = `Remove all ${mrpEntries.length} MRP entries? This cannot be undone.`;
-    const doClear = () => {
-      clearMrpBatch();
-      setStatusMsg(null);
-      setErrors([]);
-      setSearch("");
+    const doClear = async () => {
+      try {
+        await clearMrpBatch();
+        setStatusMsg(null);
+        setErrors([]);
+        setSearch("");
+      } catch {
+        showStorageErrorAlert();
+      }
     };
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) doClear();
+      if (window.confirm(msg)) void doClear();
       return;
     }
     Alert.alert("Clear MRP", msg, [
       { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: doClear },
+      { text: "Clear", style: "destructive", onPress: () => void doClear() },
     ]);
   }
 

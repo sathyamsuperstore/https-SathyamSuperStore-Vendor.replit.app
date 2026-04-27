@@ -22,7 +22,7 @@ import * as Haptics from "expo-haptics";
 import * as Print from "expo-print";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus, Order, OrderItem } from "@/context/AppContext";
+import { useApp, OrderStatus, Order, OrderItem, showStorageErrorAlert } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -58,12 +58,13 @@ function StockUpdCard({
   showNotes: boolean;
   multipleMrpOnly: boolean;
   mrpMap: Record<string, number[]>;
-  onSave: (id: string, items: OrderItem[]) => void;
+  onSave: (id: string, items: OrderItem[]) => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const sortedItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -105,7 +106,8 @@ function StockUpdCard({
     Object.keys(nsqEdits).length > 0 ||
     Object.keys(noteEdits).length > 0;
 
-  function handleSave() {
+  async function handleSave() {
+    if (saving) return;
     const updated = order.items.map((item) => {
       const qStr = qtyEdits[item.id];
       const nStr = nsqEdits[item.id];
@@ -130,11 +132,18 @@ function StockUpdCard({
           : item.notes;
       return { ...item, quantity: qty, newStockQty: nsq, notes };
     });
-    onSave(order.id, updated);
-    setQtyEdits({});
-    setNsqEdits({});
-    setNoteEdits({});
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setSaving(true);
+    try {
+      const ok = await onSave(order.id, updated);
+      if (ok) {
+        setQtyEdits({});
+        setNsqEdits({});
+        setNoteEdits({});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -750,14 +759,22 @@ export default function StockUpdScreen() {
     }
   }
 
+  async function doClearAll() {
+    try {
+      await clearAllOrders();
+      setActiveFilter("all");
+      setActiveBrands([]);
+    } catch {
+      showStorageErrorAlert();
+    }
+  }
+
   function handleClearAll() {
     if (orders.length === 0) return;
     const msg = `This will permanently delete all ${orders.length} order${orders.length !== 1 ? "s" : ""}. This cannot be undone.`;
     if (Platform.OS === "web") {
       if (window.confirm(`Remove All Orders\n\n${msg}`)) {
-        clearAllOrders();
-        setActiveFilter("all");
-        setActiveBrands([]);
+        void doClearAll();
       }
       return;
     }
@@ -770,9 +787,7 @@ export default function StockUpdScreen() {
           text: "Remove All",
           style: "destructive",
           onPress: () => {
-            clearAllOrders();
-            setActiveFilter("all");
-            setActiveBrands([]);
+            void doClearAll();
           },
         },
       ]
@@ -780,8 +795,14 @@ export default function StockUpdScreen() {
   }
 
   const handleSaveOrder = useCallback(
-    (orderId: string, items: OrderItem[]) => {
-      updateOrder(orderId, { items, totalAmount: calcTotal(items) });
+    async (orderId: string, items: OrderItem[]): Promise<boolean> => {
+      try {
+        await updateOrder(orderId, { items, totalAmount: calcTotal(items) });
+        return true;
+      } catch {
+        showStorageErrorAlert();
+        return false;
+      }
     },
     [updateOrder]
   );

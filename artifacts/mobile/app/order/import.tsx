@@ -529,7 +529,7 @@ export default function ImportOrderScreen() {
   // were skipped because a supplier already exists with that code (case-
   // insensitive). We don't pre-confirm because the action is fully reversible
   // by individual edits and the result is shown in an alert afterwards.
-  const bulkCreatePlaceholders = useCallback(() => {
+  const bulkCreatePlaceholders = useCallback(async () => {
     if (bulkBusy) return;
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
     if (unmatched.length === 0) return;
@@ -548,7 +548,7 @@ export default function ImportOrderScreen() {
           category: "",
         };
       });
-      const { added, addedSuppliers } = addSuppliersBatch(inputs);
+      const { added, addedSuppliers } = await addSuppliersBatch(inputs);
       // Build a code -> id map of every supplier we can now link to: brand
       // new ones + any pre-existing suppliers whose code matched (those got
       // skipped by the batch dedup but should still be linked here).

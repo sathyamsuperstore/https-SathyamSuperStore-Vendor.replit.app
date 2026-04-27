@@ -193,7 +193,7 @@ export default function DriveImportScreen() {
         };
       });
       const validOrders = orderInputs.filter((o) => o.items.length > 0);
-      addOrdersBatch(validOrders);
+      await addOrdersBatch(validOrders);
       return { message: `${validOrders.length} order(s) created from ${Object.keys(groupMap).length} vendor group(s).` };
     }
 
@@ -215,7 +215,7 @@ export default function DriveImportScreen() {
           category: String(row["VendorCategory"] ?? "").trim(),
         }))
         .filter((i) => i.vendorCode && i.name);
-      const { added, skipped } = addSuppliersBatch(items);
+      const { added, skipped } = await addSuppliersBatch(items);
       return { message: `${added} supplier(s) added, ${skipped.length} skipped (duplicate).` };
     }
 
@@ -239,7 +239,7 @@ export default function DriveImportScreen() {
           };
         })
         .filter((i) => i.userId && i.password);
-      const { added, skipped } = addUsersBatch(items);
+      const { added, skipped } = await addUsersBatch(items);
       return { message: `${added} user(s) added, ${skipped.length} skipped (duplicate).` };
     }
 

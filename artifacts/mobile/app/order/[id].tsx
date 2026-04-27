@@ -18,7 +18,7 @@ import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus } from "@/context/AppContext";
+import { useApp, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
 
 const STATUS_FLOW: { status: OrderStatus; label: string; icon: keyof typeof Feather.glyphMap }[] = [
@@ -89,10 +89,14 @@ export default function OrderDetailScreen() {
     return null;
   }, [order.status]);
 
-  function handleStatusUpdate() {
+  async function handleStatusUpdate() {
     if (!nextStatus) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    updateOrderStatus(order.id, nextStatus.status);
+    try {
+      await updateOrderStatus(order.id, nextStatus.status);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
   function handleCancel() {
@@ -101,9 +105,13 @@ export default function OrderDetailScreen() {
       {
         text: "Cancel Order",
         style: "destructive",
-        onPress: () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          updateOrderStatus(order.id, "cancelled");
+        onPress: async () => {
+          try {
+            await updateOrderStatus(order.id, "cancelled");
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          } catch {
+            showStorageErrorAlert();
+          }
         },
       },
     ]);
@@ -226,26 +234,34 @@ export default function OrderDetailScreen() {
     }
   }
 
-  function saveNewStockQty(itemId: string, value: string) {
+  async function saveNewStockQty(itemId: string, value: string) {
     if (!order) return;
     const parsed = parseFloat(value);
     const qty = isNaN(parsed) || value.trim() === "" ? undefined : parsed;
-    updateOrder(order.id, {
-      items: order.items.map((it) =>
-        it.id === itemId ? { ...it, newStockQty: qty } : it
-      ),
-    });
+    try {
+      await updateOrder(order.id, {
+        items: order.items.map((it) =>
+          it.id === itemId ? { ...it, newStockQty: qty } : it
+        ),
+      });
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
-  function saveNote(itemId: string, value: string) {
+  async function saveNote(itemId: string, value: string) {
     if (!order) return;
     const trimmed = value.trim();
     const note = trimmed === "" ? undefined : trimmed;
-    updateOrder(order.id, {
-      items: order.items.map((it) =>
-        it.id === itemId ? { ...it, notes: note } : it
-      ),
-    });
+    try {
+      await updateOrder(order.id, {
+        items: order.items.map((it) =>
+          it.id === itemId ? { ...it, notes: note } : it
+        ),
+      });
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
   function handleDelete() {
@@ -254,9 +270,13 @@ export default function OrderDetailScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          deleteOrder(order.id);
-          router.back();
+        onPress: async () => {
+          try {
+            await deleteOrder(order.id);
+            router.back();
+          } catch {
+            showStorageErrorAlert();
+          }
         },
       },
     ]);

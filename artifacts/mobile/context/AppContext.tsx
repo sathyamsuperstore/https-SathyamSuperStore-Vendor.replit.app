@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Alert, Platform } from "react-native";
 
 const SESSION_KEY = "@currentUserId";
 
@@ -66,29 +67,33 @@ interface AppContextType {
   orders: Order[];
   appUsers: AppUser[];
   currentUser: AppUser | null;
-  login: (userId: string, password: string) => { success: boolean; error?: string };
-  logout: () => void;
-  addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => void;
-  updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
-  addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => void;
-  addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => void;
+  login: (userId: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => Promise<void>;
+  updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
+  addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => Promise<void>;
+  addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => Promise<void>;
   addOrdersBatchAsync: (
     orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[],
     onProgress?: (processed: number, total: number) => void | Promise<void>
   ) => Promise<void>;
-  updateOrder: (id: string, order: Partial<Order>) => void;
-  deleteOrder: (id: string) => void;
-  clearAllOrders: () => void;
-  updateOrderStatus: (id: string, status: OrderStatus) => void;
-  addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
-  updateAppUser: (id: string, user: Partial<AppUser>) => void;
-  deleteAppUser: (id: string) => void;
-  addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[]; addedSuppliers: Supplier[] };
-  addUsersBatch: (items: Omit<AppUser, "id" | "createdAt">[]) => { added: number; skipped: string[] };
+  updateOrder: (id: string, order: Partial<Order>) => Promise<void>;
+  deleteOrder: (id: string) => Promise<void>;
+  clearAllOrders: () => Promise<void>;
+  updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
+  addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => Promise<void>;
+  updateAppUser: (id: string, user: Partial<AppUser>) => Promise<void>;
+  deleteAppUser: (id: string) => Promise<void>;
+  addSuppliersBatch: (
+    items: Omit<Supplier, "id" | "createdAt">[]
+  ) => Promise<{ added: number; skipped: string[]; addedSuppliers: Supplier[] }>;
+  addUsersBatch: (
+    items: Omit<AppUser, "id" | "createdAt">[]
+  ) => Promise<{ added: number; skipped: string[] }>;
   mrpEntries: MrpEntry[];
-  saveMrpBatch: (entries: MrpEntry[]) => void;
-  clearMrpBatch: () => void;
+  saveMrpBatch: (entries: MrpEntry[]) => Promise<void>;
+  clearMrpBatch: () => Promise<void>;
 }
 
 export interface MrpEntry {
@@ -111,6 +116,23 @@ function generateOrderNumber(): string {
   const prefix = "ORD";
   const num = Math.floor(Math.random() * 90000) + 10000;
   return `${prefix}-${num}`;
+}
+
+// User-facing message shown by callers when a write to AsyncStorage fails.
+// Phones with full storage are the most common cause; we surface that
+// specifically because the user can act on it (free up space and retry).
+export const STORAGE_ERROR_TITLE = "Couldn't Save";
+export const STORAGE_ERROR_MESSAGE =
+  "Your phone may be out of storage. Please free up some space and try again.";
+
+// Helper for callers to surface a save failure consistently across web
+// (window.alert) and native (Alert.alert).
+export function showStorageErrorAlert(title: string = STORAGE_ERROR_TITLE) {
+  if (Platform.OS === "web") {
+    window.alert(`${title}\n\n${STORAGE_ERROR_MESSAGE}`);
+  } else {
+    Alert.alert(title, STORAGE_ERROR_MESSAGE);
+  }
 }
 
 
@@ -163,59 +185,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // All save* helpers persist to AsyncStorage FIRST and only update React
+  // state if the write succeeds. If the disk is full (or AsyncStorage throws
+  // for any other reason) the rejection bubbles up to the caller and the UI
+  // never shows a change that wasn't actually saved — so the next app launch
+  // is consistent with what the user just saw.
   async function saveMrpBatch(entries: MrpEntry[]) {
-    setMrpEntries(entries);
     await AsyncStorage.setItem(MRP_KEY, JSON.stringify(entries));
+    setMrpEntries(entries);
   }
 
   async function clearMrpBatch() {
-    setMrpEntries([]);
     await AsyncStorage.removeItem(MRP_KEY);
+    setMrpEntries([]);
   }
 
-  function login(userId: string, password: string): { success: boolean; error?: string } {
+  async function login(userId: string, password: string): Promise<{ success: boolean; error?: string }> {
     const user = appUsers.find(
       (u) => u.userId.toLowerCase() === userId.trim().toLowerCase() && u.password === password
     );
     if (!user) return { success: false, error: "Invalid User ID or Password." };
+    try {
+      await AsyncStorage.setItem(SESSION_KEY, user.id);
+    } catch {
+      return { success: false, error: STORAGE_ERROR_MESSAGE };
+    }
     setCurrentUser(user);
-    AsyncStorage.setItem(SESSION_KEY, user.id);
     return { success: true };
   }
 
-  function logout() {
+  async function logout(): Promise<void> {
+    await AsyncStorage.removeItem(SESSION_KEY);
     setCurrentUser(null);
-    AsyncStorage.removeItem(SESSION_KEY);
   }
 
   async function saveSuppliers(data: Supplier[]) {
-    setSuppliers(data);
     await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(data));
+    setSuppliers(data);
   }
 
   async function saveAppUsers(data: AppUser[]) {
-    setAppUsers(data);
     await AsyncStorage.setItem(USERS_KEY, JSON.stringify(data));
+    setAppUsers(data);
   }
 
-  function addAppUser(user: Omit<AppUser, "id" | "createdAt">) {
+  async function addAppUser(user: Omit<AppUser, "id" | "createdAt">) {
     const newUser: AppUser = {
       ...user,
       id: generateId(),
       createdAt: new Date().toISOString(),
     };
-    saveAppUsers([...appUsers, newUser]);
+    await saveAppUsers([...appUsers, newUser]);
   }
 
-  function updateAppUser(id: string, data: Partial<AppUser>) {
-    saveAppUsers(appUsers.map((u) => (u.id === id ? { ...u, ...data } : u)));
+  async function updateAppUser(id: string, data: Partial<AppUser>) {
+    await saveAppUsers(appUsers.map((u) => (u.id === id ? { ...u, ...data } : u)));
   }
 
-  function deleteAppUser(id: string) {
-    saveAppUsers(appUsers.filter((u) => u.id !== id));
+  async function deleteAppUser(id: string) {
+    await saveAppUsers(appUsers.filter((u) => u.id !== id));
   }
 
-  function addSuppliersBatch(items: Omit<Supplier, "id" | "createdAt">[]): { added: number; skipped: string[]; addedSuppliers: Supplier[] } {
+  async function addSuppliersBatch(
+    items: Omit<Supplier, "id" | "createdAt">[]
+  ): Promise<{ added: number; skipped: string[]; addedSuppliers: Supplier[] }> {
     const skipped: string[] = [];
     const existingCodes = new Set(suppliers.map((s) => s.vendorCode.toUpperCase()));
     const newSuppliers: Supplier[] = [];
@@ -229,11 +262,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       seenCodes.add(code);
       newSuppliers.push({ ...item, id: generateId(), createdAt: new Date().toISOString() });
     }
-    if (newSuppliers.length > 0) saveSuppliers([...suppliers, ...newSuppliers]);
+    if (newSuppliers.length > 0) await saveSuppliers([...suppliers, ...newSuppliers]);
     return { added: newSuppliers.length, skipped, addedSuppliers: newSuppliers };
   }
 
-  function addUsersBatch(items: Omit<AppUser, "id" | "createdAt">[]): { added: number; skipped: string[] } {
+  async function addUsersBatch(
+    items: Omit<AppUser, "id" | "createdAt">[]
+  ): Promise<{ added: number; skipped: string[] }> {
     const skipped: string[] = [];
     const existingIds = new Set(appUsers.map((u) => u.userId.toLowerCase()));
     const newUsers: AppUser[] = [];
@@ -247,37 +282,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       seenIds.add(uid);
       newUsers.push({ ...item, id: generateId(), createdAt: new Date().toISOString() });
     }
-    if (newUsers.length > 0) saveAppUsers([...appUsers, ...newUsers]);
+    if (newUsers.length > 0) await saveAppUsers([...appUsers, ...newUsers]);
     return { added: newUsers.length, skipped };
   }
 
   async function saveOrders(data: Order[]) {
-    setOrders(data);
     await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(data));
+    setOrders(data);
   }
 
   function calculateTotal(items: OrderItem[]): number {
     return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   }
 
-  function addSupplier(supplier: Omit<Supplier, "id" | "createdAt">) {
+  async function addSupplier(supplier: Omit<Supplier, "id" | "createdAt">) {
     const newSupplier: Supplier = {
       ...supplier,
       id: generateId(),
       createdAt: new Date().toISOString(),
     };
-    saveSuppliers([...suppliers, newSupplier]);
+    await saveSuppliers([...suppliers, newSupplier]);
   }
 
-  function updateSupplier(id: string, data: Partial<Supplier>) {
-    saveSuppliers(suppliers.map((s) => (s.id === id ? { ...s, ...data } : s)));
+  async function updateSupplier(id: string, data: Partial<Supplier>) {
+    await saveSuppliers(suppliers.map((s) => (s.id === id ? { ...s, ...data } : s)));
   }
 
-  function deleteSupplier(id: string) {
-    saveSuppliers(suppliers.filter((s) => s.id !== id));
+  async function deleteSupplier(id: string) {
+    await saveSuppliers(suppliers.filter((s) => s.id !== id));
   }
 
-  function addOrder(order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) {
+  async function addOrder(order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) {
     const now = new Date().toISOString();
     const newOrder: Order = {
       ...order,
@@ -287,10 +322,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: now,
       updatedAt: now,
     };
-    saveOrders([newOrder, ...orders]);
+    await saveOrders([newOrder, ...orders]);
   }
 
-  function addOrdersBatch(orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) {
+  async function addOrdersBatch(orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) {
     const now = new Date().toISOString();
     const newOrders: Order[] = orderInputs.map((order) => ({
       ...order,
@@ -300,7 +335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: now,
       updatedAt: now,
     }));
-    saveOrders([...newOrders, ...orders]);
+    await saveOrders([...newOrders, ...orders]);
   }
 
   // Async chunked variant for very large imports. Builds the new Order objects
@@ -348,8 +383,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrders(updated);
   }
 
-  function updateOrder(id: string, data: Partial<Order>) {
-    saveOrders(
+  async function updateOrder(id: string, data: Partial<Order>) {
+    await saveOrders(
       orders.map((o) =>
         o.id === id
           ? {
@@ -363,16 +398,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  function deleteOrder(id: string) {
-    saveOrders(orders.filter((o) => o.id !== id));
+  async function deleteOrder(id: string) {
+    await saveOrders(orders.filter((o) => o.id !== id));
   }
 
-  function clearAllOrders() {
-    saveOrders([]);
+  async function clearAllOrders() {
+    await saveOrders([]);
   }
 
-  function updateOrderStatus(id: string, status: OrderStatus) {
-    saveOrders(
+  async function updateOrderStatus(id: string, status: OrderStatus) {
+    await saveOrders(
       orders.map((o) =>
         o.id === id ? { ...o, status, updatedAt: new Date().toISOString() } : o
       )

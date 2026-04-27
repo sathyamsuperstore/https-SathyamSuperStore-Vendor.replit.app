@@ -22,7 +22,7 @@ import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, Order, OrderStatus } from "@/context/AppContext";
+import { useApp, Order, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; text: string; label: string }> = {
   pending:   { bg: "#FEF3C7", text: "#92400E", label: "Pending" },
@@ -67,15 +67,18 @@ function LoginForm({ topPt }: { topPt: number }) {
     }
     setLoading(true);
     setError("");
-    setTimeout(() => {
-      const result = login(userId, password);
-      if (!result.success) {
-        setError(result.error ?? "Login failed.");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(async () => {
+      try {
+        const result = await login(userId, password);
+        if (!result.success) {
+          setError(result.error ?? "Login failed.");
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } else {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }, 300);
   }
 
@@ -470,7 +473,17 @@ function OrdersView({ topPt }: { topPt: number }) {
   function confirmLogout() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: logout },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+          } catch {
+            showStorageErrorAlert("Couldn't Sign Out");
+          }
+        },
+      },
     ]);
   }
 
@@ -784,9 +797,13 @@ function VendorOrderCard({
         { text: "Cancel", style: "cancel" },
         {
           text: "Update",
-          onPress: () => {
-            updateOrderStatus(order.id, newStatus);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onPress: async () => {
+            try {
+              await updateOrderStatus(order.id, newStatus);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch {
+              showStorageErrorAlert();
+            }
           },
         },
       ]
@@ -815,7 +832,7 @@ function VendorOrderCard({
     });
   }
 
-  function saveModify() {
+  async function saveModify() {
     // Items not shown (due to brand filter) must be preserved as-is
     const hiddenItems = order.items.filter(
       (i) => !displayItems.some((di) => di.id === i.id)
@@ -837,11 +854,15 @@ function VendorOrderCard({
     }
     const newItems = [...hiddenItems, ...selectedDisplayItems];
     const newTotal = newItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    updateOrder(order.id, { items: newItems, totalAmount: newTotal });
-    setModifyMode(false);
-    setCheckedIds(new Set());
-    setEditedQtys({});
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await updateOrder(order.id, { items: newItems, totalAmount: newTotal });
+      setModifyMode(false);
+      setCheckedIds(new Set());
+      setEditedQtys({});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      showStorageErrorAlert();
+    }
   }
 
   return (
