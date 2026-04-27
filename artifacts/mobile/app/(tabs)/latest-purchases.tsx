@@ -123,14 +123,35 @@ const COL_WIDTHS: Record<string, number> = {
   Category: 130,
   Weight: 80,
   Brand: 140,
+  // Synthetic display-only column: vendor name resolved from the
+  // Suppliers tab via VendorCode. Wide enough for typical store names.
+  "Vendor Name": 180,
 };
 
 function colWidth(field: string): number {
   return COL_WIDTHS[field] ?? 90;
 }
 
+// Synthetic column rendered between VendorCode and the rest. Not part
+// of LATEST_PURCHASES_FIELDS — that constant is the import/export
+// schema and must stay in sync with the source spreadsheet.
+const VENDOR_NAME_COL = "Vendor Name";
+
+// Build the on-screen column order by inserting the synthetic
+// "Vendor Name" column immediately after "VendorCode".
+function buildDisplayColumns(fields: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const f of fields) {
+    out.push(f);
+    if (f === "VendorCode") out.push(VENDOR_NAME_COL);
+  }
+  return out;
+}
+
 // Fields a user is likely to know to search by. SortNo included so
 // numeric IDs work via substring match (e.g. "12" matches "12" / "112").
+// Vendor name is searchable via a separate code path (it lives on
+// the supplier record, not on the purchase row itself).
 const SEARCH_FIELDS = [
   "GidNo",
   "SortNo",
@@ -154,7 +175,35 @@ function formatCell(field: string, value: string | number | undefined): string {
 }
 
 export default function LatestPurchasesScreen() {
-  const { latestPurchases, saveLatestPurchasesBatch, clearLatestPurchases } = useApp();
+  const { latestPurchases, saveLatestPurchasesBatch, clearLatestPurchases, suppliers } = useApp();
+
+  // VendorCode (uppercased, trimmed) → supplier name. Built once per
+  // suppliers change so each row's vendor-name lookup is O(1).
+  const vendorNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of suppliers) {
+      const code = (s.vendorCode ?? "").trim().toUpperCase();
+      if (code) m.set(code, (s.name ?? "").trim());
+    }
+    return m;
+  }, [suppliers]);
+
+  // Resolve a row's vendor name; "Unlisted" if the VendorCode is not
+  // present in the Suppliers tab. Empty/missing VendorCode also reads as
+  // "Unlisted" so the column is never blank.
+  const vendorNameFor = (code: unknown): string => {
+    const k = String(code ?? "").trim().toUpperCase();
+    if (!k) return "Unlisted";
+    const name = vendorNameByCode.get(k);
+    return name && name.length > 0 ? name : "Unlisted";
+  };
+
+  // Display columns = canonical schema + the synthetic "Vendor Name"
+  // column inserted right after VendorCode.
+  const displayColumns = useMemo(
+    () => buildDisplayColumns(LATEST_PURCHASES_FIELDS),
+    []
+  );
   const insets = useSafeAreaInsets();
   // Optional URL param: when navigated to from the Orders tab via a tap
   // on a VendorCode chip, the search box gets pre-filled with that code.
@@ -210,10 +259,16 @@ export default function LatestPurchasesScreen() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return latestPurchases;
-    return latestPurchases.filter((r) =>
-      SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))
-    );
-  }, [latestPurchases, search]);
+    return latestPurchases.filter((r) => {
+      if (SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) {
+        return true;
+      }
+      // Also match against the resolved vendor name so users can find
+      // rows by typing the supplier name even though it isn't stored
+      // on the purchase row itself.
+      return vendorNameFor(r["VendorCode"]).toLowerCase().includes(q);
+    });
+  }, [latestPurchases, search, vendorNameByCode]);
 
   async function pickAndImport() {
     try {
@@ -654,7 +709,7 @@ export default function LatestPurchasesScreen() {
               style={styles.headerScroll}
             >
               <View style={styles.tableHead}>
-                {LATEST_PURCHASES_FIELDS.map((f) => {
+                {displayColumns.map((f) => {
                   const numeric = NUMERIC_FIELDS.has(f);
                   return (
                     <Text
@@ -697,8 +752,15 @@ export default function LatestPurchasesScreen() {
                         key={`${row["GidNo"] ?? ""}-${row["SortNo"] ?? ""}-${i}`}
                         style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
                       >
-                        {LATEST_PURCHASES_FIELDS.map((f) => {
+                        {displayColumns.map((f) => {
                           const numeric = NUMERIC_FIELDS.has(f);
+                          // The synthetic vendor-name column reads from
+                          // the suppliers lookup, not from the row.
+                          const isVendorName = f === VENDOR_NAME_COL;
+                          const cellText = isVendorName
+                            ? vendorNameFor(row["VendorCode"])
+                            : formatCell(f, row[f]);
+                          const isUnlisted = isVendorName && cellText === "Unlisted";
                           return (
                             <Text
                               key={f}
@@ -709,10 +771,14 @@ export default function LatestPurchasesScreen() {
                                   textAlign: numeric ? "right" : "left",
                                   fontWeight: numeric ? "600" : "400",
                                 },
+                                // Mute unlisted vendors so a populated
+                                // store doesn't visually drown the
+                                // legitimate matches.
+                                isUnlisted && { color: Colors.textMuted, fontStyle: "italic" },
                               ]}
                               numberOfLines={1}
                             >
-                              {formatCell(f, row[f])}
+                              {cellText}
                             </Text>
                           );
                         })}
