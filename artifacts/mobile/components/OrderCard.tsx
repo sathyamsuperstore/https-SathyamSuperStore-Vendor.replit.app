@@ -38,7 +38,27 @@ export function OrderCard({ order, vendorCode }: Props) {
           <Text style={styles.orderNum}>{order.orderNumber}</Text>
           <Text style={styles.supplier}>{order.supplierName}</Text>
           {vendorCode ? (
-            <Text style={styles.vendorCode}>Code: {vendorCode}</Text>
+            // Tappable vendor code: jumps to the Latest Purchases tab with
+            // the search field pre-filled to this VendorCode, so the user
+            // can immediately see purchase history for the same vendor.
+            // Wrapped in its own TouchableOpacity so press-events are
+            // captured here and don't bubble up to open the order detail.
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                router.push({
+                  pathname: "/(tabs)/latest-purchases",
+                  params: { search: vendorCode },
+                });
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.vendorCodeLink}>
+                Code: {vendorCode}{" "}
+                <Feather name="external-link" size={10} color={Colors.primary} />
+              </Text>
+            </TouchableOpacity>
           ) : null}
         </View>
         <StatusBadge status={order.status} size="sm" />
@@ -88,6 +108,14 @@ const styles = StyleSheet.create({
   orderNum: { fontSize: 15, fontWeight: "700", color: Colors.text, marginBottom: 2 },
   supplier: { fontSize: 13, color: Colors.textSecondary },
   vendorCode: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  // Same size/spacing as vendorCode but in primary color so it visually
+  // reads as a tappable link to the Latest Purchases tab.
+  vendorCodeLink: {
+    fontSize: 11,
+    color: Colors.primary,
+    marginTop: 2,
+    fontWeight: "600",
+  },
   divider: { height: 1, backgroundColor: Colors.border, marginBottom: 12 },
   footer: { flexDirection: "row", alignItems: "center", gap: 12 },
   footerItem: { flexDirection: "row", alignItems: "center", gap: 4 },

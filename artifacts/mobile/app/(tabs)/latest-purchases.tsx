@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -93,12 +94,29 @@ function formatCell(field: string, value: string | number | undefined): string {
 export default function LatestPurchasesScreen() {
   const { latestPurchases, saveLatestPurchasesBatch, clearLatestPurchases } = useApp();
   const insets = useSafeAreaInsets();
+  // Optional URL param: when navigated to from the Orders tab via a tap
+  // on a VendorCode chip, the search box gets pre-filled with that code.
+  const params = useLocalSearchParams<{ search?: string }>();
 
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  // Consume the `search` URL param on entry. Each distinct param value is
+  // applied at most once via consumedSearchParam so a tab-bar revisit (the
+  // URL still carries the same `?search=...`) doesn't keep re-overriding
+  // the user's edits. A new VendorCode tap from Orders updates the param
+  // to a different value and triggers a fresh consume.
+  const consumedSearchParam = useRef<string | null>(null);
+  useEffect(() => {
+    const incoming = typeof params.search === "string" ? params.search.trim() : "";
+    if (incoming.length > 0 && consumedSearchParam.current !== incoming) {
+      setSearch(incoming);
+      consumedSearchParam.current = incoming;
+    }
+  }, [params.search]);
 
   // Refs + guard for syncing horizontal scroll between the (sticky) table
   // header and the rows below it. The guard prevents a feedback loop where
@@ -628,12 +646,27 @@ export default function LatestPurchasesScreen() {
         </View>
 
         {latestPurchases.length === 0 && !loading && (
-          <View style={styles.emptyHint}>
-            <Feather name="info" size={14} color={Colors.textMuted} />
-            <Text style={styles.emptyHintText}>
-              Pick an Excel file to load the Latest Purchases table.
-            </Text>
-          </View>
+          <>
+            {/* If a search filter arrived via the VendorCode link from the
+                Orders tab but there's no purchase data yet, surface that
+                fact so the user understands the link worked and the
+                filter will apply once they import a file. */}
+            {search.trim().length > 0 && (
+              <View style={styles.linkedQueuedBox}>
+                <Feather name="link" size={14} color={Colors.primary} />
+                <Text style={styles.linkedQueuedText}>
+                  Search filter <Text style={styles.linkedQueuedCode}>{search}</Text> is set.
+                  It will apply once you import a Latest Purchases file.
+                </Text>
+              </View>
+            )}
+            <View style={styles.emptyHint}>
+              <Feather name="info" size={14} color={Colors.textMuted} />
+              <Text style={styles.emptyHintText}>
+                Pick an Excel file to load the Latest Purchases table.
+              </Text>
+            </View>
+          </>
         )}
       </ScrollView>
     </View>
@@ -815,4 +848,20 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   emptyHintText: { fontSize: 12, color: Colors.textMuted },
+  // Notice shown in the empty-data state when a search filter was set via
+  // the VendorCode link from the Orders tab. Helps the user understand
+  // the navigation worked even though there's nothing to filter yet.
+  linkedQueuedBox: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    backgroundColor: Colors.surface,
+    borderColor: Colors.primary,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 4,
+  },
+  linkedQueuedText: { flex: 1, fontSize: 12, color: Colors.text, lineHeight: 18 },
+  linkedQueuedCode: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontWeight: "700" },
 });
