@@ -8,6 +8,7 @@ import {
   Alert,
   TextInput,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +29,8 @@ export default function UserDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<AppUser>>({});
   const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (!user) {
     return (
@@ -49,6 +52,7 @@ export default function UserDetailScreen() {
     );
 
   async function handleSave() {
+    if (saving) return;
     if (!form.userId?.trim()) {
       Alert.alert("Missing Field", "UserID is required.");
       return;
@@ -64,6 +68,7 @@ export default function UserDetailScreen() {
       Alert.alert("Duplicate UserID", "A user with this UserID already exists.");
       return;
     }
+    setSaving(true);
     try {
       await updateAppUser(user.id, {
         ...form,
@@ -77,21 +82,26 @@ export default function UserDetailScreen() {
       setEditing(false);
     } catch {
       showStorageErrorAlert();
+    } finally {
+      setSaving(false);
     }
   }
 
   function handleDelete() {
+    if (deleting) return;
     Alert.alert("Delete User", "This action cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          setDeleting(true);
           try {
             await deleteAppUser(user.id);
             router.back();
           } catch {
             showStorageErrorAlert();
+            setDeleting(false);
           }
         },
       },
@@ -105,8 +115,16 @@ export default function UserDetailScreen() {
           title: editing ? "Edit User" : user.userId,
           headerRight: () =>
             editing ? (
-              <TouchableOpacity onPress={handleSave} style={{ padding: 8 }}>
-                <Text style={{ color: Colors.primaryLight, fontWeight: "700", fontSize: 16 }}>Save</Text>
+              <TouchableOpacity
+                onPress={handleSave}
+                disabled={saving}
+                style={{ padding: 8, opacity: saving ? 0.6 : 1 }}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={Colors.primaryLight} />
+                ) : (
+                  <Text style={{ color: Colors.primaryLight, fontWeight: "700", fontSize: 16 }}>Save</Text>
+                )}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={startEdit} style={{ padding: 8 }}>
@@ -241,9 +259,23 @@ export default function UserDetailScreen() {
               <Text style={styles.fieldLabel}>Mobile No 2</Text>
               <TextInput style={styles.input} value={form.vendorMobileNo2} onChangeText={(v) => setForm((p) => ({ ...p, vendorMobileNo2: v }))} placeholder="Optional" placeholderTextColor={Colors.textMuted} keyboardType="phone-pad" />
             </View>
-            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
-              <Feather name="trash-2" size={16} color={Colors.danger} />
-              <Text style={styles.deleteBtnText}>Delete User</Text>
+            <TouchableOpacity
+              style={[styles.deleteBtn, deleting && styles.btnDisabled]}
+              onPress={handleDelete}
+              disabled={deleting}
+              activeOpacity={0.8}
+            >
+              {deleting ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Deleting…</Text>
+                </>
+              ) : (
+                <>
+                  <Feather name="trash-2" size={16} color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Delete User</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         ) : (
@@ -258,9 +290,23 @@ export default function UserDetailScreen() {
               <InfoRow icon="phone" label="Mobile No 2" value={user.vendorMobileNo2} last />
             </View>
 
-            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
-              <Feather name="trash-2" size={16} color={Colors.danger} />
-              <Text style={styles.deleteBtnText}>Delete User</Text>
+            <TouchableOpacity
+              style={[styles.deleteBtn, deleting && styles.btnDisabled]}
+              onPress={handleDelete}
+              disabled={deleting}
+              activeOpacity={0.8}
+            >
+              {deleting ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Deleting…</Text>
+                </>
+              ) : (
+                <>
+                  <Feather name="trash-2" size={16} color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Delete User</Text>
+                </>
+              )}
             </TouchableOpacity>
           </>
         )}
@@ -414,5 +460,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger,
   },
+  btnDisabled: { opacity: 0.6 },
   deleteBtnText: { color: Colors.danger, fontSize: 15, fontWeight: "600" },
 });

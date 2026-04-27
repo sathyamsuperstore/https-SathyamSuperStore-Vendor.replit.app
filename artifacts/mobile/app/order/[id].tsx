@@ -48,6 +48,9 @@ export default function OrderDetailScreen() {
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -90,27 +93,34 @@ export default function OrderDetailScreen() {
   }, [order.status]);
 
   async function handleStatusUpdate() {
-    if (!nextStatus) return;
+    if (!nextStatus || updatingStatus) return;
+    setUpdatingStatus(true);
     try {
       await updateOrderStatus(order.id, nextStatus.status);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       showStorageErrorAlert();
+    } finally {
+      setUpdatingStatus(false);
     }
   }
 
   function handleCancel() {
+    if (cancelling) return;
     Alert.alert("Cancel Order", "Are you sure you want to cancel this order?", [
       { text: "No", style: "cancel" },
       {
         text: "Cancel Order",
         style: "destructive",
         onPress: async () => {
+          setCancelling(true);
           try {
             await updateOrderStatus(order.id, "cancelled");
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           } catch {
             showStorageErrorAlert();
+          } finally {
+            setCancelling(false);
           }
         },
       },
@@ -265,17 +275,20 @@ export default function OrderDetailScreen() {
   }
 
   function handleDelete() {
+    if (deleting) return;
     Alert.alert("Delete Order", "This action cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          setDeleting(true);
           try {
             await deleteOrder(order.id);
             router.back();
           } catch {
             showStorageErrorAlert();
+            setDeleting(false);
           }
         },
       },
@@ -305,8 +318,16 @@ export default function OrderDetailScreen() {
                   <Feather name="download" size={18} color={Colors.success} />
                 )}
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleDelete} style={{ padding: 8 }}>
-                <Feather name="trash-2" size={18} color={Colors.danger} />
+              <TouchableOpacity
+                onPress={handleDelete}
+                disabled={deleting}
+                style={{ padding: 8, opacity: deleting ? 0.6 : 1 }}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color={Colors.danger} />
+                ) : (
+                  <Feather name="trash-2" size={18} color={Colors.danger} />
+                )}
               </TouchableOpacity>
             </View>
           ),
@@ -486,14 +507,37 @@ export default function OrderDetailScreen() {
         {order.status !== "delivered" && order.status !== "cancelled" && (
           <View style={styles.actions}>
             {nextStatus && (
-              <TouchableOpacity style={styles.primaryAction} onPress={handleStatusUpdate}>
-                <Feather name={nextStatus.icon} size={18} color={Colors.textInverse} />
-                <Text style={styles.primaryActionText}>{nextStatus.label}</Text>
+              <TouchableOpacity
+                style={[styles.primaryAction, updatingStatus && styles.btnDisabled]}
+                onPress={handleStatusUpdate}
+                disabled={updatingStatus}
+                activeOpacity={0.8}
+              >
+                {updatingStatus ? (
+                  <>
+                    <ActivityIndicator size="small" color={Colors.textInverse} />
+                    <Text style={styles.primaryActionText}>Saving…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Feather name={nextStatus.icon} size={18} color={Colors.textInverse} />
+                    <Text style={styles.primaryActionText}>{nextStatus.label}</Text>
+                  </>
+                )}
               </TouchableOpacity>
             )}
             {order.status !== "cancelled" && (
-              <TouchableOpacity style={styles.cancelAction} onPress={handleCancel}>
-                <Text style={styles.cancelActionText}>Cancel Order</Text>
+              <TouchableOpacity
+                style={[styles.cancelAction, cancelling && styles.btnDisabled]}
+                onPress={handleCancel}
+                disabled={cancelling}
+                activeOpacity={0.8}
+              >
+                {cancelling ? (
+                  <ActivityIndicator size="small" color={Colors.danger} />
+                ) : (
+                  <Text style={styles.cancelActionText}>Cancel Order</Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -628,4 +672,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cancelActionText: { fontSize: 16, fontWeight: "700", color: Colors.danger },
+  btnDisabled: { opacity: 0.6 },
 });

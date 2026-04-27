@@ -778,6 +778,7 @@ function VendorOrderCard({
   const [modifyMode, setModifyMode] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
+  const [savingModify, setSavingModify] = useState(false);
   const status = STATUS_COLORS[order.status];
 
   const displayItems = useMemo(
@@ -833,6 +834,7 @@ function VendorOrderCard({
   }
 
   async function saveModify() {
+    if (savingModify) return;
     // Items not shown (due to brand filter) must be preserved as-is
     const hiddenItems = order.items.filter(
       (i) => !displayItems.some((di) => di.id === i.id)
@@ -854,6 +856,7 @@ function VendorOrderCard({
     }
     const newItems = [...hiddenItems, ...selectedDisplayItems];
     const newTotal = newItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    setSavingModify(true);
     try {
       await updateOrder(order.id, { items: newItems, totalAmount: newTotal });
       setModifyMode(false);
@@ -862,6 +865,8 @@ function VendorOrderCard({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       showStorageErrorAlert();
+    } finally {
+      setSavingModify(false);
     }
   }
 
@@ -931,12 +936,31 @@ function VendorOrderCard({
                 {checkedIds.size} of {displayItems.length} selected
               </Text>
               <View style={cardStyles.modifyActions}>
-                <TouchableOpacity style={cardStyles.cancelModifyBtn} onPress={cancelModify} activeOpacity={0.8}>
+                <TouchableOpacity
+                  style={[cardStyles.cancelModifyBtn, savingModify && { opacity: 0.6 }]}
+                  onPress={cancelModify}
+                  disabled={savingModify}
+                  activeOpacity={0.8}
+                >
                   <Text style={cardStyles.cancelModifyText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={cardStyles.saveModifyBtn} onPress={saveModify} activeOpacity={0.8}>
-                  <Feather name="save" size={14} color={Colors.textInverse} />
-                  <Text style={cardStyles.saveModifyText}>Save</Text>
+                <TouchableOpacity
+                  style={[cardStyles.saveModifyBtn, savingModify && { opacity: 0.6 }]}
+                  onPress={saveModify}
+                  disabled={savingModify}
+                  activeOpacity={0.8}
+                >
+                  {savingModify ? (
+                    <>
+                      <ActivityIndicator size="small" color={Colors.textInverse} />
+                      <Text style={cardStyles.saveModifyText}>Saving…</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Feather name="save" size={14} color={Colors.textInverse} />
+                      <Text style={cardStyles.saveModifyText}>Save</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>

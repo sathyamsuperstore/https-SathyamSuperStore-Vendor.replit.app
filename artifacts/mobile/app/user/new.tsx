@@ -8,6 +8,7 @@ import {
   Alert,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -93,10 +94,18 @@ export default function NewUserScreen() {
           title: "New User",
           headerBackTitle: "Back",
           headerRight: () => (
-            <TouchableOpacity onPress={handleSubmit} style={{ padding: 8 }}>
-              <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 16 }}>
-                Save
-              </Text>
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={saving}
+              style={{ padding: 8, opacity: saving ? 0.6 : 1 }}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 16 }}>
+                  Save
+                </Text>
+              )}
             </TouchableOpacity>
           ),
         }}
@@ -247,9 +256,23 @@ export default function NewUserScreen() {
           />
         </View>
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} activeOpacity={0.8}>
-          <Feather name="user-plus" size={18} color="#fff" />
-          <Text style={styles.submitBtnText}>Create User</Text>
+        <TouchableOpacity
+          style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={saving}
+          activeOpacity={0.8}
+        >
+          {saving ? (
+            <>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.submitBtnText}>Saving…</Text>
+            </>
+          ) : (
+            <>
+              <Feather name="user-plus" size={18} color="#fff" />
+              <Text style={styles.submitBtnText}>Create User</Text>
+            </>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </>
@@ -375,5 +398,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     elevation: 3,
   },
+  submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 });

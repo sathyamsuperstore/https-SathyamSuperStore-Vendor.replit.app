@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -187,9 +188,23 @@ export default function NewSupplierScreen() {
           </ScrollView>
         </View>
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-          <Feather name="user-plus" size={18} color={Colors.textInverse} />
-          <Text style={styles.submitBtnText}>Add Supplier</Text>
+        <TouchableOpacity
+          style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={saving}
+          activeOpacity={0.8}
+        >
+          {saving ? (
+            <>
+              <ActivityIndicator size="small" color={Colors.textInverse} />
+              <Text style={styles.submitBtnText}>Saving…</Text>
+            </>
+          ) : (
+            <>
+              <Feather name="user-plus" size={18} color={Colors.textInverse} />
+              <Text style={styles.submitBtnText}>Add Supplier</Text>
+            </>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </>
@@ -251,5 +266,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 8,
   },
+  submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
 });

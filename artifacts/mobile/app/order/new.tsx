@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -258,9 +259,23 @@ export default function NewOrderScreen() {
           />
         </View>
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-          <Feather name="check" size={18} color={Colors.textInverse} />
-          <Text style={styles.submitBtnText}>Create Order</Text>
+        <TouchableOpacity
+          style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={saving}
+          activeOpacity={0.8}
+        >
+          {saving ? (
+            <>
+              <ActivityIndicator size="small" color={Colors.textInverse} />
+              <Text style={styles.submitBtnText}>Saving…</Text>
+            </>
+          ) : (
+            <>
+              <Feather name="check" size={18} color={Colors.textInverse} />
+              <Text style={styles.submitBtnText}>Create Order</Text>
+            </>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </>
@@ -339,5 +354,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
   },
+  submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
 });

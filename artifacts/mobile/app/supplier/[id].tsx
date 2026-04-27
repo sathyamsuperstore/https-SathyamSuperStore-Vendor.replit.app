@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +30,8 @@ export default function SupplierDetailScreen() {
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Supplier>>({});
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (!supplier) {
     return (
@@ -61,6 +64,7 @@ export default function SupplierDetailScreen() {
     );
 
   async function handleSave() {
+    if (saving) return;
     if (!form.name?.trim()) {
       Alert.alert("Missing Field", "Company name is required.");
       return;
@@ -73,27 +77,33 @@ export default function SupplierDetailScreen() {
       Alert.alert("Duplicate Vendor Code", `"${form.vendorCode!.trim().toUpperCase()}" is already assigned to another supplier. Vendor Code must be unique.`);
       return;
     }
+    setSaving(true);
     try {
       await updateSupplier(supplier!.id, { ...form, vendorCode: form.vendorCode!.trim().toUpperCase() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditing(false);
     } catch {
       showStorageErrorAlert();
+    } finally {
+      setSaving(false);
     }
   }
 
   function handleDelete() {
+    if (deleting) return;
     Alert.alert("Delete Supplier", "This will also keep existing orders. Continue?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          setDeleting(true);
           try {
             await deleteSupplier(supplier!.id);
             router.back();
           } catch {
             showStorageErrorAlert();
+            setDeleting(false);
           }
         },
       },
@@ -107,8 +117,16 @@ export default function SupplierDetailScreen() {
           title: editing ? "Edit Supplier" : supplier.name,
           headerRight: () =>
             editing ? (
-              <TouchableOpacity onPress={handleSave} style={{ padding: 8 }}>
-                <Text style={{ color: Colors.primaryLight, fontWeight: "700", fontSize: 16 }}>Save</Text>
+              <TouchableOpacity
+                onPress={handleSave}
+                disabled={saving}
+                style={{ padding: 8, opacity: saving ? 0.6 : 1 }}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={Colors.primaryLight} />
+                ) : (
+                  <Text style={{ color: Colors.primaryLight, fontWeight: "700", fontSize: 16 }}>Save</Text>
+                )}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={startEdit} style={{ padding: 8 }}>
@@ -254,9 +272,23 @@ export default function SupplierDetailScreen() {
               )}
             </View>
 
-            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
-              <Feather name="trash-2" size={16} color={Colors.danger} />
-              <Text style={styles.deleteBtnText}>Delete Supplier</Text>
+            <TouchableOpacity
+              style={[styles.deleteBtn, deleting && styles.btnDisabled]}
+              onPress={handleDelete}
+              disabled={deleting}
+              activeOpacity={0.8}
+            >
+              {deleting ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Deleting…</Text>
+                </>
+              ) : (
+                <>
+                  <Feather name="trash-2" size={16} color={Colors.danger} />
+                  <Text style={styles.deleteBtnText}>Delete Supplier</Text>
+                </>
+              )}
             </TouchableOpacity>
           </>
         )}
@@ -329,6 +361,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger,
   },
+  btnDisabled: { opacity: 0.6 },
   deleteBtnText: { color: Colors.danger, fontSize: 15, fontWeight: "600" },
   form: { gap: 16 },
   formField: { gap: 6 },
