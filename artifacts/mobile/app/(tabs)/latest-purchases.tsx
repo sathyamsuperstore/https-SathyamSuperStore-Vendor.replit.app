@@ -300,14 +300,26 @@ export default function LatestPurchasesScreen() {
       }
 
       // Sort by GidNo (numeric-aware so "9" sorts before "10"), then Sort No.
+      // For Sort No we prefer a true numeric compare when both sides parse,
+      // and otherwise fall back to a numeric-aware string compare so mixed
+      // values (e.g. "12A" vs "12B") still order intuitively instead of
+      // collapsing to 0.
       parsed.sort((a, b) => {
         const aGid = String(a["GidNo"] ?? "");
         const bGid = String(b["GidNo"] ?? "");
         const cmp = aGid.localeCompare(bGid, undefined, { numeric: true, sensitivity: "base" });
         if (cmp !== 0) return cmp;
-        const aSort = Number(a["Sort No"]) || 0;
-        const bSort = Number(b["Sort No"]) || 0;
-        return aSort - bSort;
+        const aSortRaw = a["Sort No"];
+        const bSortRaw = b["Sort No"];
+        const aSortNum = Number(aSortRaw);
+        const bSortNum = Number(bSortRaw);
+        const aIsNum = Number.isFinite(aSortNum) && String(aSortRaw).trim() !== "";
+        const bIsNum = Number.isFinite(bSortNum) && String(bSortRaw).trim() !== "";
+        if (aIsNum && bIsNum) return aSortNum - bSortNum;
+        return String(aSortRaw ?? "").localeCompare(String(bSortRaw ?? ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
       });
 
       try {
