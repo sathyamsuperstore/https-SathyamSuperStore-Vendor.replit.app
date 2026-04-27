@@ -122,24 +122,30 @@ export interface MrpEntry {
 // exporter (output column order) so the three never drift apart.
 // Header matching is whitespace-insensitive, so spreadsheets that label
 // the column "Sort No" (with a space) still map correctly to "SortNo".
+// Column order chosen by the user for both the on-screen table and the
+// exported workbook. The Latest Purchases tab also injects a synthetic
+// "Vendor Name" column immediately after VendorCode at display time;
+// that column is NOT exported, so it doesn't appear here.
+// Import header matching is by name (whitespace-insensitive), so this
+// order can be reshuffled without breaking parsing.
 export const LATEST_PURCHASES_FIELDS = [
-  "GidNo",
-  "SortNo",
   "VendorCode",
-  "GidDate",
-  "DONo",
   "DODate",
-  "CreatedDate",
+  "Brand",
+  "Category",
   "Item No",
   "Item Description",
+  "MRP",
   "Purchase Qty",
   "Free Qty",
   "NetCost",
-  "MRP",
   "Tax",
-  "Category",
   "Weight",
-  "Brand",
+  "GidNo",
+  "SortNo",
+  "DONo",
+  "GidDate",
+  "CreatedDate",
 ] as const;
 
 // Each row is a flexible map: numeric-looking cells get parsed to number,
