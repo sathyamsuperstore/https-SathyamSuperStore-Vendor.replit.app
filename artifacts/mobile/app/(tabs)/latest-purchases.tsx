@@ -29,90 +29,54 @@ import {
 // (dates, IDs like GidNo / Item No / VendorCode, free-text fields) is
 // kept as the original string so leading zeros and date formats survive.
 const NUMERIC_FIELDS = new Set<string>([
-  "VendorPayment",
-  "PromoMRP",
-  "NoBatches",
-  "Offer Price",
-  "SoldQnty",
-  "Weight",
-  "ITaxPer1",
-  "Sort No",
-  "Stock",
-  "PromoPrice",
-  "LQty",
+  "SortNo",
+  "Purchase Qty",
+  "Free Qty",
+  "NetCost",
   "MRP",
-  "RodeoMRP",
-  "SP",
-  "RodeoSP",
-  "Cost",
   "Tax",
-  "CESS",
-  "MRP Margin",
-  "Customer Margin",
-  "Shop Margin",
-  "MRPDiff",
+  "Weight",
 ]);
 
 // Per-column display widths for the horizontally scrollable table. Wider
 // columns are reserved for free-text fields that frequently overflow
-// (Item Description, Product Name, Vendor); narrow columns for short
-// numerics. Falls back to 90 for anything not listed.
+// (Item Description, Brand, Category); narrow columns for short numerics
+// and date IDs. Falls back to 90 for anything not listed.
 const COL_WIDTHS: Record<string, number> = {
-  VendorPayment: 110,
-  PromoMRP: 90,
-  PromoCode: 100,
-  NoBatches: 90,
-  Vendor: 140,
-  "Offer Price": 90,
-  "Item No": 90,
-  BrandCode: 90,
-  CategoryCode: 110,
-  "Item Description": 220,
-  "Offer End Date": 110,
-  SoldQnty: 90,
-  Weight: 80,
-  GidNo: 80,
-  GRNDate: 100,
-  InvoiceDate: 110,
+  GidNo: 90,
+  SortNo: 80,
   VendorCode: 100,
-  "Product Name": 180,
-  ITaxPer1: 80,
-  "Sort No": 80,
-  Stock: 70,
-  "New Item Date": 110,
-  PromoPrice: 90,
-  PromoEndDate: 110,
-  LQty: 70,
+  GidDate: 110,
+  DONo: 100,
+  DODate: 110,
+  CreatedDate: 120,
+  "Item No": 90,
+  "Item Description": 240,
+  "Purchase Qty": 100,
+  "Free Qty": 80,
+  NetCost: 90,
   MRP: 80,
-  RodeoMRP: 90,
-  SP: 70,
-  RodeoSP: 80,
-  Cost: 80,
   Tax: 70,
-  CESS: 70,
-  "MRP Margin": 100,
-  "Customer Margin": 120,
-  "Shop Margin": 100,
-  MRPDiff: 80,
-  LatestPO: 100,
-  Batch: 100,
-  "Uni Promo": 100,
+  Category: 130,
+  Weight: 80,
+  Brand: 140,
 };
 
 function colWidth(field: string): number {
   return COL_WIDTHS[field] ?? 90;
 }
 
-// Fields a user is likely to know to search by. Sort No included so
+// Fields a user is likely to know to search by. SortNo included so
 // numeric IDs work via substring match (e.g. "12" matches "12" / "112").
 const SEARCH_FIELDS = [
   "GidNo",
-  "Sort No",
-  "Item No",
-  "Product Name",
-  "Item Description",
-  "Vendor",
+  "SortNo",
   "VendorCode",
+  "DONo",
+  "Item No",
+  "Item Description",
+  "Category",
+  "Brand",
 ];
 
 function formatCell(field: string, value: string | number | undefined): string {
@@ -245,10 +209,10 @@ export default function LatestPurchasesScreen() {
       }
 
       const gidNoKey = fieldKeys["GidNo"];
-      const sortNoKey = fieldKeys["Sort No"];
+      const sortNoKey = fieldKeys["SortNo"];
       if (!gidNoKey || !sortNoKey) {
         setErrors([
-          `Missing required columns. Expected "GidNo" and "Sort No". Found: ${Object.keys(firstRow).join(", ")}`,
+          `Missing required columns. Expected "GidNo" and "SortNo". Found: ${Object.keys(firstRow).join(", ")}`,
         ]);
         setLoading(false);
         return;
@@ -262,10 +226,10 @@ export default function LatestPurchasesScreen() {
         const gid = String(r[gidNoKey] ?? "").trim();
         const sortRaw = String(r[sortNoKey] ?? "").trim();
         if (!gid || !sortRaw) {
-          localErrors.push(`Row ${i + 2}: missing GidNo / Sort No`);
+          localErrors.push(`Row ${i + 2}: missing GidNo / SortNo`);
           continue;
         }
-        // Dedupe by (GidNo, Sort No) — first occurrence wins, mirrors the
+        // Dedupe by (GidNo, SortNo) — first occurrence wins, mirrors the
         // MRP tab's (ItemNo, MRP) dedupe behavior.
         const key = `${gid.toUpperCase()}|${sortRaw}`;
         if (seenPair.has(key)) continue;
@@ -292,15 +256,15 @@ export default function LatestPurchasesScreen() {
 
       if (parsed.length === 0) {
         setErrors([
-          "No valid rows found. Make sure GidNo and Sort No are filled.",
+          "No valid rows found. Make sure GidNo and SortNo are filled.",
           ...localErrors,
         ]);
         setLoading(false);
         return;
       }
 
-      // Sort by GidNo (numeric-aware so "9" sorts before "10"), then Sort No.
-      // For Sort No we prefer a true numeric compare when both sides parse,
+      // Sort by GidNo (numeric-aware so "9" sorts before "10"), then SortNo.
+      // For SortNo we prefer a true numeric compare when both sides parse,
       // and otherwise fall back to a numeric-aware string compare so mixed
       // values (e.g. "12A" vs "12B") still order intuitively instead of
       // collapsing to 0.
@@ -309,8 +273,8 @@ export default function LatestPurchasesScreen() {
         const bGid = String(b["GidNo"] ?? "");
         const cmp = aGid.localeCompare(bGid, undefined, { numeric: true, sensitivity: "base" });
         if (cmp !== 0) return cmp;
-        const aSortRaw = a["Sort No"];
-        const bSortRaw = b["Sort No"];
+        const aSortRaw = a["SortNo"];
+        const bSortRaw = b["SortNo"];
         const aSortNum = Number(aSortRaw);
         const bSortNum = Number(bSortRaw);
         const aIsNum = Number.isFinite(aSortNum) && String(aSortRaw).trim() !== "";
@@ -482,7 +446,7 @@ export default function LatestPurchasesScreen() {
           <Text style={styles.cardSub}>
             Excel file with the wide purchase-history layout. Required columns:{" "}
             <Text style={styles.mono}>GidNo</Text> and{" "}
-            <Text style={styles.mono}>Sort No</Text>. Imported data is stored independently of
+            <Text style={styles.mono}>SortNo</Text>. Imported data is stored independently of
             Orders and MRP.
           </Text>
 
@@ -551,7 +515,7 @@ export default function LatestPurchasesScreen() {
                 style={styles.searchInput}
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Search GidNo, Sort No, Item No, Vendor…"
+                placeholder="Search GidNo, SortNo, Item No, Brand…"
                 placeholderTextColor={Colors.textMuted}
                 autoCorrect={false}
                 clearButtonMode="while-editing"
@@ -632,7 +596,7 @@ export default function LatestPurchasesScreen() {
                   ) : (
                     filtered.map((row, i) => (
                       <View
-                        key={`${row["GidNo"] ?? ""}-${row["Sort No"] ?? ""}-${i}`}
+                        key={`${row["GidNo"] ?? ""}-${row["SortNo"] ?? ""}-${i}`}
                         style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
                       >
                         {LATEST_PURCHASES_FIELDS.map((f) => {
