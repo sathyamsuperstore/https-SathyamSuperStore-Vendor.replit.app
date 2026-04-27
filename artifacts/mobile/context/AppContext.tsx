@@ -76,8 +76,9 @@ interface AppContextType {
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => Promise<void>;
   addOrdersBatchAsync: (
     orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[],
-    onProgress?: (processed: number, total: number) => void | Promise<void>
-  ) => Promise<void>;
+    onProgress?: (processed: number, total: number) => void | Promise<void>,
+    shouldCancel?: () => boolean
+  ) => Promise<{ saved: number; canceled: boolean }>;
   updateOrder: (id: string, order: Partial<Order>) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
   clearAllOrders: () => Promise<void>;
@@ -338,49 +339,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveOrders([...newOrders, ...orders]);
   }
 
-  // Async chunked variant for very large imports. Builds the new Order objects
-  // in CHUNK-sized batches with `await setTimeout(0)` between chunks so the JS
-  // thread can render the spinner / progress text in the caller. Reports
-  // progress after each chunk via the optional callback. The actual state
-  // commit (saveOrders) happens once at the end — there's no good way to chunk
-  // that without showing partial state — but the yield right before it lets the
-  // UI commit the latest progress message before the heavy reconciliation.
+  // Async chunked variant for very large imports. Builds AND persists in
+  // CHUNK-sized batches so we can (a) render progress between batches and
+  // (b) honor a cancel signal between batches. Each chunk is its own
+  // AsyncStorage write — that means a cancel mid-import leaves the chunks
+  // already written intact, and the caller is told how many were saved.
+  // Returns `{ saved, canceled }` so the caller can update the UI accordingly.
+  // Storage errors still throw — the caller's catch will show a save-failed
+  // alert; any chunks committed before the throw remain on disk (this is no
+  // worse than the previous monolithic behavior, where a thrown setItem also
+  // left state inconsistent for very large payloads).
   async function addOrdersBatchAsync(
     orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[],
-    onProgress?: (processed: number, total: number) => void | Promise<void>
-  ) {
+    onProgress?: (processed: number, total: number) => void | Promise<void>,
+    shouldCancel?: () => boolean
+  ): Promise<{ saved: number; canceled: boolean }> {
     const now = new Date().toISOString();
     const total = orderInputs.length;
-    const newOrders: Order[] = new Array(total);
     const CHUNK = 100;
-    for (let i = 0; i < total; i++) {
-      const order = orderInputs[i];
-      newOrders[i] = {
-        ...order,
-        id: generateId(),
-        orderNumber: generateOrderNumber(),
-        totalAmount: calculateTotal(order.items),
-        createdAt: now,
-        updatedAt: now,
-      };
-      // Report at clean milestones: 100/N, 200/N, ...
-      if ((i + 1) % CHUNK === 0 && i + 1 < total) {
-        if (onProgress) await onProgress(i + 1, total);
-        await new Promise((r) => setTimeout(r, 0));
+    let saved = 0;
+    // Snapshot the existing orders ONCE so we can preserve the original
+    // import order across chunks. We accumulate freshly-built orders in
+    // import order and prepend the full accumulated list each chunk —
+    // otherwise prepending each chunk individually would put later chunks
+    // ahead of earlier ones (reversed display order vs. the monolithic
+    // version this replaces). Concurrent additions to `orders` during this
+    // long-running async path won't be merged in — same trade-off as the
+    // previous implementation, which also captured a single snapshot at
+    // the end. It's acceptable because nothing else in the app can add
+    // orders while the import screen is busy.
+    const existingOrders: Order[] = ordersRef.current;
+    const accumulatedNew: Order[] = [];
+    for (let start = 0; start < total; start += CHUNK) {
+      // Cancel checkpoint at the top of each chunk. Any orders already
+      // persisted in earlier chunks remain saved — that's the partial-save
+      // contract the caller uses to message the user.
+      if (shouldCancel && shouldCancel()) {
+        return { saved, canceled: true };
       }
+      const end = Math.min(start + CHUNK, total);
+      for (let i = start; i < end; i++) {
+        const order = orderInputs[i];
+        accumulatedNew.push({
+          ...order,
+          id: generateId(),
+          orderNumber: generateOrderNumber(),
+          totalAmount: calculateTotal(order.items),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      // Persist to AsyncStorage FIRST, then update in-memory state. If
+      // setItem throws, the previously-committed chunks remain on disk and
+      // `saved` reflects what's safely persisted.
+      const updated = [...accumulatedNew, ...existingOrders];
+      await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
+      setOrders(updated);
+      saved = end;
+      if (onProgress) await onProgress(saved, total);
+      // Yield so the UI can paint progress and process the cancel tap before
+      // we burn into the next chunk's stringify.
+      await new Promise((r) => setTimeout(r, 0));
     }
-    if (onProgress) await onProgress(total, total);
-    await new Promise((r) => setTimeout(r, 0));
-    // Persist to AsyncStorage FIRST, then update in-memory state. If the
-    // storage write throws, we don't want to leave orders in memory that
-    // weren't actually saved — the caller would show a "failed" alert while
-    // the data appears in the UI, and the next app launch would lose it.
-    // Merge against the LATEST orders via ordersRef, not the closure-captured
-    // `orders`, so concurrent additions during this long-running async path
-    // aren't lost.
-    const updated = [...newOrders, ...ordersRef.current];
-    await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
-    setOrders(updated);
+    return { saved, canceled: false };
   }
 
   async function updateOrder(id: string, data: Partial<Order>) {

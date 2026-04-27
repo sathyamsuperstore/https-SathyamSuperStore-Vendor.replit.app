@@ -189,7 +189,13 @@ export default function ImportOrderScreen() {
   // knows nothing was saved. Auto-dismisses after a few seconds; we keep a
   // ref to the timeout so we can cancel it on unmount or when the user
   // starts another action / dismisses manually.
-  const [showCanceled, setShowCanceled] = useState(false);
+  // `canceledInfo` describes the most recent cancel result so the banner can
+  // tell the user exactly what happened: nothing saved (cancel during the
+  // build phase) vs partial save (cancel during the save phase, after some
+  // chunks already committed to storage). null means no banner.
+  const [canceledInfo, setCanceledInfo] = useState<
+    { saved: number; total: number } | null
+  >(null);
   const canceledTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
@@ -204,7 +210,7 @@ export default function ImportOrderScreen() {
       clearTimeout(canceledTimeoutRef.current);
       canceledTimeoutRef.current = null;
     }
-    setShowCanceled(false);
+    setCanceledInfo(null);
   }, []);
 
   // Cleanup the auto-dismiss timer if the screen unmounts mid-countdown.
@@ -655,22 +661,21 @@ export default function ImportOrderScreen() {
     cancelRef.current = false;
     // Re-tapping Create is a fresh action — clear any stale cancel banner.
     clearCanceledMessage();
-    // Set true only at an early-return cancel checkpoint, so `finally` knows
-    // unambiguously that we bailed out before the persist call ran. This is
-    // strictly safer than reading `cancelRef.current` in `finally`, which
-    // could in theory be set after the point-of-no-return.
-    let canceledBeforePersist = false;
+    // Set in the cancel paths so `finally` knows unambiguously what banner
+    // (if any) to show. `total` is captured here so `finally` can render
+    // "X of N saved" without re-reading possibly-mutated state.
+    let canceledResult: { saved: number; total: number } | null = null;
+    const total = vendorGroups.length;
 
     try {
       setCreating(true);
       setCanCancel(true);
       setCancelRequested(false);
-      const total = vendorGroups.length;
       setCreateProgress(`Preparing ${total} order${total > 1 ? "s" : ""}...`);
       // Yield once so the spinner appears before we start building inputs.
       await yieldToUI();
       if (cancelRef.current) {
-        canceledBeforePersist = true;
+        canceledResult = { saved: 0, total };
         return;
       }
 
@@ -716,27 +721,39 @@ export default function ImportOrderScreen() {
           setCreateProgress(`Preparing ${i + 1} / ${total} orders...`);
           await yieldToUI();
           if (cancelRef.current) {
-            canceledBeforePersist = true;
+            canceledResult = { saved: 0, total };
             return;
           }
         }
       }
 
-      // Final cancel checkpoint right before the point of no return. After
-      // this we hide the Cancel button — addOrdersBatchAsync persists rows
-      // and we can't safely interrupt it.
+      // Final cancel checkpoint before entering the save phase. We deliberately
+      // KEEP `canCancel` true here — addOrdersBatchAsync persists in chunks and
+      // honors the cancel signal between them, so the user can still abort
+      // mid-save (with already-saved chunks remaining on disk).
       if (cancelRef.current) {
-        canceledBeforePersist = true;
+        canceledResult = { saved: 0, total };
         return;
       }
-      setCanCancel(false);
 
       setCreateProgress(`Saving ${total} order${total > 1 ? "s" : ""}...`);
       await yieldToUI();
 
-      await addOrdersBatchAsync(orderInputs, async (processed, t) => {
-        setCreateProgress(`Saving ${processed} / ${t} orders...`);
-      });
+      const result = await addOrdersBatchAsync(
+        orderInputs,
+        async (processed, t) => {
+          setCreateProgress(`Saving ${processed} / ${t} orders...`);
+        },
+        () => cancelRef.current
+      );
+
+      if (result.canceled) {
+        // Partial save (or zero, if the user happened to cancel before the
+        // first chunk committed). Either way we record what got saved so the
+        // banner can be honest about it. No success haptic / alert.
+        canceledResult = { saved: result.saved, total };
+        return;
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const successMsg = `${total} order${total > 1 ? "s" : ""} created successfully.`;
@@ -756,20 +773,19 @@ export default function ImportOrderScreen() {
       setCancelRequested(false);
       creatingRef.current = false;
       cancelRef.current = false;
-      // Only show the banner if we actually returned at one of the early
-      // cancel checkpoints — never after a successful save or a thrown error,
-      // even in the (very rare) case where cancelRef was flipped late.
-      if (canceledBeforePersist) {
+      // Only show the banner if we actually returned at one of the cancel
+      // checkpoints — never after a successful save or a thrown error.
+      if (canceledResult) {
         // Show the inline confirmation and auto-dismiss after a few seconds.
         // Replace any previous timer so the banner shows for the full duration.
         if (canceledTimeoutRef.current) {
           clearTimeout(canceledTimeoutRef.current);
         }
-        setShowCanceled(true);
+        setCanceledInfo(canceledResult);
         canceledTimeoutRef.current = setTimeout(() => {
-          setShowCanceled(false);
+          setCanceledInfo(null);
           canceledTimeoutRef.current = null;
-        }, 4000);
+        }, 5000);
       }
     }
   }
@@ -1100,18 +1116,40 @@ export default function ImportOrderScreen() {
             {creating && createProgress ? (
               <Text style={styles.createProgressText}>{createProgress}</Text>
             ) : null}
-            {showCanceled && !creating && (
-              <View style={styles.canceledBanner}>
-                <Feather name="info" size={14} color={Colors.textMuted} />
-                <Text style={styles.canceledBannerText}>
-                  Canceled — no orders saved
+            {canceledInfo && !creating && (
+              <View
+                style={[
+                  styles.canceledBanner,
+                  canceledInfo.saved > 0 && styles.canceledBannerWarn,
+                ]}
+              >
+                <Feather
+                  name={canceledInfo.saved > 0 ? "alert-triangle" : "info"}
+                  size={14}
+                  color={canceledInfo.saved > 0 ? Colors.warning : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.canceledBannerText,
+                    canceledInfo.saved > 0 && styles.canceledBannerTextWarn,
+                  ]}
+                >
+                  {canceledInfo.saved === 0
+                    ? "Canceled — no orders saved"
+                    : `Canceled — ${canceledInfo.saved} of ${canceledInfo.total} order${
+                        canceledInfo.total === 1 ? "" : "s"
+                      } saved before cancel`}
                 </Text>
                 <TouchableOpacity
                   onPress={clearCanceledMessage}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityLabel="Dismiss canceled message"
                 >
-                  <Feather name="x" size={14} color={Colors.textMuted} />
+                  <Feather
+                    name="x"
+                    size={14}
+                    color={canceledInfo.saved > 0 ? Colors.warning : Colors.textMuted}
+                  />
                 </TouchableOpacity>
               </View>
             )}
@@ -1548,11 +1586,20 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     marginBottom: 10,
   },
+  // Stronger styling for the partial-save case so the user notices that
+  // some orders did make it through and they should review their list.
+  canceledBannerWarn: {
+    backgroundColor: Colors.warningLight,
+    borderColor: Colors.warning,
+  },
   canceledBannerText: {
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
+  },
+  canceledBannerTextWarn: {
+    color: Colors.warning,
   },
   filterStack: { gap: 10 },
   searchWrap: {
