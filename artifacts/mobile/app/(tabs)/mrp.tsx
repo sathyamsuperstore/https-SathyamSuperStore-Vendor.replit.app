@@ -138,7 +138,16 @@ export default function MrpScreen() {
       }
 
       parsed.sort((a, b) => a.itemNo.localeCompare(b.itemNo, undefined, { sensitivity: "base" }));
-      await saveMrpBatch(parsed);
+      try {
+        await saveMrpBatch(parsed);
+      } catch {
+        // Storage failures (e.g. phone out of space) get the standard
+        // friendly alert instead of being lumped into the parser error list,
+        // which would otherwise show a raw exception like "QuotaExceededError".
+        showStorageErrorAlert();
+        setLoading(false);
+        return;
+      }
       setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
