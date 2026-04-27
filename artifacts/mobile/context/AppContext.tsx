@@ -84,7 +84,7 @@ interface AppContextType {
   addAppUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
   updateAppUser: (id: string, user: Partial<AppUser>) => void;
   deleteAppUser: (id: string) => void;
-  addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[] };
+  addSuppliersBatch: (items: Omit<Supplier, "id" | "createdAt">[]) => { added: number; skipped: string[]; addedSuppliers: Supplier[] };
   addUsersBatch: (items: Omit<AppUser, "id" | "createdAt">[]) => { added: number; skipped: string[] };
   mrpEntries: MrpEntry[];
   saveMrpBatch: (entries: MrpEntry[]) => void;
@@ -215,7 +215,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveAppUsers(appUsers.filter((u) => u.id !== id));
   }
 
-  function addSuppliersBatch(items: Omit<Supplier, "id" | "createdAt">[]): { added: number; skipped: string[] } {
+  function addSuppliersBatch(items: Omit<Supplier, "id" | "createdAt">[]): { added: number; skipped: string[]; addedSuppliers: Supplier[] } {
     const skipped: string[] = [];
     const existingCodes = new Set(suppliers.map((s) => s.vendorCode.toUpperCase()));
     const newSuppliers: Supplier[] = [];
@@ -230,7 +230,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newSuppliers.push({ ...item, id: generateId(), createdAt: new Date().toISOString() });
     }
     if (newSuppliers.length > 0) saveSuppliers([...suppliers, ...newSuppliers]);
-    return { added: newSuppliers.length, skipped };
+    return { added: newSuppliers.length, skipped, addedSuppliers: newSuppliers };
   }
 
   function addUsersBatch(items: Omit<AppUser, "id" | "createdAt">[]): { added: number; skipped: string[] } {

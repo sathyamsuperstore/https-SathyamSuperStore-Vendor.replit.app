@@ -157,7 +157,7 @@ function formatCurrency(n: number): string {
 }
 
 export default function ImportOrderScreen() {
-  const { suppliers, addOrdersBatchAsync } = useApp();
+  const { suppliers, addOrdersBatchAsync, addSuppliersBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ format?: string }>();
@@ -193,6 +193,11 @@ export default function ImportOrderScreen() {
   const canceledTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
+  // Bulk-action state for the "Needs supplier" view. `bulkPickerOpen` toggles
+  // an inline supplier picker for the "Apply same supplier to all" flow;
+  // `bulkBusy` blocks repeat taps while an action is running.
+  const [bulkPickerOpen, setBulkPickerOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const clearCanceledMessage = useCallback(() => {
     if (canceledTimeoutRef.current) {
@@ -225,6 +230,7 @@ export default function ImportOrderScreen() {
       setFileName(null);
       setSearchQuery("");
       setUnmatchedOnly(false);
+      setBulkPickerOpen(false);
       // Picking a new file is a fresh action — clear any leftover cancel
       // confirmation from a previous attempt.
       clearCanceledMessage();
@@ -513,6 +519,129 @@ export default function ImportOrderScreen() {
       setCancelRequested(true);
     }
   }, []);
+
+  // Bulk action: create one placeholder supplier per unmatched vendor code,
+  // then auto-link those new suppliers back to their vendor groups so the
+  // unmatched count drops to zero. We snapshot the unmatched groups at tap
+  // time so concurrent edits during the (synchronous) action are well-defined,
+  // and we re-resolve the supplier id from the returned `addedSuppliers` for
+  // newly created codes plus the in-memory `suppliers` for any codes that
+  // were skipped because a supplier already exists with that code (case-
+  // insensitive). We don't pre-confirm because the action is fully reversible
+  // by individual edits and the result is shown in an alert afterwards.
+  const bulkCreatePlaceholders = useCallback(() => {
+    if (bulkBusy) return;
+    const unmatched = vendorGroups.filter((g) => !g.supplierId);
+    if (unmatched.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const inputs: Omit<Supplier, "id" | "createdAt">[] = unmatched.map((g) => {
+        const code = g.vendorCode.trim();
+        return {
+          name: code,
+          vendorCode: code,
+          vendorGstNo: "",
+          contactName: "",
+          email: "",
+          phone: "",
+          address: "",
+          category: "",
+        };
+      });
+      const { added, addedSuppliers } = addSuppliersBatch(inputs);
+      // Build a code -> id map of every supplier we can now link to: brand
+      // new ones + any pre-existing suppliers whose code matched (those got
+      // skipped by the batch dedup but should still be linked here).
+      const codeToId = new Map<string, string>();
+      for (const s of addedSuppliers) {
+        if (s.vendorCode) codeToId.set(s.vendorCode.toUpperCase(), s.id);
+      }
+      for (const s of suppliers) {
+        if (s.vendorCode) {
+          const upper = s.vendorCode.toUpperCase();
+          if (!codeToId.has(upper)) codeToId.set(upper, s.id);
+        }
+      }
+      // Compute the counts synchronously before scheduling the state update —
+      // setVendorGroups runs its updater asynchronously, so any counters
+      // mutated inside the updater would still be 0 by the time we build the
+      // alert message below.
+      let linked = 0;
+      let stillUnmatched = 0;
+      const nextGroups = vendorGroups.map((g) => {
+        if (g.supplierId) return g;
+        const id = codeToId.get(g.vendorCode.trim().toUpperCase());
+        if (id) {
+          linked++;
+          return { ...g, supplierId: id };
+        }
+        stillUnmatched++;
+        return g;
+      });
+      setVendorGroups(nextGroups);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const parts: string[] = [];
+      parts.push(`${added} new supplier${added === 1 ? "" : "s"} created.`);
+      parts.push(`${linked} vendor${linked === 1 ? "" : "s"} linked.`);
+      if (stillUnmatched > 0) {
+        parts.push(`${stillUnmatched} could not be linked — please pick a supplier manually.`);
+      }
+      const msg = parts.join("\n");
+      if (Platform.OS === "web") {
+        window.alert(`Bulk Action Complete\n\n${msg}`);
+      } else {
+        Alert.alert("Bulk Action Complete", msg);
+      }
+    } catch (e: any) {
+      const msg = e?.message ?? String(e) ?? "Unknown error";
+      Alert.alert("Bulk Action Failed", msg);
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkBusy, vendorGroups, addSuppliersBatch, suppliers]);
+
+  // Bulk action: apply one chosen supplier to every currently-filtered vendor
+  // group. We capture the filtered list at tap time via a closure on the
+  // caller, so concurrent edits are well-defined (any group that was not in
+  // the filtered snapshot keeps its existing assignment).
+  const bulkApplySupplier = useCallback(
+    (supplierId: string, targetCodes: string[]) => {
+      if (bulkBusy) return;
+      if (targetCodes.length === 0) return;
+      const supplier = suppliers.find((s) => s.id === supplierId);
+      if (!supplier) return;
+      setBulkBusy(true);
+      try {
+        const codeSet = new Set(targetCodes);
+        // Compute the count synchronously — same reason as the placeholder
+        // path above: setVendorGroups defers the updater, so a counter
+        // mutated inside it would still be 0 when we build the alert below.
+        let applied = 0;
+        const nextGroups = vendorGroups.map((g) => {
+          if (codeSet.has(g.vendorCode)) {
+            applied++;
+            return { ...g, supplierId };
+          }
+          return g;
+        });
+        setVendorGroups(nextGroups);
+        setBulkPickerOpen(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const msg = `Linked ${applied} vendor${applied === 1 ? "" : "s"} to ${supplier.name}.`;
+        if (Platform.OS === "web") {
+          window.alert(`Bulk Action Complete\n\n${msg}`);
+        } else {
+          Alert.alert("Bulk Action Complete", msg);
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? String(e) ?? "Unknown error";
+        Alert.alert("Bulk Action Failed", msg);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [bulkBusy, suppliers, vendorGroups]
+  );
 
   async function validateAndCreate() {
     // Synchronous guard against double-tap (state-based check would race).
@@ -848,6 +977,101 @@ export default function ImportOrderScreen() {
                       </Text>
                     )}
                   </View>
+
+                  {unmatchedOnly && unmatchedCount > 0 && (
+                    <View style={styles.bulkPanel}>
+                      <View style={styles.bulkHeader}>
+                        <Feather name="zap" size={14} color={Colors.primary} />
+                        <Text style={styles.bulkTitle}>
+                          Bulk fix {unmatchedCount} unmatched vendor{unmatchedCount === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                      <Text style={styles.bulkHint}>
+                        Save time by auto-linking everything in one tap.
+                      </Text>
+                      <View style={styles.bulkActions}>
+                        <TouchableOpacity
+                          style={[styles.bulkBtn, styles.bulkBtnPrimary, bulkBusy && styles.bulkBtnDisabled]}
+                          onPress={bulkCreatePlaceholders}
+                          disabled={bulkBusy}
+                          activeOpacity={bulkBusy ? 1 : 0.7}
+                        >
+                          {bulkBusy ? (
+                            <ActivityIndicator size="small" color={Colors.textInverse} />
+                          ) : (
+                            <Feather name="plus-circle" size={14} color={Colors.textInverse} />
+                          )}
+                          <Text style={styles.bulkBtnPrimaryText}>
+                            Create suppliers from codes
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.bulkBtn,
+                            styles.bulkBtnSecondary,
+                            (bulkBusy || filteredGroups.length === 0) && styles.bulkBtnDisabled,
+                            bulkPickerOpen && styles.bulkBtnSecondaryActive,
+                          ]}
+                          onPress={() => setBulkPickerOpen((v) => !v)}
+                          disabled={bulkBusy || filteredGroups.length === 0}
+                          activeOpacity={bulkBusy ? 1 : 0.7}
+                        >
+                          <Feather
+                            name={bulkPickerOpen ? "chevron-up" : "users"}
+                            size={14}
+                            color={bulkPickerOpen ? Colors.textInverse : Colors.primary}
+                          />
+                          <Text
+                            style={[
+                              styles.bulkBtnSecondaryText,
+                              bulkPickerOpen && styles.bulkBtnSecondaryTextActive,
+                            ]}
+                          >
+                            {bulkPickerOpen ? "Close" : "Use one supplier for all"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {bulkPickerOpen && (
+                        <View style={styles.bulkPickerWrap}>
+                          <Text style={styles.bulkPickerLabel}>
+                            Tap a supplier to apply to all {filteredGroups.length} filtered vendor
+                            {filteredGroups.length === 1 ? "" : "s"}:
+                          </Text>
+                          {suppliers.length === 0 ? (
+                            <Text style={styles.bulkPickerEmpty}>
+                              No suppliers yet. Create suppliers first, then come back.
+                            </Text>
+                          ) : (
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                              contentContainerStyle={styles.bulkPickerOptions}
+                            >
+                              {suppliers.map((s) => (
+                                <TouchableOpacity
+                                  key={s.id}
+                                  style={[styles.bulkSupplierBtn, bulkBusy && styles.bulkBtnDisabled]}
+                                  disabled={bulkBusy}
+                                  onPress={() =>
+                                    bulkApplySupplier(
+                                      s.id,
+                                      filteredGroups.map((g) => g.vendorCode)
+                                    )
+                                  }
+                                  activeOpacity={bulkBusy ? 1 : 0.7}
+                                >
+                                  {s.vendorCode ? (
+                                    <Text style={styles.bulkSupplierBtnCode}>{s.vendorCode}</Text>
+                                  ) : null}
+                                  <Text style={styles.bulkSupplierBtnText}>{s.name}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   {isFiltering && filteredGroups.length === 0 && (
                     <View style={styles.emptyFilter}>
@@ -1395,4 +1619,110 @@ const styles = StyleSheet.create({
   },
   emptyFilterText: { fontSize: 13, color: Colors.textMuted, textAlign: "center" },
   emptyFilterClear: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  bulkPanel: {
+    backgroundColor: Colors.primaryMuted,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+    padding: 12,
+    gap: 8,
+  },
+  bulkHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  bulkTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: Colors.primary,
+  },
+  bulkHint: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  bulkActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  bulkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 140,
+    justifyContent: "center",
+  },
+  bulkBtnPrimary: {
+    backgroundColor: Colors.primary,
+  },
+  bulkBtnPrimaryText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textInverse,
+  },
+  bulkBtnSecondary: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+  },
+  bulkBtnSecondaryActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  bulkBtnSecondaryText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  bulkBtnSecondaryTextActive: {
+    color: Colors.textInverse,
+  },
+  bulkBtnDisabled: { opacity: 0.6 },
+  bulkPickerWrap: {
+    marginTop: 4,
+    gap: 6,
+  },
+  bulkPickerLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: "600",
+  },
+  bulkPickerEmpty: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontStyle: "italic",
+  },
+  bulkPickerOptions: {
+    gap: 6,
+    paddingVertical: 2,
+  },
+  bulkSupplierBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+    alignItems: "center",
+    minWidth: 60,
+  },
+  bulkSupplierBtnCode: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: Colors.primary,
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  bulkSupplierBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.text,
+  },
 });
