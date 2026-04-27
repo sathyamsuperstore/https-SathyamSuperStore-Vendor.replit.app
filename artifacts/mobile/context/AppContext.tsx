@@ -89,6 +89,7 @@ interface AppContextType {
   addSuppliersBatch: (
     items: Omit<Supplier, "id" | "createdAt">[]
   ) => Promise<{ added: number; skipped: string[]; addedSuppliers: Supplier[] }>;
+  deleteSuppliersBatch: (ids: string[]) => Promise<void>;
   addUsersBatch: (
     items: Omit<AppUser, "id" | "createdAt">[]
   ) => Promise<{ added: number; skipped: string[] }>;
@@ -313,6 +314,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers(suppliers.filter((s) => s.id !== id));
   }
 
+  // Batch delete used by the bulk-undo flow on the import screen so we can
+  // remove every placeholder supplier created by a single bulk action in
+  // one persisted write (one AsyncStorage round-trip + one re-render),
+  // instead of N sequential deletes that would each rebuild the array.
+  async function deleteSuppliersBatch(ids: string[]) {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    await saveSuppliers(suppliers.filter((s) => !idSet.has(s.id)));
+  }
+
   async function addOrder(order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) {
     const now = new Date().toISOString();
     const newOrder: Order = {
@@ -458,6 +469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateAppUser,
         deleteAppUser,
         addSuppliersBatch,
+        deleteSuppliersBatch,
         addUsersBatch,
         mrpEntries,
         saveMrpBatch,

@@ -157,7 +157,7 @@ function formatCurrency(n: number): string {
 }
 
 export default function ImportOrderScreen() {
-  const { suppliers, addOrdersBatchAsync, addSuppliersBatch } = useApp();
+  const { suppliers, addOrdersBatchAsync, addSuppliersBatch, deleteSuppliersBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ format?: string }>();
@@ -204,6 +204,43 @@ export default function ImportOrderScreen() {
   // `bulkBusy` blocks repeat taps while an action is running.
   const [bulkPickerOpen, setBulkPickerOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Undo affordance for the two bulk-link actions. We snapshot the prior
+  // `vendorGroups` and the ids of any placeholder suppliers the action just
+  // created, so a single tap can roll back the link state AND remove the
+  // newly-created suppliers — without touching pre-existing ones. Banner
+  // auto-dismisses after ~10s; the timeout ref lets us cancel/replace it
+  // when another bulk action runs, the user picks a new file, or unmounts.
+  const [bulkUndo, setBulkUndo] = useState<{
+    message: string;
+    prevGroups: VendorGroup[];
+    createdSupplierIds: string[];
+  } | null>(null);
+  const bulkUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+
+  const clearBulkUndo = useCallback(() => {
+    if (bulkUndoTimeoutRef.current) {
+      clearTimeout(bulkUndoTimeoutRef.current);
+      bulkUndoTimeoutRef.current = null;
+    }
+    setBulkUndo(null);
+  }, []);
+
+  // Centralized so every "show success with undo" path uses the same 10s
+  // window and replaces any previous banner without leaking timers.
+  const showBulkUndo = useCallback(
+    (info: { message: string; prevGroups: VendorGroup[]; createdSupplierIds: string[] }) => {
+      if (bulkUndoTimeoutRef.current) {
+        clearTimeout(bulkUndoTimeoutRef.current);
+      }
+      setBulkUndo(info);
+      bulkUndoTimeoutRef.current = setTimeout(() => {
+        setBulkUndo(null);
+        bulkUndoTimeoutRef.current = null;
+      }, 10000);
+    },
+    []
+  );
 
   const clearCanceledMessage = useCallback(() => {
     if (canceledTimeoutRef.current) {
@@ -219,6 +256,10 @@ export default function ImportOrderScreen() {
       if (canceledTimeoutRef.current) {
         clearTimeout(canceledTimeoutRef.current);
         canceledTimeoutRef.current = null;
+      }
+      if (bulkUndoTimeoutRef.current) {
+        clearTimeout(bulkUndoTimeoutRef.current);
+        bulkUndoTimeoutRef.current = null;
       }
     };
   }, []);
@@ -238,8 +279,10 @@ export default function ImportOrderScreen() {
       setUnmatchedOnly(false);
       setBulkPickerOpen(false);
       // Picking a new file is a fresh action — clear any leftover cancel
-      // confirmation from a previous attempt.
+      // confirmation or undo banner from a previous attempt so they don't
+      // dangle and let the user "undo" against an unrelated import.
       clearCanceledMessage();
+      clearBulkUndo();
 
       const pickerTypes = isTxtMode
         ? ["text/plain", "text/tab-separated-values", "text/csv", "application/octet-stream", "*/*"]
@@ -542,9 +585,23 @@ export default function ImportOrderScreen() {
   // insensitive). We don't pre-confirm because the action is fully reversible
   // by individual edits and the result is shown in an alert afterwards.
   const bulkCreatePlaceholders = useCallback(async () => {
-    if (bulkBusy) return;
+    // Block while another bulk action OR an in-flight undo is running. The
+    // undo guard matters because undoBulk does an async deleteSuppliersBatch
+    // — if another bulk action started in that window, its prevGroups
+    // snapshot could capture the half-undone state and a subsequent undo
+    // would restore the wrong baseline.
+    if (bulkBusy || undoBusy) return;
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
     if (unmatched.length === 0) return;
+    // Snapshot BEFORE any mutation so undo can restore exactly the
+    // pre-action state — capturing later would race the setVendorGroups
+    // call and potentially include the very changes we want to revert.
+    const prevGroups = vendorGroups;
+    // Replace any prior undo banner up front: starting a new bulk action
+    // invalidates the previous undo target (its prevGroups snapshot is now
+    // stale and undoing it could clobber the action the user just kicked
+    // off).
+    clearBulkUndo();
     setBulkBusy(true);
     try {
       const inputs: Omit<Supplier, "id" | "createdAt">[] = unmatched.map((g) => {
@@ -577,7 +634,7 @@ export default function ImportOrderScreen() {
       // Compute the counts synchronously before scheduling the state update —
       // setVendorGroups runs its updater asynchronously, so any counters
       // mutated inside the updater would still be 0 by the time we build the
-      // alert message below.
+      // banner message below.
       let linked = 0;
       let stillUnmatched = 0;
       const nextGroups = vendorGroups.map((g) => {
@@ -593,24 +650,31 @@ export default function ImportOrderScreen() {
       setVendorGroups(nextGroups);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const parts: string[] = [];
-      parts.push(`${added} new supplier${added === 1 ? "" : "s"} created.`);
-      parts.push(`${linked} vendor${linked === 1 ? "" : "s"} linked.`);
+      parts.push(`${added} new supplier${added === 1 ? "" : "s"} created`);
+      parts.push(`${linked} vendor${linked === 1 ? "" : "s"} linked`);
       if (stillUnmatched > 0) {
-        parts.push(`${stillUnmatched} could not be linked — please pick a supplier manually.`);
+        parts.push(
+          `${stillUnmatched} still need${stillUnmatched === 1 ? "s" : ""} a manual pick`
+        );
       }
-      const msg = parts.join("\n");
-      if (Platform.OS === "web") {
-        window.alert(`Bulk Action Complete\n\n${msg}`);
-      } else {
-        Alert.alert("Bulk Action Complete", msg);
-      }
+      // Inline banner instead of a blocking alert — the undo affordance only
+      // makes sense if the user can tap it without first dismissing a modal.
+      // The banner auto-dismisses after ~10s (or sooner if dismissed/another
+      // action runs), and Undo restores `prevGroups` AND deletes only the
+      // suppliers this action actually created (skipped/pre-existing ones
+      // are left alone — they weren't ours to remove).
+      showBulkUndo({
+        message: parts.join(" · "),
+        prevGroups,
+        createdSupplierIds: addedSuppliers.map((s) => s.id),
+      });
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
       Alert.alert("Bulk Action Failed", msg);
     } finally {
       setBulkBusy(false);
     }
-  }, [bulkBusy, vendorGroups, addSuppliersBatch, suppliers]);
+  }, [bulkBusy, undoBusy, vendorGroups, addSuppliersBatch, suppliers, clearBulkUndo, showBulkUndo]);
 
   // Bulk action: apply one chosen supplier to every currently-filtered vendor
   // group. We capture the filtered list at tap time via a closure on the
@@ -618,16 +682,23 @@ export default function ImportOrderScreen() {
   // the filtered snapshot keeps its existing assignment).
   const bulkApplySupplier = useCallback(
     (supplierId: string, targetCodes: string[]) => {
-      if (bulkBusy) return;
+      // See bulkCreatePlaceholders: also block during an in-flight undo so
+      // a new bulk action can't snapshot a half-undone state.
+      if (bulkBusy || undoBusy) return;
       if (targetCodes.length === 0) return;
       const supplier = suppliers.find((s) => s.id === supplierId);
       if (!supplier) return;
+      // Snapshot prior state for undo — see bulkCreatePlaceholders for the
+      // race rationale. This action doesn't create suppliers, so the
+      // createdSupplierIds list is empty and undo is purely a state revert.
+      const prevGroups = vendorGroups;
+      clearBulkUndo();
       setBulkBusy(true);
       try {
         const codeSet = new Set(targetCodes);
         // Compute the count synchronously — same reason as the placeholder
         // path above: setVendorGroups defers the updater, so a counter
-        // mutated inside it would still be 0 when we build the alert below.
+        // mutated inside it would still be 0 when we build the banner below.
         let applied = 0;
         const nextGroups = vendorGroups.map((g) => {
           if (codeSet.has(g.vendorCode)) {
@@ -639,12 +710,12 @@ export default function ImportOrderScreen() {
         setVendorGroups(nextGroups);
         setBulkPickerOpen(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        const msg = `Linked ${applied} vendor${applied === 1 ? "" : "s"} to ${supplier.name}.`;
-        if (Platform.OS === "web") {
-          window.alert(`Bulk Action Complete\n\n${msg}`);
-        } else {
-          Alert.alert("Bulk Action Complete", msg);
-        }
+        const msg = `Linked ${applied} vendor${applied === 1 ? "" : "s"} to ${supplier.name}`;
+        showBulkUndo({
+          message: msg,
+          prevGroups,
+          createdSupplierIds: [],
+        });
       } catch (e: any) {
         const msg = e?.message ?? String(e) ?? "Unknown error";
         Alert.alert("Bulk Action Failed", msg);
@@ -652,8 +723,36 @@ export default function ImportOrderScreen() {
         setBulkBusy(false);
       }
     },
-    [bulkBusy, suppliers, vendorGroups]
+    [bulkBusy, undoBusy, suppliers, vendorGroups, clearBulkUndo, showBulkUndo]
   );
+
+  // Roll back the most recent bulk action: restore the snapshot of
+  // `vendorGroups` from before it ran AND delete only the placeholder
+  // suppliers it created (pre-existing matches captured by the action are
+  // intentionally left in the suppliers list — they weren't ours to remove).
+  // We restore the local link state FIRST so the UI feedback is instant
+  // even if the supplier delete is slow; if the delete then fails we
+  // surface that explicitly. The banner is dismissed up front so the
+  // user can't tap Undo twice while the delete is in flight.
+  const undoBulk = useCallback(async () => {
+    if (undoBusy) return;
+    if (!bulkUndo) return;
+    const { prevGroups, createdSupplierIds } = bulkUndo;
+    setUndoBusy(true);
+    clearBulkUndo();
+    setVendorGroups(prevGroups);
+    try {
+      if (createdSupplierIds.length > 0) {
+        await deleteSuppliersBatch(createdSupplierIds);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e) ?? "Unknown error";
+      Alert.alert("Undo Failed", msg);
+    } finally {
+      setUndoBusy(false);
+    }
+  }, [bulkUndo, clearBulkUndo, deleteSuppliersBatch, undoBusy]);
 
   async function validateAndCreate() {
     // Synchronous guard against double-tap (state-based check would race).
@@ -665,8 +764,12 @@ export default function ImportOrderScreen() {
     }
     creatingRef.current = true;
     cancelRef.current = false;
-    // Re-tapping Create is a fresh action — clear any stale cancel banner.
+    // Re-tapping Create is a fresh action — clear any stale cancel banner
+    // and the bulk-undo banner (the linked vendor groups are about to be
+    // committed as orders, so an "undo" against the snapshot would no
+    // longer make sense).
     clearCanceledMessage();
+    clearBulkUndo();
     // Set in the cancel paths so `finally` knows unambiguously what banner
     // (if any) to show. `total` is captured here so `finally` can render
     // "X of N saved" without re-reading possibly-mutated state.
@@ -1013,10 +1116,10 @@ export default function ImportOrderScreen() {
                       </Text>
                       <View style={styles.bulkActions}>
                         <TouchableOpacity
-                          style={[styles.bulkBtn, styles.bulkBtnPrimary, bulkBusy && styles.bulkBtnDisabled]}
+                          style={[styles.bulkBtn, styles.bulkBtnPrimary, (bulkBusy || undoBusy) && styles.bulkBtnDisabled]}
                           onPress={bulkCreatePlaceholders}
-                          disabled={bulkBusy}
-                          activeOpacity={bulkBusy ? 1 : 0.7}
+                          disabled={bulkBusy || undoBusy}
+                          activeOpacity={bulkBusy || undoBusy ? 1 : 0.7}
                         >
                           {bulkBusy ? (
                             <ActivityIndicator size="small" color={Colors.textInverse} />
@@ -1031,12 +1134,12 @@ export default function ImportOrderScreen() {
                           style={[
                             styles.bulkBtn,
                             styles.bulkBtnSecondary,
-                            (bulkBusy || filteredGroups.length === 0) && styles.bulkBtnDisabled,
+                            (bulkBusy || undoBusy || filteredGroups.length === 0) && styles.bulkBtnDisabled,
                             bulkPickerOpen && styles.bulkBtnSecondaryActive,
                           ]}
                           onPress={() => setBulkPickerOpen((v) => !v)}
-                          disabled={bulkBusy || filteredGroups.length === 0}
-                          activeOpacity={bulkBusy ? 1 : 0.7}
+                          disabled={bulkBusy || undoBusy || filteredGroups.length === 0}
+                          activeOpacity={bulkBusy || undoBusy ? 1 : 0.7}
                         >
                           <Feather
                             name={bulkPickerOpen ? "chevron-up" : "users"}
@@ -1072,15 +1175,15 @@ export default function ImportOrderScreen() {
                               {suppliers.map((s) => (
                                 <TouchableOpacity
                                   key={s.id}
-                                  style={[styles.bulkSupplierBtn, bulkBusy && styles.bulkBtnDisabled]}
-                                  disabled={bulkBusy}
+                                  style={[styles.bulkSupplierBtn, (bulkBusy || undoBusy) && styles.bulkBtnDisabled]}
+                                  disabled={bulkBusy || undoBusy}
                                   onPress={() =>
                                     bulkApplySupplier(
                                       s.id,
                                       filteredGroups.map((g) => g.vendorCode)
                                     )
                                   }
-                                  activeOpacity={bulkBusy ? 1 : 0.7}
+                                  activeOpacity={bulkBusy || undoBusy ? 1 : 0.7}
                                 >
                                   {s.vendorCode ? (
                                     <Text style={styles.bulkSupplierBtnCode}>{s.vendorCode}</Text>
@@ -1122,6 +1225,36 @@ export default function ImportOrderScreen() {
             {creating && createProgress ? (
               <Text style={styles.createProgressText}>{createProgress}</Text>
             ) : null}
+            {bulkUndo && !creating && (
+              <View style={styles.bulkUndoBanner}>
+                <Feather name="check-circle" size={14} color={Colors.success} />
+                <Text style={styles.bulkUndoBannerText}>{bulkUndo.message}</Text>
+                <TouchableOpacity
+                  style={[styles.bulkUndoBtn, undoBusy && styles.bulkUndoBtnDisabled]}
+                  onPress={undoBulk}
+                  disabled={undoBusy}
+                  activeOpacity={undoBusy ? 1 : 0.7}
+                  accessibilityLabel="Undo bulk action"
+                >
+                  {undoBusy ? (
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                  ) : (
+                    <Feather name="rotate-ccw" size={12} color={Colors.primary} />
+                  )}
+                  <Text style={styles.bulkUndoBtnText}>
+                    {undoBusy ? "Undoing..." : "Undo"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={clearBulkUndo}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Dismiss undo banner"
+                  disabled={undoBusy}
+                >
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
             {canceledInfo && !creating && (
               <View
                 style={[
@@ -1691,6 +1824,42 @@ const styles = StyleSheet.create({
   canceledBannerTextWarn: {
     color: Colors.warning,
   },
+  // Success banner shown after a bulk auto-link with an inline Undo button.
+  // Lives in the same footer slot as the cancel banner so the visual rhythm
+  // (callout + main action below) is consistent. Green border signals
+  // success but the layout matches the cancel banner so users learn one
+  // mental model for "this was an action you can react to."
+  bulkUndoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.successLight,
+    borderWidth: 1,
+    borderColor: Colors.success,
+    marginBottom: 10,
+  },
+  bulkUndoBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  bulkUndoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  bulkUndoBtnDisabled: { opacity: 0.6 },
+  bulkUndoBtnText: { fontSize: 12, fontWeight: "800", color: Colors.primary },
   filterStack: { gap: 10 },
   searchWrap: {
     flexDirection: "row",
