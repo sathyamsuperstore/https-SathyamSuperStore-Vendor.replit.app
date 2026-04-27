@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -215,6 +216,24 @@ export default function LatestPurchasesScreen() {
   const [search, setSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Multi-select filters. Empty array = "All". Modeled after the brand
+  // filter on the Orders tab so the UX feels consistent.
+  const [activeVendorCodes, setActiveVendorCodes] = useState<string[]>([]);
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [vendorOptionSearch, setVendorOptionSearch] = useState("");
+  const [categoryOptionSearch, setCategoryOptionSearch] = useState("");
+
+  const toggleVendorCode = (code: string) =>
+    setActiveVendorCodes((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  const toggleCategory = (cat: string) =>
+    setActiveCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+
   // Consume the `search` URL param on entry. Each distinct param value is
   // applied at most once via consumedSearchParam so a tab-bar revisit (the
   // URL still carries the same `?search=...`) doesn't keep re-overriding
@@ -256,10 +275,43 @@ export default function LatestPurchasesScreen() {
     headerScrollRef.current?.scrollTo({ x, animated: false });
   };
 
+  // Unique sorted option lists for the two filter modals.
+  const allVendorCodes = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of latestPurchases) {
+      const v = String(r["VendorCode"] ?? "").trim();
+      if (v) s.add(v);
+    }
+    return Array.from(s).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  }, [latestPurchases]);
+
+  const allCategories = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of latestPurchases) {
+      const v = String(r["Category"] ?? "").trim();
+      if (v) s.add(v);
+    }
+    return Array.from(s).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  }, [latestPurchases]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return latestPurchases;
+    const vendorSet = activeVendorCodes.length > 0 ? new Set(activeVendorCodes) : null;
+    const catSet = activeCategories.length > 0 ? new Set(activeCategories) : null;
     return latestPurchases.filter((r) => {
+      if (vendorSet) {
+        const v = String(r["VendorCode"] ?? "").trim();
+        if (!vendorSet.has(v)) return false;
+      }
+      if (catSet) {
+        const c = String(r["Category"] ?? "").trim();
+        if (!catSet.has(c)) return false;
+      }
+      if (!q) return true;
       if (SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) {
         return true;
       }
@@ -268,7 +320,57 @@ export default function LatestPurchasesScreen() {
       // on the purchase row itself.
       return vendorNameFor(r["VendorCode"]).toLowerCase().includes(q);
     });
-  }, [latestPurchases, search, vendorNameByCode]);
+  }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories]);
+
+  // Per-option counts for the modals — pre-applies the *other* filter +
+  // search so the numbers reflect what the user would actually see.
+  const vendorCountFor = (code: string): number => {
+    const q = search.trim().toLowerCase();
+    const catSet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    let n = 0;
+    for (const r of latestPurchases) {
+      if (String(r["VendorCode"] ?? "").trim() !== code) continue;
+      if (catSet && !catSet.has(String(r["Category"] ?? "").trim())) continue;
+      if (q) {
+        const matchesSearch =
+          SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q)) ||
+          vendorNameFor(r["VendorCode"]).toLowerCase().includes(q);
+        if (!matchesSearch) continue;
+      }
+      n++;
+    }
+    return n;
+  };
+  const categoryCountFor = (cat: string): number => {
+    const q = search.trim().toLowerCase();
+    const vendorSet = activeVendorCodes.length > 0 ? new Set(activeVendorCodes) : null;
+    let n = 0;
+    for (const r of latestPurchases) {
+      if (String(r["Category"] ?? "").trim() !== cat) continue;
+      if (vendorSet && !vendorSet.has(String(r["VendorCode"] ?? "").trim())) continue;
+      if (q) {
+        const matchesSearch =
+          SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q)) ||
+          vendorNameFor(r["VendorCode"]).toLowerCase().includes(q);
+        if (!matchesSearch) continue;
+      }
+      n++;
+    }
+    return n;
+  };
+
+  const vendorFilterLabel =
+    activeVendorCodes.length === 0
+      ? "Vendor: All"
+      : activeVendorCodes.length === 1
+        ? `Vendor: ${activeVendorCodes[0]}`
+        : `Vendor: ${activeVendorCodes.length} selected`;
+  const categoryFilterLabel =
+    activeCategories.length === 0
+      ? "Category: All"
+      : activeCategories.length === 1
+        ? `Category: ${activeCategories[0]}`
+        : `Category: ${activeCategories.length} selected`;
 
   async function pickAndImport() {
     try {
@@ -659,29 +761,121 @@ export default function LatestPurchasesScreen() {
           )}
         </View>
 
-        {/* 3: search wrap */}
+        {/* 3: search wrap + filter chips */}
         <View>
           {latestPurchases.length > 0 && (
-            <View style={styles.searchWrap}>
-              <Feather name="search" size={15} color={Colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search GidNo, SortNo, Item No, Brand…"
-                placeholderTextColor={Colors.textMuted}
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-              {search.length > 0 && Platform.OS !== "ios" && (
+            <>
+              <View style={styles.searchWrap}>
+                <Feather name="search" size={15} color={Colors.textMuted} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Search GidNo, SortNo, Item No, Brand…"
+                  placeholderTextColor={Colors.textMuted}
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                />
+                {search.length > 0 && Platform.OS !== "ios" && (
+                  <TouchableOpacity
+                    onPress={() => setSearch("")}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="x" size={14} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View style={styles.filterRow}>
                 <TouchableOpacity
-                  onPress={() => setSearch("")}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={[
+                    styles.filterChip,
+                    activeVendorCodes.length > 0 && styles.filterChipActive,
+                  ]}
+                  onPress={() => {
+                    setVendorOptionSearch("");
+                    setShowVendorModal(true);
+                  }}
+                  activeOpacity={0.75}
                 >
-                  <Feather name="x" size={14} color={Colors.textMuted} />
+                  <Feather
+                    name="user"
+                    size={13}
+                    color={
+                      activeVendorCodes.length > 0
+                        ? Colors.textInverse
+                        : Colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      activeVendorCodes.length > 0 && styles.filterChipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {vendorFilterLabel}
+                  </Text>
+                  {activeVendorCodes.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setActiveVendorCodes([]);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x-circle" size={14} color={Colors.textInverse} />
+                    </TouchableOpacity>
+                  ) : (
+                    <Feather name="chevron-down" size={13} color={Colors.textMuted} />
+                  )}
                 </TouchableOpacity>
-              )}
-            </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    activeCategories.length > 0 && styles.filterChipActive,
+                  ]}
+                  onPress={() => {
+                    setCategoryOptionSearch("");
+                    setShowCategoryModal(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Feather
+                    name="grid"
+                    size={13}
+                    color={
+                      activeCategories.length > 0
+                        ? Colors.textInverse
+                        : Colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      activeCategories.length > 0 && styles.filterChipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {categoryFilterLabel}
+                  </Text>
+                  {activeCategories.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setActiveCategories([]);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x-circle" size={14} color={Colors.textInverse} />
+                    </TouchableOpacity>
+                  ) : (
+                    <Feather name="chevron-down" size={13} color={Colors.textMuted} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
           )}
         </View>
 
@@ -744,7 +938,21 @@ export default function LatestPurchasesScreen() {
                   {filtered.length === 0 ? (
                     <View style={styles.noRows}>
                       <Feather name="search" size={24} color={Colors.textMuted} />
-                      <Text style={styles.noRowsText}>No items match "{search}"</Text>
+                      <Text style={styles.noRowsText}>
+                        {search.trim().length > 0
+                          ? `No items match "${search}"`
+                          : "No items match the active filters"}
+                      </Text>
+                      {(activeVendorCodes.length > 0 || activeCategories.length > 0) && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setActiveVendorCodes([]);
+                            setActiveCategories([]);
+                          }}
+                        >
+                          <Text style={styles.noRowsClear}>Clear filters</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   ) : (
                     filtered.map((row, i) => (
@@ -815,6 +1023,309 @@ export default function LatestPurchasesScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Vendor filter modal */}
+      <Modal
+        visible={showVendorModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowVendorModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowVendorModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Vendor Code</Text>
+            {activeVendorCodes.length > 0 && (
+              <TouchableOpacity onPress={() => setActiveVendorCodes([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allVendorCodes.length > 0 && (
+            <View style={styles.optionSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.optionSearchInput}
+                value={vendorOptionSearch}
+                onChangeText={setVendorOptionSearch}
+                placeholder="Search vendor code or name…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {vendorOptionSearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity
+                  onPress={() => setVendorOptionSearch("")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allVendorCodes.length === 0 ? (
+            <View style={styles.noOptions}>
+              <Feather name="user" size={32} color={Colors.textMuted} />
+              <Text style={styles.noOptionsTitle}>No Vendor Codes</Text>
+              <Text style={styles.noOptionsSub}>
+                Import a Latest Purchases file to filter by vendor.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.optionList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {(() => {
+                const q = vendorOptionSearch.trim().toLowerCase();
+                const visible = q
+                  ? allVendorCodes.filter(
+                      (c) =>
+                        c.toLowerCase().includes(q) ||
+                        vendorNameFor(c).toLowerCase().includes(q)
+                    )
+                  : allVendorCodes;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[
+                          styles.optionRow,
+                          activeVendorCodes.length === 0 && styles.optionRowActive,
+                        ]}
+                        onPress={() => setActiveVendorCodes([])}
+                      >
+                        <Text
+                          style={[
+                            styles.optionLabel,
+                            activeVendorCodes.length === 0 && styles.optionLabelActive,
+                          ]}
+                        >
+                          All Vendors
+                        </Text>
+                        {activeVendorCodes.length === 0 && (
+                          <Feather name="check" size={16} color={Colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    {visible.length === 0 ? (
+                      <View style={styles.noOptions}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noOptionsTitle}>No match</Text>
+                        <Text style={styles.noOptionsSub}>
+                          No vendor codes for "{vendorOptionSearch}"
+                        </Text>
+                      </View>
+                    ) : (
+                      visible.map((code) => {
+                        const isSelected = activeVendorCodes.includes(code);
+                        const count = vendorCountFor(code);
+                        const name = vendorNameFor(code);
+                        return (
+                          <TouchableOpacity
+                            key={code}
+                            style={[styles.optionRow, isSelected && styles.optionRowActive]}
+                            onPress={() => toggleVendorCode(code)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.optionLabel,
+                                  isSelected && styles.optionLabelActive,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {code}
+                              </Text>
+                              <Text style={styles.optionSubLabel} numberOfLines={1}>
+                                {name}
+                              </Text>
+                            </View>
+                            <Text style={styles.optionCount}>
+                              {count} row{count !== 1 ? "s" : ""}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowVendorModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeVendorCodes.length === 0
+                ? "Close"
+                : `Apply (${activeVendorCodes.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Category filter modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowCategoryModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Category</Text>
+            {activeCategories.length > 0 && (
+              <TouchableOpacity onPress={() => setActiveCategories([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allCategories.length > 0 && (
+            <View style={styles.optionSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.optionSearchInput}
+                value={categoryOptionSearch}
+                onChangeText={setCategoryOptionSearch}
+                placeholder="Search categories…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {categoryOptionSearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity
+                  onPress={() => setCategoryOptionSearch("")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allCategories.length === 0 ? (
+            <View style={styles.noOptions}>
+              <Feather name="grid" size={32} color={Colors.textMuted} />
+              <Text style={styles.noOptionsTitle}>No Categories</Text>
+              <Text style={styles.noOptionsSub}>
+                Import a Latest Purchases file with a Category column.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.optionList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {(() => {
+                const q = categoryOptionSearch.trim().toLowerCase();
+                const visible = q
+                  ? allCategories.filter((c) => c.toLowerCase().includes(q))
+                  : allCategories;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[
+                          styles.optionRow,
+                          activeCategories.length === 0 && styles.optionRowActive,
+                        ]}
+                        onPress={() => setActiveCategories([])}
+                      >
+                        <Text
+                          style={[
+                            styles.optionLabel,
+                            activeCategories.length === 0 && styles.optionLabelActive,
+                          ]}
+                        >
+                          All Categories
+                        </Text>
+                        {activeCategories.length === 0 && (
+                          <Feather name="check" size={16} color={Colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    {visible.length === 0 ? (
+                      <View style={styles.noOptions}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noOptionsTitle}>No match</Text>
+                        <Text style={styles.noOptionsSub}>
+                          No categories for "{categoryOptionSearch}"
+                        </Text>
+                      </View>
+                    ) : (
+                      visible.map((cat) => {
+                        const isSelected = activeCategories.includes(cat);
+                        const count = categoryCountFor(cat);
+                        return (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[styles.optionRow, isSelected && styles.optionRowActive]}
+                            onPress={() => toggleCategory(cat)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text
+                              style={[
+                                styles.optionLabel,
+                                isSelected && styles.optionLabelActive,
+                                { flex: 1 },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {cat}
+                            </Text>
+                            <Text style={styles.optionCount}>
+                              {count} row{count !== 1 ? "s" : ""}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowCategoryModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeCategories.length === 0
+                ? "Close"
+                : `Apply (${activeCategories.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1010,4 +1521,140 @@ const styles = StyleSheet.create({
   },
   linkedQueuedText: { flex: 1, fontSize: 12, color: Colors.text, lineHeight: 18 },
   linkedQueuedCode: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontWeight: "700" },
+
+  // Filter chip row (sits below the search box)
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+  },
+  filterChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  filterChipTextActive: {
+    color: Colors.textInverse,
+  },
+
+  // "No rows" extra clear-filters action
+  noRowsClear: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+
+  // Filter modal (vendor / category)
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  modalSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    maxHeight: "75%",
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.textInverse,
+  },
+  optionSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  optionSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
+  optionList: { paddingHorizontal: 20 },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  optionRowActive: { backgroundColor: Colors.primaryMuted + "80" },
+  optionLabel: { fontSize: 15, fontWeight: "600", color: Colors.text },
+  optionLabelActive: { color: Colors.primary },
+  optionSubLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  optionCount: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginRight: 4,
+  },
+  noOptions: {
+    alignItems: "center",
+    padding: 32,
+    gap: 8,
+  },
+  noOptionsTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  noOptionsSub: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: "center",
+    lineHeight: 18,
+  },
 });
