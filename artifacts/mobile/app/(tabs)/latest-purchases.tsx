@@ -350,27 +350,38 @@ export default function LatestPurchasesScreen() {
         return;
       }
 
-      // Sort by GidNo (numeric-aware so "9" sorts before "10"), then SortNo.
-      // For SortNo we prefer a true numeric compare when both sides parse,
-      // and otherwise fall back to a numeric-aware string compare so mixed
-      // values (e.g. "12A" vs "12B") still order intuitively instead of
-      // collapsing to 0.
-      parsed.sort((a, b) => {
-        const aGid = String(a["GidNo"] ?? "");
-        const bGid = String(b["GidNo"] ?? "");
-        const cmp = aGid.localeCompare(bGid, undefined, { numeric: true, sensitivity: "base" });
-        if (cmp !== 0) return cmp;
-        const aSortRaw = a["SortNo"];
-        const bSortRaw = b["SortNo"];
-        const aSortNum = Number(aSortRaw);
-        const bSortNum = Number(bSortRaw);
-        const aIsNum = Number.isFinite(aSortNum) && String(aSortRaw).trim() !== "";
-        const bIsNum = Number.isFinite(bSortNum) && String(bSortRaw).trim() !== "";
-        if (aIsNum && bIsNum) return aSortNum - bSortNum;
-        return String(aSortRaw ?? "").localeCompare(String(bSortRaw ?? ""), undefined, {
+      // Sort priority (per user request):
+      //   1. DODate descending (newest delivery order first)
+      //   2. VendorCode ascending
+      //   3. Brand ascending
+      //   4. Category ascending
+      // DODate at this point is the normalized "DD/MM/YYYY" string from
+      // coerceDate. We turn it into a sortable YYYYMMDD integer; missing
+      // or unparseable dates sort to the end regardless of direction so
+      // they don't pollute the top.
+      const dateKey = (s: unknown): number => {
+        const m = String(s ?? "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (!m) return -1;
+        return parseInt(m[3] + m[2] + m[1], 10);
+      };
+      const textCmp = (a: unknown, b: unknown): number =>
+        String(a ?? "").localeCompare(String(b ?? ""), undefined, {
           numeric: true,
           sensitivity: "base",
         });
+      parsed.sort((a, b) => {
+        const aD = dateKey(a["DODate"]);
+        const bD = dateKey(b["DODate"]);
+        // Push missing/unparseable DODate rows to the bottom in both
+        // directions so they don't claim the top of a descending sort.
+        if (aD === -1 && bD !== -1) return 1;
+        if (bD === -1 && aD !== -1) return -1;
+        if (aD !== bD) return bD - aD; // descending
+        const v = textCmp(a["VendorCode"], b["VendorCode"]);
+        if (v !== 0) return v;
+        const br = textCmp(a["Brand"], b["Brand"]);
+        if (br !== 0) return br;
+        return textCmp(a["Category"], b["Category"]);
       });
 
       try {
