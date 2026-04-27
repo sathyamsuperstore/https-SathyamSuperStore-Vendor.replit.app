@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
-import { Supplier } from "@/context/AppContext";
+import { Supplier, isSupplierIncomplete } from "@/context/AppContext";
 
 interface Props {
   supplier: Supplier;
@@ -31,12 +31,18 @@ function getInitials(name: string): string {
 export function SupplierCard({ supplier, orderCount }: Props) {
   const router = useRouter();
   const color = CATEGORY_COLORS[supplier.category] ?? CATEGORY_COLORS.Other;
+  const incomplete = isSupplierIncomplete(supplier);
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, incomplete && styles.cardIncomplete]}
       onPress={() => router.push({ pathname: "/supplier/[id]", params: { id: supplier.id } })}
       activeOpacity={0.7}
+      accessibilityLabel={
+        incomplete
+          ? `${supplier.name}, needs contact details`
+          : supplier.name
+      }
     >
       <View style={[styles.avatar, { backgroundColor: color + "20" }]}>
         <Text style={[styles.initials, { color }]}>{getInitials(supplier.name)}</Text>
@@ -45,9 +51,11 @@ export function SupplierCard({ supplier, orderCount }: Props) {
         <Text style={styles.name}>{supplier.name}</Text>
         <Text style={styles.contact}>{supplier.contactName}</Text>
         <View style={styles.meta}>
-          <View style={[styles.categoryBadge, { backgroundColor: color + "15" }]}>
-            <Text style={[styles.categoryText, { color }]}>{supplier.category}</Text>
-          </View>
+          {supplier.category ? (
+            <View style={[styles.categoryBadge, { backgroundColor: color + "15" }]}>
+              <Text style={[styles.categoryText, { color }]}>{supplier.category}</Text>
+            </View>
+          ) : null}
           {supplier.vendorCode ? (
             <View style={styles.codeBadge}>
               <Feather name="tag" size={11} color={Colors.textMuted} />
@@ -58,6 +66,12 @@ export function SupplierCard({ supplier, orderCount }: Props) {
             <Feather name="file-text" size={11} color={Colors.textMuted} />
             <Text style={styles.ordersText}>{orderCount} order{orderCount !== 1 ? "s" : ""}</Text>
           </View>
+          {incomplete && (
+            <View style={styles.needsBadge}>
+              <Feather name="alert-circle" size={11} color={Colors.warning} />
+              <Text style={styles.needsBadgeText}>Needs details</Text>
+            </View>
+          )}
         </View>
       </View>
       <Feather name="chevron-right" size={18} color={Colors.textMuted} />
@@ -80,6 +94,13 @@ const styles = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
+  // Subtle warning-tinted left border on placeholder suppliers — visually
+  // groups the needs-details badge with the card edge so the card scans as
+  // "incomplete" at a glance without shouting.
+  cardIncomplete: {
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.warning,
+  },
   avatar: {
     width: 46,
     height: 46,
@@ -99,4 +120,14 @@ const styles = StyleSheet.create({
   codeText: { fontSize: 11, color: Colors.textMuted },
   ordersBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   ordersText: { fontSize: 11, color: Colors.textMuted },
+  needsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: Colors.warningLight,
+  },
+  needsBadgeText: { fontSize: 11, color: Colors.warning, fontWeight: "700" },
 });

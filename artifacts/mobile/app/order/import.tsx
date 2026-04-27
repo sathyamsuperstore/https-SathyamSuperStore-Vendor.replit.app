@@ -650,11 +650,20 @@ export default function ImportOrderScreen() {
       setVendorGroups(nextGroups);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const parts: string[] = [];
-      parts.push(`${added} new supplier${added === 1 ? "" : "s"} created`);
+      parts.push(`${added} placeholder supplier${added === 1 ? "" : "s"} created`);
       parts.push(`${linked} vendor${linked === 1 ? "" : "s"} linked`);
       if (stillUnmatched > 0) {
         parts.push(
           `${stillUnmatched} still need${stillUnmatched === 1 ? "s" : ""} a manual pick`
+        );
+      }
+      // Surface where to finish the placeholders. We only mention the
+      // Suppliers tab when at least one new placeholder was actually
+      // created — otherwise the hint is noise (the user already had
+      // matching suppliers and nothing new needs filling in).
+      if (added > 0) {
+        parts.push(
+          `Finish contact details from the Suppliers tab`
         );
       }
       // Inline banner instead of a blocking alert — the undo affordance only

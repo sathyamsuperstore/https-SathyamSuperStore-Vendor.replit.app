@@ -32,6 +32,17 @@ export interface Supplier {
   createdAt: string;
 }
 
+// A supplier is treated as "incomplete" (a placeholder that still needs
+// finishing) when both phone AND email are missing. The bulk
+// "Create suppliers from codes" import path produces exactly this shape,
+// so the suppliers list can flag and filter them without a schema change.
+// Single source of truth so the card badge and the list filter agree.
+export function isSupplierIncomplete(s: Supplier): boolean {
+  const phone = (s.phone ?? "").trim();
+  const email = (s.email ?? "").trim();
+  return phone === "" && email === "";
+}
+
 export interface OrderItem {
   id: string;
   name: string;
