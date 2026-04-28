@@ -157,6 +157,20 @@ function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
+// Friendly long-form date for the import preview's "File created: ..." line.
+// Accepts an ISO string and returns e.g. "12 Mar 2026". Returns "" on
+// invalid / missing input so callers can render unconditionally.
+function formatDateLong(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function ImportOrderScreen() {
   const { suppliers, addOrdersBatchAsync, addSuppliersBatch, deleteSuppliersBatch } = useApp();
   const router = useRouter();
@@ -167,6 +181,15 @@ export default function ImportOrderScreen() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [fileName, setFileName] = useState<string | null>(null);
+  // ISO date string captured from the source Excel workbook's own metadata
+  // (workbook.Props.CreatedDate). Falls back to the file's lastModified
+  // timestamp from the picker when the workbook has no Created prop, e.g.
+  // for plain CSV/TXT files. Used both to show "File created: ..." in the
+  // import preview and to stamp every order created from this import.
+  const [fileCreatedDate, setFileCreatedDate] = useState<string | null>(null);
+  const [fileCreatedSource, setFileCreatedSource] = useState<
+    "workbook" | "modified" | null
+  >(null);
   const [vendorGroups, setVendorGroups] = useState<VendorGroup[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   // Creating-orders flow (separate from parse `loading` so the lists stay
@@ -307,10 +330,27 @@ export default function ImportOrderScreen() {
 
       const asset = result.assets[0];
       setFileName(asset.name);
+      // Reset any previous file's create-date display before the new parse —
+      // workbook props (or the lastModified fallback) are filled in below.
+      setFileCreatedDate(null);
+      setFileCreatedSource(null);
+      // Picker-supplied "last modified" timestamp. Available on web (File API
+      // exposes File.lastModified), often missing on native. Used purely as a
+      // fallback when the workbook itself has no Created metadata.
+      const assetLastModified: number | undefined =
+        typeof (asset as any).lastModified === "number"
+          ? (asset as any).lastModified
+          : undefined;
       setProgress("Reading file...");
       await yieldToUI();
 
       let rows: Record<string, unknown>[];
+      // File creation date captured below — preferred from the workbook's
+      // own `Props.CreatedDate` (set by Excel/Google Sheets when first
+      // saved), falling back to the picker's `lastModified` so plain
+      // CSV/TXT imports still record *something* useful.
+      let parsedCreatedDate: Date | undefined;
+      let parsedCreatedSource: "workbook" | "modified" | undefined;
 
       if (isTxtMode) {
         // TXT / TSV / CSV path — read as UTF-8 string and parse with our own
@@ -368,6 +408,7 @@ export default function ImportOrderScreen() {
             cellStyles: false,
             cellNF: false,
             cellText: false,
+            bookProps: true,
           });
         } else {
           // Prefer the new File API which reads raw bytes directly — much faster
@@ -395,6 +436,7 @@ export default function ImportOrderScreen() {
               cellStyles: false,
               cellNF: false,
               cellText: false,
+              bookProps: true,
             });
             bytes = null;
           }
@@ -410,6 +452,7 @@ export default function ImportOrderScreen() {
               cellStyles: false,
               cellNF: false,
               cellText: false,
+              bookProps: true,
             });
           } else {
             // workbook already assigned in fallback path
@@ -425,6 +468,44 @@ export default function ImportOrderScreen() {
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+
+        // Pull the workbook's CreatedDate metadata (set by Excel / Google
+        // Sheets when the file was first saved). Some libraries return it
+        // as a string, others as a Date — normalize both. If absent or
+        // unparseable, fall back to the picker's lastModified.
+        const rawCreated = (workbook.Props as { CreatedDate?: unknown } | undefined)
+          ?.CreatedDate;
+        // xlsx-js-style returns CreatedDate as a Date-like object built in
+        // its own module realm, so `instanceof Date` is unreliable. We
+        // duck-type instead: anything that can survive `new Date(x)` and
+        // produce a valid timestamp is good enough for our display + export
+        // needs. Strings (some sources serialize the prop) flow through the
+        // same Date constructor cleanly.
+        if (rawCreated != null) {
+          let candidate: Date | undefined;
+          if (
+            typeof rawCreated === "object" &&
+            typeof (rawCreated as { getTime?: () => number }).getTime === "function"
+          ) {
+            const t = (rawCreated as { getTime: () => number }).getTime();
+            if (!isNaN(t)) candidate = new Date(t);
+          } else if (typeof rawCreated === "string" || typeof rawCreated === "number") {
+            const d = new Date(rawCreated);
+            if (!isNaN(d.getTime())) candidate = d;
+          }
+          if (candidate) {
+            parsedCreatedDate = candidate;
+            parsedCreatedSource = "workbook";
+          }
+        }
+      }
+
+      if (!parsedCreatedDate && typeof assetLastModified === "number") {
+        const d = new Date(assetLastModified);
+        if (!isNaN(d.getTime())) {
+          parsedCreatedDate = d;
+          parsedCreatedSource = "modified";
+        }
       }
 
       if (rows.length === 0) {
@@ -535,6 +616,13 @@ export default function ImportOrderScreen() {
       setProgress(`Preparing display for ${groups.length} vendor${groups.length > 1 ? "s" : ""}...`);
       await yieldToUI();
       setVendorGroups(groups);
+      // Commit the captured file create date alongside the vendor groups so
+      // the import preview can show "File created: ..." and so each order
+      // built from this file inherits the same value.
+      if (parsedCreatedDate) {
+        setFileCreatedDate(parsedCreatedDate.toISOString());
+        setFileCreatedSource(parsedCreatedSource ?? null);
+      }
       // Yield so the initial render commits before we clear the progress text.
       await yieldToUI();
       setProgress("");
@@ -836,6 +924,9 @@ export default function ImportOrderScreen() {
           expectedDelivery: addDays(7),
           syncDate: group.syncDate,
           beat: group.beat,
+          // Stamp every order built from this import with the source file's
+          // create date so it shows on the order detail screen and in exports.
+          fileCreatedDate: fileCreatedDate ?? undefined,
         };
       }
 
@@ -1000,6 +1091,19 @@ export default function ImportOrderScreen() {
                       <Feather name="file-text" size={28} color={Colors.accent} />
                     </View>
                     <Text style={styles.fileName}>{fileName}</Text>
+                    {fileCreatedDate ? (
+                      <View style={styles.fileMetaRow}>
+                        <Feather
+                          name="calendar"
+                          size={12}
+                          color={Colors.textSecondary}
+                        />
+                        <Text style={styles.fileMetaText}>
+                          {fileCreatedSource === "modified" ? "Last modified" : "File created"}
+                          : {formatDateLong(fileCreatedDate)}
+                        </Text>
+                      </View>
+                    ) : null}
                     <Text style={styles.fileHint}>Tap to pick a different file</Text>
                   </>
                 ) : (
@@ -1742,6 +1846,17 @@ const styles = StyleSheet.create({
   dropTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
   dropHint: { fontSize: 13, color: Colors.textMuted },
   fileName: { fontSize: 15, fontWeight: "700", color: Colors.text, textAlign: "center" },
+  fileMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  fileMetaText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
   fileHint: { fontSize: 12, color: Colors.textMuted },
   progressText: { fontSize: 13, fontWeight: "600", color: Colors.primary, marginTop: 8, textAlign: "center" },
   columnsList: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6, marginTop: 8 },

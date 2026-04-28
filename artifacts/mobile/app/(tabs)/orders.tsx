@@ -189,6 +189,28 @@ export default function OrdersScreen() {
       }
       const uniqueSuppliers = [...new Set(filtered.map((o) => o.supplierName))].join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
+      // Collect every distinct source-file create date across the exported
+      // orders. With the bulk export merging multiple orders into one sheet,
+      // there could be 0, 1, or many — show "various" if more than one.
+      const fileCreatedDates = [
+        ...new Set(
+          filtered
+            .map((o) => o.fileCreatedDate)
+            .filter((d): d is string => !!d)
+            .map((d) => new Date(d).toLocaleDateString("en-IN"))
+        ),
+      ];
+      const fileCreatedFooter: (string | number)[][] =
+        fileCreatedDates.length === 0
+          ? []
+          : fileCreatedDates.length === 1
+            ? [[`File Created Date : ${fileCreatedDates[0]}`, "", "", "", "", "", "", "", ""]]
+            : [
+                [
+                  `File Created Dates : ${fileCreatedDates.join(", ")}`,
+                  "", "", "", "", "", "", "", "",
+                ],
+              ];
       const sheetData: (string | number)[][] = [
         ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", "", ""],
         ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", "", ""],
@@ -204,6 +226,7 @@ export default function OrdersScreen() {
         ["", "", "", "", "", "", "", "", ""],
         [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", "", ""],
         [`Order Date : ${exportDate}`,     "", "", "", "", "", "", "", ""],
+        ...fileCreatedFooter,
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [

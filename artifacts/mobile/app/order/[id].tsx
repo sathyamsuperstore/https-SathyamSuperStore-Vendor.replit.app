@@ -257,6 +257,16 @@ export default function OrderDetailScreen() {
         ];
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
+      // Per-order sheet uses 8 data columns (see colHeader / !cols below).
+      // Pad the footer row to match so the grid stays aligned in Excel.
+      const fileCreatedRow: (string | number)[][] = order.fileCreatedDate
+        ? [
+            [
+              `File Created Date : ${new Date(order.fileCreatedDate).toLocaleDateString("en-IN")}`,
+              "", "", "", "", "", "", "",
+            ],
+          ]
+        : [];
       const sheetData: (string | number)[][] = [
         ["Sathyam Super Store",                                              "", "", "", "", "", "ORDER FORM"],
         ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", "", ""],
@@ -272,6 +282,7 @@ export default function OrderDetailScreen() {
         ["", "", "", "", "", "", ""],
         [`Supplier : ${order.supplierName}`, "", "", "", "", "", ""],
         [`Order Date : ${orderDate}`,        "", "", "", "", "", ""],
+        ...fileCreatedRow,
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
@@ -600,6 +611,12 @@ export default function OrderDetailScreen() {
               <View style={styles.infoItem}>
                 <Text style={styles.infoLabel}>Sync Date</Text>
                 <Text style={styles.infoValue}>{formatDate(order.syncDate)}</Text>
+              </View>
+            ) : null}
+            {order.fileCreatedDate ? (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>File Created</Text>
+                <Text style={styles.infoValue}>{formatDate(order.fileCreatedDate)}</Text>
               </View>
             ) : null}
             {order.beat ? (

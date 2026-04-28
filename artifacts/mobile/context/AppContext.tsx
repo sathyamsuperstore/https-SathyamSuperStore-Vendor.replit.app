@@ -114,6 +114,11 @@ export interface Order {
   expectedDelivery: string;
   syncDate?: string;
   beat?: string;
+  // ISO date the source Excel file was created (read from the workbook's
+  // own metadata at import time; falls back to the file's lastModified
+  // if the workbook has no Created prop). Optional: orders created
+  // manually or imported from a file without props won't have it.
+  fileCreatedDate?: string;
   createdAt: string;
   updatedAt: string;
 }
