@@ -41,7 +41,7 @@ function formatCurrency(amount: number): string {
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { orders, updateOrderStatus, deleteOrder, updateOrder } = useApp();
+  const { orders, updateOrderStatus, deleteOrder, updateOrder, hydrated } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
@@ -88,6 +88,29 @@ export default function OrderDetailScreen() {
     [visibleItems]
   );
 
+  // Must run BEFORE the early returns below — otherwise the hook count would
+  // change between renders (undefined → defined `order` after AsyncStorage
+  // hydration on a browser refresh), which trips React's Rules of Hooks and
+  // bubbles up to the ErrorBoundary as "Something went wrong."
+  const nextStatus = useMemo(() => {
+    if (!order) return null;
+    if (order.status === "pending") return STATUS_FLOW[0];
+    if (order.status === "confirmed") return STATUS_FLOW[1];
+    if (order.status === "shipped") return STATUS_FLOW[2];
+    return null;
+  }, [order]);
+
+  // While AsyncStorage is still hydrating on a fresh page load, `orders` is
+  // empty even for valid ids — show a spinner instead of a misleading
+  // "Order not found" flash.
+  if (!hydrated) {
+    return (
+      <View style={styles.notFound}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
   if (!order) {
     return (
       <View style={styles.notFound}>
@@ -95,13 +118,6 @@ export default function OrderDetailScreen() {
       </View>
     );
   }
-
-  const nextStatus = useMemo(() => {
-    if (order.status === "pending") return STATUS_FLOW[0];
-    if (order.status === "confirmed") return STATUS_FLOW[1];
-    if (order.status === "shipped") return STATUS_FLOW[2];
-    return null;
-  }, [order.status]);
 
   async function handleStatusUpdate() {
     if (!nextStatus || updatingStatus) return;

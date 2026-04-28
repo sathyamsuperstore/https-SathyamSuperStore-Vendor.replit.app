@@ -110,6 +110,11 @@ interface AppContextType {
   latestPurchases: LatestPurchaseEntry[];
   saveLatestPurchasesBatch: (entries: LatestPurchaseEntry[]) => Promise<void>;
   clearLatestPurchases: () => Promise<void>;
+  // True once the initial AsyncStorage hydration has finished (success or
+  // failure). Screens that key off `orders`/`suppliers` use this to avoid
+  // flashing an empty/"not found" state on a browser refresh while the
+  // first load is still in flight.
+  hydrated: boolean;
 }
 
 export interface MrpEntry {
@@ -204,6 +209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -241,6 +247,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setSuppliers([]);
       setOrders([]);
+    } finally {
+      // Mark hydration complete in both success and failure paths so screens
+      // never get stuck in a "still loading" state if AsyncStorage throws.
+      setHydrated(true);
     }
   }
 
@@ -547,6 +557,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         latestPurchases,
         saveLatestPurchasesBatch,
         clearLatestPurchases,
+        hydrated,
       }}
     >
       {children}
