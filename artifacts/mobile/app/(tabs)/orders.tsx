@@ -41,6 +41,9 @@ export default function OrdersScreen() {
   const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   const statusFiltered = useMemo(() => {
@@ -58,17 +61,32 @@ export default function OrdersScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [statusFiltered]);
 
+  const allCategories = useMemo(() => {
+    const set = new Set<string>();
+    statusFiltered.forEach((o) =>
+      o.items.forEach((item) => {
+        if (item.category) set.add(item.category);
+      })
+    );
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [statusFiltered]);
+
   const filtered = useMemo(() => {
-    const base =
-      activeBrands.length === 0
-        ? statusFiltered
-        : statusFiltered.filter((o) =>
-            o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
-          );
+    let base = statusFiltered;
+    if (activeBrands.length > 0) {
+      base = base.filter((o) =>
+        o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
+      );
+    }
+    if (activeCategories.length > 0) {
+      base = base.filter((o) =>
+        o.items.some((item) => item.category != null && activeCategories.includes(item.category))
+      );
+    }
     return [...base].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeBrands]);
+  }, [statusFiltered, activeBrands, activeCategories]);
 
   function toggleBrand(brand: string) {
     setActiveBrands((prev) =>
@@ -82,6 +100,18 @@ export default function OrdersScreen() {
     ).length;
   }
 
+  function toggleCategory(cat: string) {
+    setActiveCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  }
+
+  function categoryOrderCount(cat: string): number {
+    return statusFiltered.filter((o) =>
+      o.items.some((item) => item.category === cat)
+    ).length;
+  }
+
   async function handleExport() {
     if (filtered.length === 0) {
       Alert.alert("Nothing to Export", "No orders match the current filters.");
@@ -89,17 +119,22 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes"];
+      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
-        const exportItems = activeBrands.length > 0
-          ? order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand))
-          : order.items;
+        let exportItems = order.items;
+        if (activeBrands.length > 0) {
+          exportItems = exportItems.filter((it) => it.brand != null && activeBrands.includes(it.brand));
+        }
+        if (activeCategories.length > 0) {
+          exportItems = exportItems.filter((it) => it.category != null && activeCategories.includes(it.category));
+        }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           dataRows.push([
             desc,
             item.brand ?? "",
+            item.category ?? "",
             item.unit,
             item.unitPrice,
             item.stock ?? "",
@@ -112,24 +147,24 @@ export default function OrdersScreen() {
       const uniqueSuppliers = [...new Set(filtered.map((o) => o.supplierName))].join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", ""],
-        ["Accounts: 97868-64868",                                                "", "",            "", "", "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", ""],
-        ["", "", "", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", "", ""],
+        ["Accounts: 97868-64868",                                                "", "",            "", "", "", "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", "", "", ""],
-        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", ""],
+        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 32 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 },
+        { wch: 32 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 },
       ];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;
@@ -189,6 +224,7 @@ export default function OrdersScreen() {
       await clearAllOrders();
       setActiveFilter("all");
       setActiveBrands([]);
+      setActiveCategories([]);
     } catch {
       showStorageErrorAlert();
     }
@@ -226,6 +262,12 @@ export default function OrdersScreen() {
     : activeBrands.length === 1
     ? "1 Brand"
     : `${activeBrands.length} Brands`;
+  const categoryActive = activeCategories.length > 0;
+  const categoryBarLabel = activeCategories.length === 0
+    ? "All Categories"
+    : activeCategories.length === 1
+    ? "1 Category"
+    : `${activeCategories.length} Categories`;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -299,7 +341,7 @@ export default function OrdersScreen() {
             <TouchableOpacity
               key={f.key}
               style={[styles.filter, isActive && styles.filterActive]}
-              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); }}
+              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); setActiveCategories([]); }}
             >
               <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
                 {f.label}
@@ -315,34 +357,63 @@ export default function OrdersScreen() {
 
       </ScrollView>
 
-      {/* Brand filter row — always visible below status pills */}
-      <TouchableOpacity
-        style={[styles.brandBar, brandActive && styles.brandBarActive]}
-        onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="tag"
-          size={14}
-          color={brandActive ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text
-          style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
-          numberOfLines={1}
+      {/* Brand + Category filter row — always visible below status pills */}
+      <View style={styles.filterBarsRow}>
+        <TouchableOpacity
+          style={[styles.brandBar, styles.filterBarHalf, brandActive && styles.brandBarActive]}
+          onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
+          activeOpacity={0.75}
         >
-          {brandBarLabel}
-        </Text>
-        {brandActive ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          <Feather
+            name="tag"
+            size={14}
+            color={brandActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
+            numberOfLines={1}
           >
-            <Feather name="x-circle" size={15} color={Colors.textInverse} />
-          </TouchableOpacity>
-        ) : (
-          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
-        )}
-      </TouchableOpacity>
+            {brandBarLabel}
+          </Text>
+          {brandActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.brandBar, styles.filterBarHalf, categoryActive && styles.brandBarActive]}
+          onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="folder"
+            size={14}
+            color={categoryActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]}
+            numberOfLines={1}
+          >
+            {categoryBarLabel}
+          </Text>
+          {categoryActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+      </View>
 
       <FlatList
         data={filtered}
@@ -361,8 +432,12 @@ export default function OrdersScreen() {
             icon="file-text"
             title="No orders found"
             subtitle={
-              brandActive
+              brandActive && categoryActive
+                ? "No orders match the selected brands and categories"
+                : brandActive
                 ? `No orders match the selected brand${activeBrands.length !== 1 ? "s" : ""}`
+                : categoryActive
+                ? `No orders match the selected categor${activeCategories.length !== 1 ? "ies" : "y"}`
                 : activeFilter === "all"
                 ? "Tap the + button to create your first order"
                 : `No ${activeFilter} orders at the moment`
@@ -487,6 +562,122 @@ export default function OrdersScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Category filter modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowCategoryModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Category</Text>
+            {categoryActive && (
+              <TouchableOpacity onPress={() => setActiveCategories([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allCategories.length > 0 && (
+            <View style={styles.brandSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.brandSearchInput}
+                value={categorySearch}
+                onChangeText={setCategorySearch}
+                placeholder="Search categories…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {categorySearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setCategorySearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allCategories.length === 0 ? (
+            <View style={styles.noBrands}>
+              <Feather name="folder" size={32} color={Colors.textMuted} />
+              <Text style={styles.noBrandsTitle}>No Categories Yet</Text>
+              <Text style={styles.noBrandsSub}>
+                Import orders with a Category column to filter by category.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const q = categorySearch.trim().toLowerCase();
+                const visibleCategories = q ? allCategories.filter((c) => c.toLowerCase().includes(q)) : allCategories;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[styles.brandRow, activeCategories.length === 0 && styles.brandRowActive]}
+                        onPress={() => setActiveCategories([])}
+                      >
+                        <Text style={[styles.brandName, activeCategories.length === 0 && styles.brandNameActive]}>
+                          All Categories
+                        </Text>
+                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        {activeCategories.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    )}
+                    {visibleCategories.length === 0 ? (
+                      <View style={styles.noBrands}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noBrandsTitle}>No match</Text>
+                        <Text style={styles.noBrandsSub}>No categories found for "{categorySearch}"</Text>
+                      </View>
+                    ) : (
+                      visibleCategories.map((cat) => {
+                        const isSelected = activeCategories.includes(cat);
+                        const count = categoryOrderCount(cat);
+                        return (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleCategory(cat)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>
+                              {cat}
+                            </Text>
+                            <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowCategoryModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeCategories.length === 0 ? "Close" : `Apply (${activeCategories.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -604,6 +795,17 @@ const styles = StyleSheet.create({
   filterCountActive: { backgroundColor: "rgba(255,255,255,0.25)" },
   filterCountText: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
   filterCountTextActive: { color: Colors.textInverse },
+  filterBarsRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  filterBarHalf: {
+    flex: 1,
+    marginHorizontal: 0,
+    marginBottom: 0,
+  },
   brandBar: {
     flexDirection: "row",
     alignItems: "center",

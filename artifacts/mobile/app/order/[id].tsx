@@ -45,6 +45,7 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
@@ -72,16 +73,26 @@ export default function OrderDetailScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [order]);
 
+  const itemCategories = useMemo(() => {
+    if (!order) return [];
+    const set = new Set<string>();
+    order.items.forEach((item) => { if (item.category) set.add(item.category); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [order]);
+
   const visibleItems = useMemo(() => {
     if (!order) return [];
-    const base = selectedBrand === "all" ? order.items : order.items.filter((item) => item.brand === selectedBrand);
+    let base = selectedBrand === "all" ? order.items : order.items.filter((item) => item.brand === selectedBrand);
+    if (selectedCategory !== "all") {
+      base = base.filter((item) => item.category === selectedCategory);
+    }
     return [...base].sort((a, b) => {
       if (a.sortNo != null && b.sortNo != null) return a.sortNo - b.sortNo;
       if (a.sortNo != null) return -1;
       if (b.sortNo != null) return 1;
       return 0;
     });
-  }, [order, selectedBrand]);
+  }, [order, selectedBrand, selectedCategory]);
 
   const visibleTotal = useMemo(
     () => visibleItems.reduce((s, item) => s + item.quantity * item.unitPrice, 0),
@@ -158,12 +169,13 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty"];
+      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty"];
       const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
         return [
           desc,
           item.brand ?? "",
+          item.category ?? "",
           item.unit,
           item.unitPrice,
           item.stock ?? "",
@@ -173,24 +185,24 @@ export default function OrderDetailScreen() {
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                              "", "", "", "", "ORDER FORM"],
-        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", ""],
-        ["Coimbatore-641029",                                                "", "", "", "", ""],
-        ["98431-44868",                                                      "", "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                            "", "", "", "", ""],
-        ["Accounts: 97868-64868",                                            "", "", "", "", ""],
-        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", ""],
-        ["", "", "", "", "", ""],
+        ["Sathyam Super Store",                                              "", "", "", "", "", "ORDER FORM"],
+        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", "", ""],
+        ["Coimbatore-641029",                                                "", "", "", "", "", ""],
+        ["98431-44868",                                                      "", "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                            "", "", "", "", "", ""],
+        ["Accounts: 97868-64868",                                            "", "", "", "", "", ""],
+        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", "", ""],
+        ["", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", ""],
-        [`Supplier : ${order.supplierName}`, "", "", "", "", ""],
-        [`Order Date : ${orderDate}`,        "", "", "", "", ""],
+        ["", "", "", "", "", "", ""],
+        [`Supplier : ${order.supplierName}`, "", "", "", "", "", ""],
+        [`Order Date : ${orderDate}`,        "", "", "", "", "", ""],
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 45 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 45 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       ];
       // wrapText on Row 8 (delivery notice)
       if (ws["A8"]) {
@@ -210,7 +222,7 @@ export default function OrderDetailScreen() {
       };
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataStartRow + i;
-        for (const col of ["A", "B", "C", "D", "E", "F", "G"]) {
+        for (const col of ["A", "B", "C", "D", "E", "F", "G", "H"]) {
           const cellRef = `${col}${row}`;
           if (ws[cellRef]) {
             ws[cellRef].s = col === "A"
@@ -510,6 +522,44 @@ export default function OrderDetailScreen() {
             </ScrollView>
           )}
 
+          {/* Category filter bar — shown only when order has categorized items */}
+          {itemCategories.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.brandPills}
+              style={styles.brandPillsScroll}
+            >
+              <TouchableOpacity
+                style={[styles.brandPill, selectedCategory === "all" && styles.brandPillActive]}
+                onPress={() => setSelectedCategory("all")}
+              >
+                <Text style={[styles.brandPillText, selectedCategory === "all" && styles.brandPillTextActive]}>
+                  All
+                </Text>
+              </TouchableOpacity>
+              {itemCategories.map((cat) => {
+                const isActive = selectedCategory === cat;
+                const count = order.items.filter((i) => i.category === cat).length;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.brandPill, isActive && styles.brandPillActive]}
+                    onPress={() => setSelectedCategory(isActive ? "all" : cat)}
+                  >
+                    <Feather name="folder" size={11} color={isActive ? Colors.textInverse : Colors.textMuted} />
+                    <Text style={[styles.brandPillText, isActive && styles.brandPillTextActive]}>
+                      {cat}
+                    </Text>
+                    <Text style={[styles.brandPillCount, isActive && styles.brandPillCountActive]}>
+                      {count}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
           <View style={styles.itemsCard}>
             {visibleItems.map((item, idx) => (
               <View key={item.id}>
@@ -522,6 +572,9 @@ export default function OrderDetailScreen() {
                     <Text style={styles.itemName}>{item.name}</Text>
                     {item.brand ? (
                       <Text style={styles.itemBrand}>{item.brand}</Text>
+                    ) : null}
+                    {item.category ? (
+                      <Text style={styles.itemCategory}>{item.category}</Text>
                     ) : null}
                     <Text style={styles.itemMeta}>
                       {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
@@ -702,6 +755,7 @@ const styles = StyleSheet.create({
   itemSortNo: { fontSize: 10, fontWeight: "700", color: Colors.textMuted, marginBottom: 1 },
   itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
   itemBrand: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginBottom: 3 },
+  itemCategory: { fontSize: 11, color: Colors.textSecondary, fontWeight: "500", marginBottom: 3 },
   itemMeta: { fontSize: 12, color: Colors.textMuted },
   newStockRow: { flexDirection: "row", alignItems: "center", marginTop: 6, gap: 8 },
   newStockLabel: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },

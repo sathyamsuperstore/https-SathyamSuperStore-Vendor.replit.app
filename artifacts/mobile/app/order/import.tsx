@@ -31,6 +31,7 @@ interface ParsedRow {
   "Order Qty": number;
   SyncDate: string;
   Brand: string;
+  Category: string;
   Beat: string;
   Stock: number;
   Min: number;
@@ -446,6 +447,14 @@ export default function ImportOrderScreen() {
       setProgress(`Processing ${rows.length} rows...`);
       await yieldToUI();
 
+      // Resolve the actual header name in the file for "Category" once,
+      // case-insensitively. Keeps the column optional (missing → undefined)
+      // so files without a Category column still import unchanged.
+      const firstRowKeys = Object.keys(firstRow);
+      const categoryKey = firstRowKeys.find(
+        (k) => k.trim().toLowerCase() === "category"
+      );
+
       // Process rows in chunks so we yield to the UI thread on very large files.
       const CHUNK = 500;
       const parsed: ParsedRow[] = new Array(rows.length);
@@ -460,6 +469,7 @@ export default function ImportOrderScreen() {
           "Order Qty": parseFloat(String(row["Order Qty"] ?? "0")) || 0,
           SyncDate: parseExcelDate(row["SyncDate"]),
           Brand: String(row["Brand"] ?? "").trim(),
+          Category: categoryKey ? String(row[categoryKey] ?? "").trim() : "",
           Beat: String(row["Beat"] ?? "").trim(),
           Stock: parseFloat(String(row["Stock"] ?? "0")) || 0,
           Min: parseFloat(String(row["Min"] ?? "")) || 0,
@@ -808,6 +818,7 @@ export default function ImportOrderScreen() {
           id: generateItemId(),
           name: `${row["Item No"] ? row["Item No"] + " - " : ""}${row["Item Description"]}`,
           brand: row["Brand"] || undefined,
+          category: row["Category"] || undefined,
           quantity: row["Order Qty"] || 1,
           unit: row["UOM"] || "pcs",
           unitPrice: row["MRP"] || 0,
