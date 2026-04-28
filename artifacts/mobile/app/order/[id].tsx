@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -48,9 +48,20 @@ export default function OrderDetailScreen() {
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
+  const [stockSaveStatus, setStockSaveStatus] = useState<Record<string, "saving" | "saved" | "error">>({});
+  const [noteSaveStatus, setNoteSaveStatus] = useState<Record<string, "saving" | "saved" | "error">>({});
+  const stockSavedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const noteSavedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      Object.values(stockSavedTimers.current).forEach(clearTimeout);
+      Object.values(noteSavedTimers.current).forEach(clearTimeout);
+    };
+  }, []);
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -248,13 +259,30 @@ export default function OrderDetailScreen() {
     if (!order) return;
     const parsed = parseFloat(value);
     const qty = isNaN(parsed) || value.trim() === "" ? undefined : parsed;
+    const current = order.items.find((it) => it.id === itemId);
+    if (current && current.newStockQty === qty) return;
+    if (stockSavedTimers.current[itemId]) {
+      clearTimeout(stockSavedTimers.current[itemId]);
+      delete stockSavedTimers.current[itemId];
+    }
+    setStockSaveStatus((prev) => ({ ...prev, [itemId]: "saving" }));
     try {
       await updateOrder(order.id, {
         items: order.items.map((it) =>
           it.id === itemId ? { ...it, newStockQty: qty } : it
         ),
       });
+      setStockSaveStatus((prev) => ({ ...prev, [itemId]: "saved" }));
+      stockSavedTimers.current[itemId] = setTimeout(() => {
+        setStockSaveStatus((prev) => {
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
+        delete stockSavedTimers.current[itemId];
+      }, 1500);
     } catch {
+      setStockSaveStatus((prev) => ({ ...prev, [itemId]: "error" }));
       showStorageErrorAlert();
     }
   }
@@ -263,15 +291,56 @@ export default function OrderDetailScreen() {
     if (!order) return;
     const trimmed = value.trim();
     const note = trimmed === "" ? undefined : trimmed;
+    const current = order.items.find((it) => it.id === itemId);
+    if (current && (current.notes ?? undefined) === note) return;
+    if (noteSavedTimers.current[itemId]) {
+      clearTimeout(noteSavedTimers.current[itemId]);
+      delete noteSavedTimers.current[itemId];
+    }
+    setNoteSaveStatus((prev) => ({ ...prev, [itemId]: "saving" }));
     try {
       await updateOrder(order.id, {
         items: order.items.map((it) =>
           it.id === itemId ? { ...it, notes: note } : it
         ),
       });
+      setNoteSaveStatus((prev) => ({ ...prev, [itemId]: "saved" }));
+      noteSavedTimers.current[itemId] = setTimeout(() => {
+        setNoteSaveStatus((prev) => {
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
+        delete noteSavedTimers.current[itemId];
+      }, 1500);
     } catch {
+      setNoteSaveStatus((prev) => ({ ...prev, [itemId]: "error" }));
       showStorageErrorAlert();
     }
+  }
+
+  function renderSaveIndicator(status: "saving" | "saved" | "error" | undefined) {
+    if (!status) return <View style={styles.saveIndicator} />;
+    if (status === "saving") {
+      return (
+        <View style={styles.saveIndicator}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+        </View>
+      );
+    }
+    if (status === "saved") {
+      return (
+        <View style={styles.saveIndicator}>
+          <Feather name="check" size={14} color={Colors.success} />
+          <Text style={styles.savedText}>Saved</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.saveIndicator}>
+        <Feather name="alert-circle" size={14} color={Colors.danger} />
+      </View>
+    );
   }
 
   function handleDelete() {
@@ -460,6 +529,7 @@ export default function OrderDetailScreen() {
                         keyboardType="decimal-pad"
                         selectTextOnFocus
                       />
+                      {renderSaveIndicator(stockSaveStatus[item.id])}
                     </View>
                     <View style={styles.notesRow}>
                       <Text style={styles.newStockLabel}>Notes:</Text>
@@ -477,6 +547,7 @@ export default function OrderDetailScreen() {
                         placeholderTextColor={Colors.textMuted}
                         multiline
                       />
+                      {renderSaveIndicator(noteSaveStatus[item.id])}
                     </View>
                   </View>
                   <Text style={styles.itemTotal}>
@@ -642,6 +713,15 @@ const styles = StyleSheet.create({
     minHeight: 32,
     backgroundColor: Colors.surface,
   },
+  saveIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    minWidth: 24,
+    minHeight: 18,
+    justifyContent: "flex-start",
+  },
+  savedText: { fontSize: 11, fontWeight: "600", color: Colors.success },
   itemTotal: { fontSize: 14, fontWeight: "700", color: Colors.text },
   itemDivider: { height: 1, backgroundColor: Colors.border },
   totalLabel: { fontSize: 15, fontWeight: "700", color: Colors.text },
