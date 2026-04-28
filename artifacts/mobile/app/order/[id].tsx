@@ -17,9 +17,16 @@ import * as Haptics from "expo-haptics";
 import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
+
+// Persist the user's flat-vs-grouped preference globally (not per-order),
+// so power users who prefer the flat list don't have to flip the toggle on
+// every order they open. The auto-flatten behavior when a single category
+// is selected is a derived UI state and intentionally NOT persisted here.
+const VIEW_MODE_KEY = "@orderItemsViewMode";
 
 const STATUS_FLOW: { status: OrderStatus; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { status: "confirmed", label: "Confirm Order", icon: "check" },
@@ -47,6 +54,10 @@ export default function OrderDetailScreen() {
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("grouped");
+  // Tracks whether we've finished checking AsyncStorage for a saved view-mode
+  // preference. Until this is true the screen renders a spinner so we don't
+  // briefly flash the default ("grouped") for users who prefer "flat".
+  const [viewModeHydrated, setViewModeHydrated] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
@@ -64,6 +75,37 @@ export default function OrderDetailScreen() {
       Object.values(noteSavedTimers.current).forEach(clearTimeout);
     };
   }, []);
+
+  // Load the persisted view-mode preference once on mount. We accept only
+  // the two valid values; anything else (missing, corrupted, future schema)
+  // falls back to the "grouped" default. Read failures are non-fatal —
+  // we still mark hydration complete so the UI doesn't get stuck on the
+  // spinner.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(VIEW_MODE_KEY)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved === "flat" || saved === "grouped") setViewMode(saved);
+        setViewModeHydrated(true);
+      })
+      .catch(() => {
+        if (!cancelled) setViewModeHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist user toggles. Skip the initial mount tick (before hydration
+  // completes) so we never overwrite a stored preference with the default.
+  useEffect(() => {
+    if (!viewModeHydrated) return;
+    AsyncStorage.setItem(VIEW_MODE_KEY, viewMode).catch(() => {
+      // Silent: a failed preference write is non-critical and the user
+      // didn't explicitly initiate a save action that warrants an alert.
+    });
+  }, [viewMode, viewModeHydrated]);
 
   const order = useMemo(() => orders.find((o) => o.id === id), [orders, id]);
 
@@ -142,8 +184,10 @@ export default function OrderDetailScreen() {
 
   // While AsyncStorage is still hydrating on a fresh page load, `orders` is
   // empty even for valid ids — show a spinner instead of a misleading
-  // "Order not found" flash.
-  if (!hydrated) {
+  // "Order not found" flash. Also wait for the saved view-mode preference
+  // to load so we don't briefly render the "grouped" default for users
+  // who prefer "flat".
+  if (!hydrated || !viewModeHydrated) {
     return (
       <View style={styles.notFound}>
         <ActivityIndicator size="large" color={Colors.primary} />
