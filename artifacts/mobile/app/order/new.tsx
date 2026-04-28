@@ -15,7 +15,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderItem, showStorageErrorAlert } from "@/context/AppContext";
+import {
+  useApp,
+  OrderItem,
+  showStorageErrorAlert,
+  collapseToCanonical,
+  normalizeFilterKey,
+} from "@/context/AppContext";
 
 function generateItemId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -48,26 +54,20 @@ export default function NewOrderScreen() {
     field: "brand" | "category";
   } | null>(null);
 
+  // Collapse near-duplicates ("Acme", "acme", "Acme ") into a single suggestion
+  // so users don't accidentally introduce yet another spelling variant.
   const allBrands = useMemo(() => {
-    const set = new Set<string>();
-    orders.forEach((o) =>
-      o.items.forEach((it) => {
-        const b = (it.brand ?? "").trim();
-        if (b) set.add(b);
-      })
-    );
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    const raws: string[] = [];
+    orders.forEach((o) => o.items.forEach((it) => raws.push(it.brand ?? "")));
+    return collapseToCanonical(raws);
   }, [orders]);
 
   const allCategories = useMemo(() => {
-    const set = new Set<string>();
+    const raws: string[] = [];
     orders.forEach((o) =>
-      o.items.forEach((it) => {
-        const c = (it.category ?? "").trim();
-        if (c) set.add(c);
-      })
+      o.items.forEach((it) => raws.push(it.category ?? ""))
     );
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return collapseToCanonical(raws);
   }, [orders]);
 
   const selectedSupplier = suppliers.find((s) => s.id === supplierId);
@@ -101,11 +101,14 @@ export default function NewOrderScreen() {
   }
 
   function getSuggestions(pool: string[], typed: string): string[] {
-    const q = typed.trim().toLowerCase();
+    const q = normalizeFilterKey(typed);
     if (!q) return pool.slice(0, MAX_SUGGESTIONS);
     const matches = pool.filter((v) => v.toLowerCase().includes(q));
-    // If the typed text exactly matches an existing value, no need to suggest it.
-    return matches.filter((v) => v.toLowerCase() !== q).slice(0, MAX_SUGGESTIONS);
+    // If the typed text exactly matches an existing value (case- and
+    // whitespace-insensitive), no need to suggest it.
+    return matches
+      .filter((v) => normalizeFilterKey(v) !== q)
+      .slice(0, MAX_SUGGESTIONS);
   }
 
   function validate(): boolean {
@@ -136,14 +139,29 @@ export default function NewOrderScreen() {
     try {
       // Normalise brand/category: trim whitespace and drop empty strings so the
       // Orders tab filters (which gate on truthy values) treat manual entries
-      // the same way as imported ones.
+      // the same way as imported ones. If the typed value matches an existing
+      // brand/category (ignoring case and whitespace), snap to that canonical
+      // spelling so we don't seed a new near-duplicate.
+      const brandLookup = new Map(
+        allBrands.map((b) => [normalizeFilterKey(b), b])
+      );
+      const categoryLookup = new Map(
+        allCategories.map((c) => [normalizeFilterKey(c), c])
+      );
       const cleanedItems: OrderItem[] = items.map((it) => {
-        const brand = (it.brand ?? "").trim();
-        const category = (it.category ?? "").trim();
+        const brandTrimmed = (it.brand ?? "").trim();
+        const categoryTrimmed = (it.category ?? "").trim();
+        const brand = brandTrimmed
+          ? brandLookup.get(normalizeFilterKey(brandTrimmed)) ?? brandTrimmed
+          : undefined;
+        const category = categoryTrimmed
+          ? categoryLookup.get(normalizeFilterKey(categoryTrimmed)) ??
+            categoryTrimmed
+          : undefined;
         return {
           ...it,
-          brand: brand ? brand : undefined,
-          category: category ? category : undefined,
+          brand,
+          category,
         };
       });
       await addOrder({

@@ -20,7 +20,13 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
+import {
+  useApp,
+  OrderStatus,
+  showStorageErrorAlert,
+  collapseToCanonical,
+  normalizeFilterKey,
+} from "@/context/AppContext";
 import { OrderCard } from "@/components/OrderCard";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -51,64 +57,93 @@ export default function OrdersScreen() {
     return orders.filter((o) => o.status === activeFilter);
   }, [orders, activeFilter]);
 
+  // Collapse near-duplicate spellings ("Acme", "acme", "Acme ") into one filter
+  // entry so the modal stays scannable as the supplier list grows. The canonical
+  // spelling shown is the most common one across the visible orders.
   const allBrands = useMemo(() => {
-    const set = new Set<string>();
+    const raws: string[] = [];
     statusFiltered.forEach((o) =>
-      o.items.forEach((item) => {
-        if (item.brand) set.add(item.brand);
-      })
+      o.items.forEach((item) => raws.push(item.brand ?? ""))
     );
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return collapseToCanonical(raws);
   }, [statusFiltered]);
 
   const allCategories = useMemo(() => {
-    const set = new Set<string>();
+    const raws: string[] = [];
     statusFiltered.forEach((o) =>
-      o.items.forEach((item) => {
-        if (item.category) set.add(item.category);
-      })
+      o.items.forEach((item) => raws.push(item.category ?? ""))
     );
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return collapseToCanonical(raws);
   }, [statusFiltered]);
+
+  // Compare active filter values to item values via their normalized keys so
+  // selecting "Acme" still matches items stored as "acme" or "Acme ".
+  const activeBrandKeys = useMemo(
+    () => new Set(activeBrands.map((b) => normalizeFilterKey(b))),
+    [activeBrands]
+  );
+  const activeCategoryKeys = useMemo(
+    () => new Set(activeCategories.map((c) => normalizeFilterKey(c))),
+    [activeCategories]
+  );
 
   const filtered = useMemo(() => {
     let base = statusFiltered;
-    if (activeBrands.length > 0) {
+    if (activeBrandKeys.size > 0) {
       base = base.filter((o) =>
-        o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
+        o.items.some(
+          (item) =>
+            item.brand != null &&
+            activeBrandKeys.has(normalizeFilterKey(item.brand))
+        )
       );
     }
-    if (activeCategories.length > 0) {
+    if (activeCategoryKeys.size > 0) {
       base = base.filter((o) =>
-        o.items.some((item) => item.category != null && activeCategories.includes(item.category))
+        o.items.some(
+          (item) =>
+            item.category != null &&
+            activeCategoryKeys.has(normalizeFilterKey(item.category))
+        )
       );
     }
     return [...base].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeBrands, activeCategories]);
+  }, [statusFiltered, activeBrandKeys, activeCategoryKeys]);
 
   function toggleBrand(brand: string) {
-    setActiveBrands((prev) =>
-      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
-    );
+    const key = normalizeFilterKey(brand);
+    setActiveBrands((prev) => {
+      const without = prev.filter((b) => normalizeFilterKey(b) !== key);
+      return without.length === prev.length ? [...prev, brand] : without;
+    });
   }
 
   function brandOrderCount(brand: string): number {
+    const key = normalizeFilterKey(brand);
     return statusFiltered.filter((o) =>
-      o.items.some((item) => item.brand === brand)
+      o.items.some(
+        (item) => item.brand != null && normalizeFilterKey(item.brand) === key
+      )
     ).length;
   }
 
   function toggleCategory(cat: string) {
-    setActiveCategories((prev) =>
-      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
-    );
+    const key = normalizeFilterKey(cat);
+    setActiveCategories((prev) => {
+      const without = prev.filter((c) => normalizeFilterKey(c) !== key);
+      return without.length === prev.length ? [...prev, cat] : without;
+    });
   }
 
   function categoryOrderCount(cat: string): number {
+    const key = normalizeFilterKey(cat);
     return statusFiltered.filter((o) =>
-      o.items.some((item) => item.category === cat)
+      o.items.some(
+        (item) =>
+          item.category != null && normalizeFilterKey(item.category) === key
+      )
     ).length;
   }
 
@@ -123,11 +158,19 @@ export default function OrdersScreen() {
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         let exportItems = order.items;
-        if (activeBrands.length > 0) {
-          exportItems = exportItems.filter((it) => it.brand != null && activeBrands.includes(it.brand));
+        if (activeBrandKeys.size > 0) {
+          exportItems = exportItems.filter(
+            (it) =>
+              it.brand != null &&
+              activeBrandKeys.has(normalizeFilterKey(it.brand))
+          );
         }
-        if (activeCategories.length > 0) {
-          exportItems = exportItems.filter((it) => it.category != null && activeCategories.includes(it.category));
+        if (activeCategoryKeys.size > 0) {
+          exportItems = exportItems.filter(
+            (it) =>
+              it.category != null &&
+              activeCategoryKeys.has(normalizeFilterKey(it.category))
+          );
         }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
@@ -525,7 +568,7 @@ export default function OrdersScreen() {
                       </View>
                     ) : (
                       visibleBrands.map((brand) => {
-                        const isSelected = activeBrands.includes(brand);
+                        const isSelected = activeBrandKeys.has(normalizeFilterKey(brand));
                         const count = brandOrderCount(brand);
                         return (
                           <TouchableOpacity
@@ -641,7 +684,7 @@ export default function OrdersScreen() {
                       </View>
                     ) : (
                       visibleCategories.map((cat) => {
-                        const isSelected = activeCategories.includes(cat);
+                        const isSelected = activeCategoryKeys.has(normalizeFilterKey(cat));
                         const count = categoryOrderCount(cat);
                         return (
                           <TouchableOpacity

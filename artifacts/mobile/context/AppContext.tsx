@@ -58,6 +58,50 @@ export interface OrderItem {
   notes?: string;
 }
 
+// Brand and Category are free-text fields, so "Acme", "acme", and "Acme " can
+// all show up as separate values. These helpers normalize them so suggestion
+// pools and filter pills collapse near-duplicates without migrating any data.
+export function normalizeFilterKey(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+// Collapses an iterable of raw brand/category strings into a sorted list of
+// canonical spellings — one per normalized key — preferring the spelling that
+// appears most often (ties broken alphabetically for a stable display).
+export function collapseToCanonical(values: Iterable<string | null | undefined>): string[] {
+  const groups = new Map<string, Map<string, number>>();
+  for (const raw of values) {
+    if (raw == null) continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    let inner = groups.get(key);
+    if (!inner) {
+      inner = new Map();
+      groups.set(key, inner);
+    }
+    inner.set(trimmed, (inner.get(trimmed) ?? 0) + 1);
+  }
+  const canonical: string[] = [];
+  for (const inner of groups.values()) {
+    let best = "";
+    let bestCount = -1;
+    for (const [spelling, count] of inner) {
+      if (
+        count > bestCount ||
+        (count === bestCount && spelling.localeCompare(best) < 0)
+      ) {
+        bestCount = count;
+        best = spelling;
+      }
+    }
+    canonical.push(best);
+  }
+  return canonical.sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
