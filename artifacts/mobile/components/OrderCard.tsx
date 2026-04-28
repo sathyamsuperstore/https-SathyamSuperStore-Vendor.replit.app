@@ -26,6 +26,16 @@ export function OrderCard({ order, vendorCode }: Props) {
     order.status !== "delivered" &&
     order.status !== "cancelled" &&
     new Date(order.expectedDelivery) < new Date();
+  // Mirror the order detail screen's grouping: a quick hint of how many
+  // categories the order spans, so the user knows what to expect before
+  // tapping in.
+  const categoryCount = (() => {
+    const set = new Set<string>();
+    for (const it of order.items) {
+      if (it.category) set.add(it.category);
+    }
+    return set.size;
+  })();
 
   return (
     <TouchableOpacity
@@ -69,6 +79,14 @@ export function OrderCard({ order, vendorCode }: Props) {
           <Feather name="package" size={13} color={Colors.textMuted} />
           <Text style={styles.footerText}>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Text>
         </View>
+        {categoryCount > 1 ? (
+          <View style={styles.footerItem}>
+            <Feather name="folder" size={13} color={Colors.textMuted} />
+            <Text style={styles.footerText}>
+              {categoryCount} categor{categoryCount !== 1 ? "ies" : "y"}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.footerItem}>
           <Feather
             name="calendar"

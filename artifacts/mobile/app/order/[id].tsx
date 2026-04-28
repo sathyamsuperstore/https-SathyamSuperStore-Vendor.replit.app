@@ -46,6 +46,7 @@ export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"flat" | "grouped">("grouped");
   const [downloading, setDownloading] = useState(false);
   const [newStockQtyEdits, setNewStockQtyEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
@@ -98,6 +99,34 @@ export default function OrderDetailScreen() {
     () => visibleItems.reduce((s, item) => s + item.quantity * item.unitPrice, 0),
     [visibleItems]
   );
+
+  // Grouping is only meaningful when there's more than one category to scan
+  // through, and only applies when the user hasn't already narrowed to one
+  // category via the filter pill row above.
+  const canGroup = itemCategories.length > 1 && selectedCategory === "all";
+  const showGrouped = canGroup && viewMode === "grouped";
+
+  const groupedItems = useMemo(() => {
+    if (!showGrouped) return null;
+    const map = new Map<string, typeof visibleItems>();
+    for (const item of visibleItems) {
+      const key = item.category ?? "Uncategorized";
+      const arr = map.get(key) ?? [];
+      arr.push(item);
+      map.set(key, arr);
+    }
+    const groups = Array.from(map.entries()).map(([category, items]) => ({
+      category,
+      items,
+      total: items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
+    }));
+    groups.sort((a, b) => {
+      if (a.category === "Uncategorized") return 1;
+      if (b.category === "Uncategorized") return -1;
+      return a.category.localeCompare(b.category);
+    });
+    return groups;
+  }, [visibleItems, showGrouped]);
 
   // Must run BEFORE the early returns below — otherwise the hook count would
   // change between renders (undefined → defined `order` after AsyncStorage
@@ -397,6 +426,70 @@ export default function OrderDetailScreen() {
     order.status !== "cancelled" &&
     new Date(order.expectedDelivery) < new Date();
 
+  function renderItemRow(item: typeof order.items[number]) {
+    return (
+      <View style={styles.itemRow}>
+        <View style={styles.itemInfo}>
+          {item.sortNo != null ? (
+            <Text style={styles.itemSortNo}>#{item.sortNo}</Text>
+          ) : null}
+          <Text style={styles.itemName}>{item.name}</Text>
+          {item.brand ? (
+            <Text style={styles.itemBrand}>{item.brand}</Text>
+          ) : null}
+          {item.category ? (
+            <Text style={styles.itemCategory}>{item.category}</Text>
+          ) : null}
+          <Text style={styles.itemMeta}>
+            {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
+            {item.stock != null ? `  ·  Stock: ${item.stock}` : ""}
+            {item.min != null ? `  ·  Min: ${item.min}` : ""}
+          </Text>
+          <View style={styles.newStockRow}>
+            <Text style={styles.newStockLabel}>New Stock Qty:</Text>
+            <TextInput
+              style={styles.newStockInput}
+              value={newStockQtyEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "")}
+              onChangeText={(v) =>
+                setNewStockQtyEdits((prev) => ({ ...prev, [item.id]: v }))
+              }
+              onBlur={() => {
+                const val = newStockQtyEdits[item.id];
+                if (val !== undefined) saveNewStockQty(item.id, val);
+              }}
+              placeholder="—"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+              selectTextOnFocus
+            />
+            {renderSaveIndicator(stockSaveStatus[item.id])}
+          </View>
+          <View style={styles.notesRow}>
+            <Text style={styles.newStockLabel}>Notes:</Text>
+            <TextInput
+              style={styles.notesInput}
+              value={noteEdits[item.id] ?? (item.notes ?? "")}
+              onChangeText={(v) =>
+                setNoteEdits((prev) => ({ ...prev, [item.id]: v }))
+              }
+              onBlur={() => {
+                const val = noteEdits[item.id];
+                if (val !== undefined) saveNote(item.id, val);
+              }}
+              placeholder="Add note..."
+              placeholderTextColor={Colors.textMuted}
+              multiline
+            />
+            {renderSaveIndicator(noteSaveStatus[item.id])}
+          </View>
+        </View>
+        <Text style={styles.itemTotal}>
+          {formatCurrency(item.quantity * item.unitPrice)}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <>
       <Stack.Screen
@@ -481,7 +574,31 @@ export default function OrderDetailScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Items</Text>
-            <Text style={styles.itemCount}>{visibleItems.length} of {order.items.length}</Text>
+            <View style={styles.sectionHeaderRight}>
+              {canGroup && (
+                <TouchableOpacity
+                  style={styles.viewToggle}
+                  onPress={() => setViewMode((m) => (m === "grouped" ? "flat" : "grouped"))}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    viewMode === "grouped"
+                      ? "Switch to flat list view"
+                      : "Switch to grouped view"
+                  }
+                >
+                  <Feather
+                    name={viewMode === "grouped" ? "list" : "layers"}
+                    size={13}
+                    color={Colors.primary}
+                  />
+                  <Text style={styles.viewToggleText}>
+                    {viewMode === "grouped" ? "Flat" : "Grouped"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <Text style={styles.itemCount}>{visibleItems.length} of {order.items.length}</Text>
+            </View>
           </View>
 
           {/* Brand filter bar — shown only when order has branded items */}
@@ -561,70 +678,35 @@ export default function OrderDetailScreen() {
           )}
 
           <View style={styles.itemsCard}>
-            {visibleItems.map((item, idx) => (
-              <View key={item.id}>
-                {idx > 0 && <View style={styles.itemDivider} />}
-                <View style={styles.itemRow}>
-                  <View style={styles.itemInfo}>
-                    {item.sortNo != null ? (
-                      <Text style={styles.itemSortNo}>#{item.sortNo}</Text>
-                    ) : null}
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    {item.brand ? (
-                      <Text style={styles.itemBrand}>{item.brand}</Text>
-                    ) : null}
-                    {item.category ? (
-                      <Text style={styles.itemCategory}>{item.category}</Text>
-                    ) : null}
-                    <Text style={styles.itemMeta}>
-                      {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
-                      {item.stock != null ? `  ·  Stock: ${item.stock}` : ""}
-                      {item.min != null ? `  ·  Min: ${item.min}` : ""}
-                    </Text>
-                    <View style={styles.newStockRow}>
-                      <Text style={styles.newStockLabel}>New Stock Qty:</Text>
-                      <TextInput
-                        style={styles.newStockInput}
-                        value={newStockQtyEdits[item.id] ?? (item.newStockQty != null ? String(item.newStockQty) : "")}
-                        onChangeText={(v) =>
-                          setNewStockQtyEdits((prev) => ({ ...prev, [item.id]: v }))
-                        }
-                        onBlur={() => {
-                          const val = newStockQtyEdits[item.id];
-                          if (val !== undefined) saveNewStockQty(item.id, val);
-                        }}
-                        placeholder="—"
-                        placeholderTextColor={Colors.textMuted}
-                        keyboardType="decimal-pad"
-                        selectTextOnFocus
-                      />
-                      {renderSaveIndicator(stockSaveStatus[item.id])}
+            {showGrouped && groupedItems
+              ? groupedItems.map((group, gIdx) => (
+                  <View key={group.category}>
+                    {gIdx > 0 && <View style={styles.categoryGroupSpacer} />}
+                    <View style={styles.categoryHeader}>
+                      <Feather name="folder" size={12} color={Colors.textSecondary} />
+                      <Text style={styles.categoryHeaderText} numberOfLines={1}>{group.category}</Text>
+                      <View style={styles.categoryHeaderCountBadge}>
+                        <Text style={styles.categoryHeaderCountText}>{group.items.length}</Text>
+                      </View>
+                      <View style={styles.categoryHeaderSpacer} />
+                      <Text style={styles.categoryHeaderTotal}>
+                        {formatCurrency(group.total)}
+                      </Text>
                     </View>
-                    <View style={styles.notesRow}>
-                      <Text style={styles.newStockLabel}>Notes:</Text>
-                      <TextInput
-                        style={styles.notesInput}
-                        value={noteEdits[item.id] ?? (item.notes ?? "")}
-                        onChangeText={(v) =>
-                          setNoteEdits((prev) => ({ ...prev, [item.id]: v }))
-                        }
-                        onBlur={() => {
-                          const val = noteEdits[item.id];
-                          if (val !== undefined) saveNote(item.id, val);
-                        }}
-                        placeholder="Add note..."
-                        placeholderTextColor={Colors.textMuted}
-                        multiline
-                      />
-                      {renderSaveIndicator(noteSaveStatus[item.id])}
-                    </View>
+                    {group.items.map((item, idx) => (
+                      <View key={item.id}>
+                        {idx > 0 && <View style={styles.itemDivider} />}
+                        {renderItemRow(item)}
+                      </View>
+                    ))}
                   </View>
-                  <Text style={styles.itemTotal}>
-                    {formatCurrency(item.quantity * item.unitPrice)}
-                  </Text>
-                </View>
-              </View>
-            ))}
+                ))
+              : visibleItems.map((item, idx) => (
+                  <View key={item.id}>
+                    {idx > 0 && <View style={styles.itemDivider} />}
+                    {renderItemRow(item)}
+                  </View>
+                ))}
             <View style={styles.itemDivider} />
             <View style={styles.itemRow}>
               <Text style={styles.totalLabel}>
@@ -704,8 +786,58 @@ const styles = StyleSheet.create({
   amount: { fontSize: 32, fontWeight: "800", color: Colors.textInverse },
   section: { marginBottom: 20 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  sectionHeaderRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 12 },
   itemCount: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  viewToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surface,
+  },
+  viewToggleText: { fontSize: 11, fontWeight: "700", color: Colors.primary },
+  categoryGroupSpacer: { height: 10 },
+  categoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    marginBottom: 4,
+  },
+  categoryHeaderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  categoryHeaderCountBadge: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  categoryHeaderCountText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.textMuted,
+  },
+  categoryHeaderSpacer: {
+    flex: 1,
+  },
+  categoryHeaderTotal: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.text,
+  },
   brandPillsScroll: { marginBottom: 10 },
   brandPills: { gap: 6, paddingRight: 4 },
   brandPill: {

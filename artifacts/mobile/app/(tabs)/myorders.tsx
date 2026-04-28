@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -183,6 +183,9 @@ function OrdersView({ topPt }: { topPt: number }) {
   const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
 
   const vendorOrders = useMemo(() => {
     if (!currentUser) return [];
@@ -234,17 +237,36 @@ function OrdersView({ topPt }: { topPt: number }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [vendorOrders]);
 
+  const allCategories = useMemo(() => {
+    const set = new Set<string>();
+    vendorOrders.forEach((o) => o.items.forEach((item) => { if (item.category) set.add(item.category); }));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [vendorOrders]);
+
+  useEffect(() => {
+    if (activeCategories.length === 0) return;
+    const allowed = new Set(allCategories);
+    const next = activeCategories.filter((c) => allowed.has(c));
+    if (next.length !== activeCategories.length) setActiveCategories(next);
+  }, [allCategories, activeCategories]);
+
   const statusFiltered = useMemo(() => {
     if (activeFilter === "all") return vendorOrders;
     return vendorOrders.filter((o) => o.status === activeFilter);
   }, [vendorOrders, activeFilter]);
 
   const filtered = useMemo(() => {
-    if (activeBrands.length === 0) return statusFiltered;
-    return statusFiltered.filter((o) =>
-      o.items.some((item) => item.brand != null && activeBrands.includes(item.brand))
-    );
-  }, [statusFiltered, activeBrands]);
+    return statusFiltered.filter((o) => {
+      const brandOk =
+        activeBrands.length === 0 ||
+        o.items.some((item) => item.brand != null && activeBrands.includes(item.brand));
+      if (!brandOk) return false;
+      const categoryOk =
+        activeCategories.length === 0 ||
+        o.items.some((item) => item.category != null && activeCategories.includes(item.category));
+      return categoryOk;
+    });
+  }, [statusFiltered, activeBrands, activeCategories]);
 
   function toggleBrand(brand: string) {
     setActiveBrands((prev) =>
@@ -256,7 +278,18 @@ function OrdersView({ topPt }: { topPt: number }) {
     return statusFiltered.filter((o) => o.items.some((item) => item.brand === brand)).length;
   }
 
+  function toggleCategory(category: string) {
+    setActiveCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  }
+
+  function categoryOrderCount(category: string) {
+    return statusFiltered.filter((o) => o.items.some((item) => item.category === category)).length;
+  }
+
   const brandActive = activeBrands.length > 0;
+  const categoryActive = activeCategories.length > 0;
 
   const totalValue = useMemo(() => vendorOrders.reduce((s, o) => s + o.totalAmount, 0), [vendorOrders]);
   const pendingCount = useMemo(() => vendorOrders.filter((o) => o.status === "pending").length, [vendorOrders]);
@@ -273,9 +306,12 @@ function OrdersView({ topPt }: { topPt: number }) {
         : ["Item Description", "Brand", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
-        const exportItems = activeBrands.length > 0
+        let exportItems = activeBrands.length > 0
           ? order.items.filter((item) => item.brand != null && activeBrands.includes(item.brand))
           : order.items;
+        if (activeCategories.length > 0) {
+          exportItems = exportItems.filter((item) => item.category != null && activeCategories.includes(item.category));
+        }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           if (showStock) {
@@ -374,9 +410,12 @@ function OrdersView({ topPt }: { topPt: number }) {
 
       const rows: string[][] = [];
       for (const order of filtered) {
-        const exportItems = activeBrands.length > 0
+        let exportItems = activeBrands.length > 0
           ? order.items.filter((item) => item.brand != null && activeBrands.includes(item.brand))
           : order.items;
+        if (activeCategories.length > 0) {
+          exportItems = exportItems.filter((item) => item.category != null && activeCategories.includes(item.category));
+        }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
@@ -606,6 +645,33 @@ function OrdersView({ topPt }: { topPt: number }) {
         </TouchableOpacity>
       )}
 
+      {vendorOrders.length > 0 && (
+        <TouchableOpacity
+          style={[styles.brandBar, categoryActive && styles.brandBarActive]}
+          onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+          activeOpacity={0.75}
+        >
+          <Feather name="folder" size={14} color={categoryActive ? Colors.textInverse : Colors.textSecondary} />
+          <Text style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]} numberOfLines={1}>
+            {activeCategories.length === 0
+              ? "All Categories"
+              : activeCategories.length === 1
+              ? "1 Category"
+              : `${activeCategories.length} Categories`}
+          </Text>
+          {categoryActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+      )}
+
       {!currentUser?.vendorCode ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
@@ -642,6 +708,7 @@ function OrdersView({ topPt }: { topPt: number }) {
               showStock={showStock}
               onToggleStock={() => setShowStock((v) => !v)}
               activeBrands={activeBrands}
+              activeCategories={activeCategories}
             />
           )}
         />
@@ -756,6 +823,116 @@ function OrdersView({ topPt }: { topPt: number }) {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Category filter modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowCategoryModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Category</Text>
+            {categoryActive && (
+              <TouchableOpacity onPress={() => setActiveCategories([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allCategories.length > 0 && (
+            <View style={styles.brandSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.brandSearchInput}
+                value={categorySearch}
+                onChangeText={setCategorySearch}
+                placeholder="Search categories…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {categorySearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setCategorySearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allCategories.length === 0 ? (
+            <View style={styles.noBrands}>
+              <Feather name="folder" size={32} color={Colors.textMuted} />
+              <Text style={styles.noBrandsTitle}>No Categories Yet</Text>
+              <Text style={styles.noBrandsSub}>Import orders with a Category column to filter by category.</Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const q = categorySearch.trim().toLowerCase();
+                const visibleCategories = q ? allCategories.filter((c) => c.toLowerCase().includes(q)) : allCategories;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[styles.brandRow, activeCategories.length === 0 && styles.brandRowActive]}
+                        onPress={() => setActiveCategories([])}
+                      >
+                        <Text style={[styles.brandName, activeCategories.length === 0 && styles.brandNameActive]}>All Categories</Text>
+                        <Text style={styles.brandCount}>{statusFiltered.length} order{statusFiltered.length !== 1 ? "s" : ""}</Text>
+                        {activeCategories.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    )}
+                    {visibleCategories.length === 0 ? (
+                      <View style={styles.noBrands}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noBrandsTitle}>No match</Text>
+                        <Text style={styles.noBrandsSub}>No categories found for "{categorySearch}"</Text>
+                      </View>
+                    ) : (
+                      visibleCategories.map((category) => {
+                        const isSelected = activeCategories.includes(category);
+                        const count = categoryOrderCount(category);
+                        return (
+                          <TouchableOpacity
+                            key={category}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleCategory(category)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>{category}</Text>
+                            <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowCategoryModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeCategories.length === 0 ? "Close" : `Apply (${activeCategories.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -767,11 +944,13 @@ function VendorOrderCard({
   showStock,
   onToggleStock,
   activeBrands,
+  activeCategories,
 }: {
   order: Order;
   showStock: boolean;
   onToggleStock: () => void;
   activeBrands: string[];
+  activeCategories: string[];
 }) {
   const { updateOrderStatus, updateOrder } = useApp();
   const [expanded, setExpanded] = useState(false);
@@ -781,13 +960,15 @@ function VendorOrderCard({
   const [savingModify, setSavingModify] = useState(false);
   const status = STATUS_COLORS[order.status];
 
-  const displayItems = useMemo(
-    () =>
-      activeBrands.length === 0
-        ? order.items
-        : order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand)),
-    [order.items, activeBrands]
-  );
+  const displayItems = useMemo(() => {
+    let items = activeBrands.length === 0
+      ? order.items
+      : order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand));
+    if (activeCategories.length > 0) {
+      items = items.filter((it) => it.category != null && activeCategories.includes(it.category));
+    }
+    return items;
+  }, [order.items, activeBrands, activeCategories]);
 
   function handleStatusChange(newStatus: OrderStatus) {
     if (newStatus === order.status) return;
