@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -27,8 +27,10 @@ function addDays(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
+const MAX_SUGGESTIONS = 8;
+
 export default function NewOrderScreen() {
-  const { suppliers, addOrder } = useApp();
+  const { suppliers, orders, addOrder } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -39,6 +41,34 @@ export default function NewOrderScreen() {
   const [items, setItems] = useState<OrderItem[]>([
     { id: generateItemId(), name: "", quantity: 1, unit: "pcs", unitPrice: 0 },
   ]);
+  // Tracks which item's brand/category suggestion list is open. Only one open
+  // at a time so the screen does not become a wall of chips.
+  const [openSuggest, setOpenSuggest] = useState<{
+    itemId: string;
+    field: "brand" | "category";
+  } | null>(null);
+
+  const allBrands = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach((o) =>
+      o.items.forEach((it) => {
+        const b = (it.brand ?? "").trim();
+        if (b) set.add(b);
+      })
+    );
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  const allCategories = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach((o) =>
+      o.items.forEach((it) => {
+        const c = (it.category ?? "").trim();
+        if (c) set.add(c);
+      })
+    );
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders]);
 
   const selectedSupplier = suppliers.find((s) => s.id === supplierId);
 
@@ -70,6 +100,14 @@ export default function NewOrderScreen() {
     return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
   }
 
+  function getSuggestions(pool: string[], typed: string): string[] {
+    const q = typed.trim().toLowerCase();
+    if (!q) return pool.slice(0, MAX_SUGGESTIONS);
+    const matches = pool.filter((v) => v.toLowerCase().includes(q));
+    // If the typed text exactly matches an existing value, no need to suggest it.
+    return matches.filter((v) => v.toLowerCase() !== q).slice(0, MAX_SUGGESTIONS);
+  }
+
   function validate(): boolean {
     if (!supplierId) {
       Alert.alert("Missing Supplier", "Please select a supplier.");
@@ -96,11 +134,23 @@ export default function NewOrderScreen() {
     const supplier = suppliers.find((s) => s.id === supplierId)!;
     setSaving(true);
     try {
+      // Normalise brand/category: trim whitespace and drop empty strings so the
+      // Orders tab filters (which gate on truthy values) treat manual entries
+      // the same way as imported ones.
+      const cleanedItems: OrderItem[] = items.map((it) => {
+        const brand = (it.brand ?? "").trim();
+        const category = (it.category ?? "").trim();
+        return {
+          ...it,
+          brand: brand ? brand : undefined,
+          category: category ? category : undefined,
+        };
+      });
       await addOrder({
         supplierId,
         supplierName: supplier.name,
         status: "pending",
-        items,
+        items: cleanedItems,
         notes,
         expectedDelivery: new Date(expectedDelivery).toISOString(),
         beat: beat.trim() || undefined,
@@ -112,6 +162,57 @@ export default function NewOrderScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function renderSuggestRow(
+    itemId: string,
+    field: "brand" | "category",
+    typed: string,
+  ) {
+    const isOpen =
+      openSuggest?.itemId === itemId && openSuggest?.field === field;
+    if (!isOpen) return null;
+    const pool = field === "brand" ? allBrands : allCategories;
+    if (pool.length === 0) {
+      return (
+        <Text style={styles.suggestEmpty}>
+          {field === "brand"
+            ? "No brands yet — your typed value will be saved."
+            : "No categories yet — your typed value will be saved."}
+        </Text>
+      );
+    }
+    const suggestions = getSuggestions(pool, typed);
+    if (suggestions.length === 0) {
+      return (
+        <Text style={styles.suggestEmpty}>
+          No matches — your typed value will be saved as a new {field}.
+        </Text>
+      );
+    }
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.suggestRow}
+        keyboardShouldPersistTaps="handled"
+      >
+        {suggestions.map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={styles.suggestChip}
+            onPress={() => {
+              updateItem(itemId, field, s);
+              setOpenSuggest(null);
+            }}
+          >
+            <Text style={styles.suggestChipText} numberOfLines={1}>
+              {s}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
   }
 
   return (
@@ -199,6 +300,38 @@ export default function NewOrderScreen() {
                 value={item.name}
                 onChangeText={(v) => updateItem(item.id, "name", v)}
               />
+
+              <View style={styles.itemRow}>
+                <View style={styles.itemFieldHalf}>
+                  <Text style={styles.fieldLabel}>Brand (optional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Acme"
+                    placeholderTextColor={Colors.textMuted}
+                    value={item.brand ?? ""}
+                    onChangeText={(v) => updateItem(item.id, "brand", v)}
+                    onFocus={() =>
+                      setOpenSuggest({ itemId: item.id, field: "brand" })
+                    }
+                  />
+                </View>
+                <View style={styles.itemFieldHalf}>
+                  <Text style={styles.fieldLabel}>Category (optional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Snacks"
+                    placeholderTextColor={Colors.textMuted}
+                    value={item.category ?? ""}
+                    onChangeText={(v) => updateItem(item.id, "category", v)}
+                    onFocus={() =>
+                      setOpenSuggest({ itemId: item.id, field: "category" })
+                    }
+                  />
+                </View>
+              </View>
+              {renderSuggestRow(item.id, "brand", item.brand ?? "")}
+              {renderSuggestRow(item.id, "category", item.category ?? "")}
+
               <View style={styles.itemRow}>
                 <View style={styles.itemFieldSmall}>
                   <Text style={styles.fieldLabel}>Qty</Text>
@@ -333,7 +466,18 @@ const styles = StyleSheet.create({
   itemRow: { flexDirection: "row", gap: 8 },
   itemFieldSmall: { flex: 1 },
   itemFieldLarge: { flex: 2 },
+  itemFieldHalf: { flex: 1 },
   itemSubtotal: { fontSize: 12, color: Colors.textMuted, textAlign: "right" },
+  suggestRow: { gap: 6, paddingVertical: 4 },
+  suggestChip: {
+    backgroundColor: Colors.primaryMuted,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 200,
+  },
+  suggestChipText: { fontSize: 12, fontWeight: "600", color: Colors.primary },
+  suggestEmpty: { fontSize: 11, color: Colors.textMuted, fontStyle: "italic", paddingVertical: 4 },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
