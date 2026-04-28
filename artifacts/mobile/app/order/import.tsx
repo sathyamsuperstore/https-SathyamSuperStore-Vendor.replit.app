@@ -408,7 +408,6 @@ export default function ImportOrderScreen() {
             cellStyles: false,
             cellNF: false,
             cellText: false,
-            bookProps: true,
           });
         } else {
           // Prefer the new File API which reads raw bytes directly — much faster
@@ -436,7 +435,6 @@ export default function ImportOrderScreen() {
               cellStyles: false,
               cellNF: false,
               cellText: false,
-              bookProps: true,
             });
             bytes = null;
           }
@@ -452,7 +450,6 @@ export default function ImportOrderScreen() {
               cellStyles: false,
               cellNF: false,
               cellText: false,
-              bookProps: true,
             });
           } else {
             // workbook already assigned in fallback path
@@ -470,33 +467,35 @@ export default function ImportOrderScreen() {
         rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
         // Pull the workbook's CreatedDate metadata (set by Excel / Google
-        // Sheets when the file was first saved). Some libraries return it
-        // as a string, others as a Date — normalize both. If absent or
-        // unparseable, fall back to the picker's lastModified.
-        const rawCreated = (workbook.Props as { CreatedDate?: unknown } | undefined)
-          ?.CreatedDate;
-        // xlsx-js-style returns CreatedDate as a Date-like object built in
-        // its own module realm, so `instanceof Date` is unreliable. We
-        // duck-type instead: anything that can survive `new Date(x)` and
-        // produce a valid timestamp is good enough for our display + export
-        // needs. Strings (some sources serialize the prop) flow through the
-        // same Date constructor cleanly.
-        if (rawCreated != null) {
-          let candidate: Date | undefined;
-          if (
-            typeof rawCreated === "object" &&
-            typeof (rawCreated as { getTime?: () => number }).getTime === "function"
-          ) {
-            const t = (rawCreated as { getTime: () => number }).getTime();
-            if (!isNaN(t)) candidate = new Date(t);
-          } else if (typeof rawCreated === "string" || typeof rawCreated === "number") {
-            const d = new Date(rawCreated);
-            if (!isNaN(d.getTime())) candidate = d;
+        // Sheets when the file was first saved). Wrapped in try/catch so
+        // any malformed metadata in the workbook can never abort the
+        // import — we'll just fall back to the file's lastModified below.
+        try {
+          const rawCreated = (workbook.Props as { CreatedDate?: unknown } | undefined)
+            ?.CreatedDate;
+          // xlsx-js-style returns CreatedDate as a Date-like object built
+          // in its own module realm, so `instanceof Date` is unreliable.
+          // Duck-type instead: anything that can produce a valid timestamp
+          // via getTime() or via the Date constructor is good enough.
+          if (rawCreated != null) {
+            let candidate: Date | undefined;
+            if (
+              typeof rawCreated === "object" &&
+              typeof (rawCreated as { getTime?: () => number }).getTime === "function"
+            ) {
+              const t = (rawCreated as { getTime: () => number }).getTime();
+              if (!isNaN(t)) candidate = new Date(t);
+            } else if (typeof rawCreated === "string" || typeof rawCreated === "number") {
+              const d = new Date(rawCreated);
+              if (!isNaN(d.getTime())) candidate = d;
+            }
+            if (candidate) {
+              parsedCreatedDate = candidate;
+              parsedCreatedSource = "workbook";
+            }
           }
-          if (candidate) {
-            parsedCreatedDate = candidate;
-            parsedCreatedSource = "workbook";
-          }
+        } catch {
+          // Swallow — file create date is a nice-to-have, never fatal.
         }
       }
 
