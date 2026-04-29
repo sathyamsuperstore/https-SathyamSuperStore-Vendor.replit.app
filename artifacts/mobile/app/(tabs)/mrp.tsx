@@ -17,12 +17,14 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useApp, MrpEntry, showStorageErrorAlert } from "@/context/AppContext";
 
 export default function MrpScreen() {
   const { mrpEntries, saveMrpBatch, clearMrpBatch } = useApp();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -206,6 +208,14 @@ export default function MrpScreen() {
       setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Switch to the Latest Purchases tab so the user immediately sees
+      // the freshly-imported MRP data in context. Brief pause lets the
+      // 100% bar render before we navigate away.
+      setLoading(false);
+      setTimeout(() => {
+        router.push("/(tabs)/latest-purchases");
+      }, 400);
+      return;
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {
