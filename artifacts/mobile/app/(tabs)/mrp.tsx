@@ -29,6 +29,11 @@ export default function MrpScreen() {
   const [errors, setErrors] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  // Import progress: 0-100 with a human-readable phase label. The bar is
+  // rendered while `loading` is true so the user sees real activity even
+  // for large files (parsing thousands of rows can take a few seconds).
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState<string>("");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -36,11 +41,21 @@ export default function MrpScreen() {
     return mrpEntries.filter((e) => e.itemNo.toLowerCase().includes(q));
   }, [mrpEntries, search]);
 
+  // Yield control back to the event loop so React can paint a state
+  // change before the next chunk of synchronous work runs. Without this
+  // helper, all our setProgress() calls during a tight loop would be
+  // batched and the user would see the bar jump from 0 to 100.
+  function yieldToUI(): Promise<void> {
+    return new Promise((r) => setTimeout(r, 0));
+  }
+
   async function pickAndImport() {
     try {
       setLoading(true);
       setErrors([]);
       setStatusMsg(null);
+      setProgress(0);
+      setProgressLabel("");
 
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -58,7 +73,9 @@ export default function MrpScreen() {
       }
 
       const asset = result.assets[0];
-      await new Promise((r) => setTimeout(r, 50));
+      setProgress(5);
+      setProgressLabel("Opening file…");
+      await yieldToUI();
 
       let workbook: XLSX.WorkBook;
       if (Platform.OS === "web") {
@@ -75,6 +92,9 @@ export default function MrpScreen() {
           };
           xhr.send();
         });
+        setProgress(25);
+        setProgressLabel("Reading workbook…");
+        await yieldToUI();
         workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
       } else {
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
@@ -83,8 +103,15 @@ export default function MrpScreen() {
         if (!base64 || base64.length === 0) {
           throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
         }
+        setProgress(25);
+        setProgressLabel("Reading workbook…");
+        await yieldToUI();
         workbook = XLSX.read(base64, { type: "base64" });
       }
+
+      setProgress(40);
+      setProgressLabel("Extracting rows…");
+      await yieldToUI();
 
       const sheetName =
         workbook.SheetNames.find((n) => n.toLowerCase() === "mrpbatch") ?? workbook.SheetNames[0];
@@ -112,23 +139,42 @@ export default function MrpScreen() {
         return;
       }
 
+      // Walk the rows in chunks so we can drive the progress bar through
+      // the parsing phase. Without yielding, even 10k rows finish too
+      // quickly to repaint, but for very large sheets this gives the
+      // user clear feedback that something is happening.
       const seenPair = new Set<string>();
       const parsed: MrpEntry[] = [];
       const localErrors: string[] = [];
+      // Aim for ~25 progress updates across the parsing phase regardless
+      // of file size — frequent enough to feel smooth, rare enough to
+      // not dominate parse time.
+      const chunkSize = Math.max(50, Math.ceil(raw.length / 25));
+      const PARSE_FROM = 40;
+      const PARSE_TO = 90;
       for (let i = 0; i < raw.length; i++) {
         const r = raw[i];
         const itemNo = String(r[itemNoKey] ?? "").trim();
         const mrpStr = String(r[mrpKey] ?? "").trim();
-        if (!itemNo) continue;
-        const mrp = parseFloat(mrpStr);
-        if (isNaN(mrp) || mrp < 0) {
-          localErrors.push(`Row ${i + 2}: invalid MRP "${mrpStr}" for ItemNo ${itemNo}`);
-          continue;
+        if (itemNo) {
+          const mrp = parseFloat(mrpStr);
+          if (isNaN(mrp) || mrp < 0) {
+            localErrors.push(`Row ${i + 2}: invalid MRP "${mrpStr}" for ItemNo ${itemNo}`);
+          } else {
+            const key = `${itemNo.toUpperCase()}|${mrp}`;
+            if (!seenPair.has(key)) {
+              seenPair.add(key);
+              parsed.push({ itemNo, mrp });
+            }
+          }
         }
-        const key = `${itemNo.toUpperCase()}|${mrp}`;
-        if (seenPair.has(key)) continue;
-        seenPair.add(key);
-        parsed.push({ itemNo, mrp });
+        // Update + yield at chunk boundaries (and on the final row).
+        if ((i + 1) % chunkSize === 0 || i === raw.length - 1) {
+          const ratio = (i + 1) / raw.length;
+          setProgress(Math.round(PARSE_FROM + (PARSE_TO - PARSE_FROM) * ratio));
+          setProgressLabel(`Parsing rows ${i + 1} of ${raw.length}…`);
+          await yieldToUI();
+        }
       }
 
       if (parsed.length === 0) {
@@ -137,7 +183,14 @@ export default function MrpScreen() {
         return;
       }
 
+      setProgress(92);
+      setProgressLabel("Sorting entries…");
+      await yieldToUI();
       parsed.sort((a, b) => a.itemNo.localeCompare(b.itemNo, undefined, { sensitivity: "base" }));
+
+      setProgress(95);
+      setProgressLabel("Saving…");
+      await yieldToUI();
       try {
         await saveMrpBatch(parsed);
       } catch {
@@ -148,6 +201,8 @@ export default function MrpScreen() {
         setLoading(false);
         return;
       }
+      setProgress(100);
+      setProgressLabel("Done");
       setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -284,7 +339,7 @@ export default function MrpScreen() {
                 <Feather name="upload" size={18} color={Colors.textInverse} />
               )}
               <Text style={styles.pickBtnText}>
-                {loading ? "Reading file..." : mrpEntries.length > 0 ? "Re-Import (Replace)" : "Choose Excel File"}
+                {loading ? "Importing…" : mrpEntries.length > 0 ? "Re-Import (Replace)" : "Choose Excel File"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -296,6 +351,25 @@ export default function MrpScreen() {
               <Text style={styles.deleteBtnText}>Delete All</Text>
             </TouchableOpacity>
           </View>
+
+          {loading && (
+            <View style={styles.progressWrap}>
+              <View style={styles.progressLabelRow}>
+                <Text style={styles.progressLabelText} numberOfLines={1}>
+                  {progressLabel || "Starting…"}
+                </Text>
+                <Text style={styles.progressPercentText}>{progress}%</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.max(0, Math.min(100, progress))}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
         {errors.length > 0 && (
@@ -425,6 +499,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.danger, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,
   },
   deleteBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 14 },
+  progressWrap: { gap: 6 },
+  progressLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressLabelText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    flex: 1,
+    marginRight: 8,
+  },
+  progressPercentText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.primary,
+    fontVariant: ["tabular-nums"],
+  },
+  progressTrack: {
+    height: 8,
+    backgroundColor: Colors.border,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+  },
   errorBox: {
     flexDirection: "row", gap: 10, padding: 12,
     backgroundColor: "#fef2f2", borderRadius: 10,
