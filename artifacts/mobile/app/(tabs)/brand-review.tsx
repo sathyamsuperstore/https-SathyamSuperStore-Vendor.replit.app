@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,23 +14,25 @@ import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 import { EmptyState } from "@/components/EmptyState";
 
-// Each row in the Brand Review tab is one unique combination of
-// (brand, category, vendor) seen across every item in every order.
-// Display strings preserve the original casing of the most common
-// spelling we've seen for a given normalized key, so "Acme" and
-// "acme " collapse without losing the user's preferred capitalization.
-type BrandReviewRow = {
+// Top-level row in the Brand Review tab is one brand. Each brand
+// carries the list of (category, vendor) combinations seen for it
+// across all orders, surfaced when the user double-taps the row.
+type BrandDetail = {
   key: string;
-  brand: string;
   category: string;
   vendorName: string;
-  occurrences: number;
-  // Highest `min` value seen across all items in this combo. Used to
-  // populate the Min column. `null` means none of the items had a min.
   maxMin: number | null;
 };
 
-type SortMode = "brand" | "category" | "vendor" | "min";
+type BrandRow = {
+  key: string;
+  brand: string;
+  details: BrandDetail[];
+  occurrences: number;
+  maxMin: number | null;
+};
+
+type SortMode = "brand" | "min";
 
 // Comparison operators for the "filter by min" control. Display labels
 // use unicode symbols for compactness; internal codes drive the
@@ -47,6 +49,10 @@ const MIN_OPERATORS: { code: MinOperator; label: string }[] = [
 ];
 
 const PLACEHOLDER = "—";
+// Window inside which two taps on the same brand row count as a
+// double-tap. 300ms is the platform-conventional threshold and matches
+// what most native components feel like.
+const DOUBLE_TAP_MS = 300;
 
 function pickPreferredSpelling(counts: Map<string, number>): string {
   let best = "";
@@ -83,6 +89,11 @@ export default function BrandReviewScreen() {
   // operator, change the threshold, or tap "Clear" to disable filtering.
   const [minOperator, setMinOperator] = useState<MinOperator>("gt");
   const [minThresholdText, setMinThresholdText] = useState<string>("200");
+  // Set of expanded brand keys — toggled by double-tap.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Track the last tap's brand key + timestamp so we can detect a
+  // double-tap without relying on platform-specific gesture libraries.
+  const lastTapRef = useRef<{ key: string; time: number } | null>(null);
 
   // Parse the threshold once; an empty / non-numeric value disables the
   // filter so the user can toggle it off without committing to "0".
@@ -95,24 +106,27 @@ export default function BrandReviewScreen() {
   const minFilterActive = minThreshold !== null;
 
   // Walk every order item once, optionally pre-filtering by the min
-  // arithmetic filter. Items with no `min` value are excluded when the
-  // filter is active (they aren't comparable). Then group surviving
-  // items by (brand|category|vendor), remembering the most common
-  // spelling for display and the max min value seen for the Min column.
-  const rows: BrandReviewRow[] = useMemo(() => {
-    type Bucket = {
-      brandSpellings: Map<string, number>;
+  // arithmetic filter, then group by brand. For each brand also
+  // collect the unique (category, vendor) detail rows so they can be
+  // surfaced when the user double-taps that brand.
+  const rows: BrandRow[] = useMemo(() => {
+    type DetailBucket = {
       categorySpellings: Map<string, number>;
       vendorSpellings: Map<string, number>;
+      maxMin: number | null;
+    };
+    type BrandBucket = {
+      brandSpellings: Map<string, number>;
+      details: Map<string, DetailBucket>;
       occurrences: number;
       maxMin: number | null;
     };
-    const buckets = new Map<string, Bucket>();
+    const brands = new Map<string, BrandBucket>();
 
     for (const order of orders) {
       const vendor = (order.supplierName ?? "").trim();
       for (const item of order.items) {
-        // Apply the min filter at the item level so a combo only
+        // Apply the min filter at the item level so a brand only
         // qualifies if at least one of its items satisfies the filter.
         if (minFilterActive) {
           if (typeof item.min !== "number" || !Number.isFinite(item.min)) {
@@ -124,103 +138,115 @@ export default function BrandReviewScreen() {
         }
         const brand = (item.brand ?? "").trim();
         const category = (item.category ?? "").trim();
-        // Skip the truly-empty row (no brand, no category, no vendor) —
-        // it's noise, not a reviewable entry.
-        if (!brand && !category && !vendor) continue;
-        const key = [
-          brand.toLowerCase(),
-          category.toLowerCase(),
-          vendor.toLowerCase(),
-        ].join("\u0000");
-        let bucket = buckets.get(key);
-        if (!bucket) {
-          bucket = {
+        // Skip items with no brand at all — the tab is "Brand Review",
+        // and a row with no brand wouldn't be reviewable.
+        if (!brand) continue;
+
+        const brandKey = brand.toLowerCase();
+        let bb = brands.get(brandKey);
+        if (!bb) {
+          bb = {
             brandSpellings: new Map(),
-            categorySpellings: new Map(),
-            vendorSpellings: new Map(),
+            details: new Map(),
             occurrences: 0,
             maxMin: null,
           };
-          buckets.set(key, bucket);
+          brands.set(brandKey, bb);
         }
-        if (brand) {
-          bucket.brandSpellings.set(
-            brand,
-            (bucket.brandSpellings.get(brand) ?? 0) + 1
-          );
+        bb.brandSpellings.set(brand, (bb.brandSpellings.get(brand) ?? 0) + 1);
+        bb.occurrences += 1;
+        if (typeof item.min === "number" && Number.isFinite(item.min)) {
+          bb.maxMin = bb.maxMin === null ? item.min : Math.max(bb.maxMin, item.min);
+        }
+
+        const detailKey = `${category.toLowerCase()}\u0000${vendor.toLowerCase()}`;
+        let db = bb.details.get(detailKey);
+        if (!db) {
+          db = {
+            categorySpellings: new Map(),
+            vendorSpellings: new Map(),
+            maxMin: null,
+          };
+          bb.details.set(detailKey, db);
         }
         if (category) {
-          bucket.categorySpellings.set(
+          db.categorySpellings.set(
             category,
-            (bucket.categorySpellings.get(category) ?? 0) + 1
+            (db.categorySpellings.get(category) ?? 0) + 1
           );
         }
         if (vendor) {
-          bucket.vendorSpellings.set(
+          db.vendorSpellings.set(
             vendor,
-            (bucket.vendorSpellings.get(vendor) ?? 0) + 1
+            (db.vendorSpellings.get(vendor) ?? 0) + 1
           );
         }
-        bucket.occurrences += 1;
         if (typeof item.min === "number" && Number.isFinite(item.min)) {
-          bucket.maxMin =
-            bucket.maxMin === null ? item.min : Math.max(bucket.maxMin, item.min);
+          db.maxMin = db.maxMin === null ? item.min : Math.max(db.maxMin, item.min);
         }
       }
     }
 
-    const out: BrandReviewRow[] = [];
-    for (const [key, b] of buckets) {
+    const out: BrandRow[] = [];
+    for (const [brandKey, bb] of brands) {
+      const details: BrandDetail[] = [];
+      for (const [detailKey, db] of bb.details) {
+        details.push({
+          key: detailKey,
+          category: pickPreferredSpelling(db.categorySpellings),
+          vendorName: pickPreferredSpelling(db.vendorSpellings),
+          maxMin: db.maxMin,
+        });
+      }
+      // Stable nested order: alphabetical by category, then vendor.
+      details.sort(
+        (a, b) =>
+          a.category.localeCompare(b.category, undefined, { sensitivity: "base" }) ||
+          a.vendorName.localeCompare(b.vendorName, undefined, { sensitivity: "base" })
+      );
       out.push({
-        key,
-        brand: pickPreferredSpelling(b.brandSpellings),
-        category: pickPreferredSpelling(b.categorySpellings),
-        vendorName: pickPreferredSpelling(b.vendorSpellings),
-        occurrences: b.occurrences,
-        maxMin: b.maxMin,
+        key: brandKey,
+        brand: pickPreferredSpelling(bb.brandSpellings),
+        details,
+        occurrences: bb.occurrences,
+        maxMin: bb.maxMin,
       });
     }
     return out;
   }, [orders, minFilterActive, minOperator, minThreshold]);
 
-  // Total reviewable rows IGNORING the min filter — used to show
-  // "X / Y" in the count chip when the min filter or search is active.
-  const totalRowsBeforeFilters: number = useMemo(() => {
+  // Total brands IGNORING all filters — used for the "X / Y" count chip.
+  const totalBrandsBeforeFilters: number = useMemo(() => {
     const seen = new Set<string>();
     for (const order of orders) {
-      const vendor = (order.supplierName ?? "").trim();
       for (const item of order.items) {
         const brand = (item.brand ?? "").trim();
-        const category = (item.category ?? "").trim();
-        if (!brand && !category && !vendor) continue;
-        seen.add(
-          [brand.toLowerCase(), category.toLowerCase(), vendor.toLowerCase()].join(
-            "\u0000"
-          )
-        );
+        if (!brand) continue;
+        seen.add(brand.toLowerCase());
       }
     }
     return seen.size;
   }, [orders]);
 
-  const filteredSorted: BrandReviewRow[] = useMemo(() => {
+  const filteredSorted: BrandRow[] = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // Search matches the brand name OR any nested category/vendor —
+    // this preserves the cross-field search that existed before the
+    // brand-only refactor, so users can still find a brand by typing
+    // a vendor or category they remember.
     const filtered = q
       ? rows.filter(
           (r) =>
             r.brand.toLowerCase().includes(q) ||
-            r.category.toLowerCase().includes(q) ||
-            r.vendorName.toLowerCase().includes(q)
+            r.details.some(
+              (d) =>
+                d.category.toLowerCase().includes(q) ||
+                d.vendorName.toLowerCase().includes(q)
+            )
         )
       : rows.slice();
-    // Empty values sort to the end so populated rows lead the list.
-    const cmp = (a: string, b: string) => {
-      const aEmpty = a === "";
-      const bEmpty = b === "";
-      if (aEmpty && !bEmpty) return 1;
-      if (!aEmpty && bEmpty) return -1;
-      return a.localeCompare(b, undefined, { sensitivity: "base" });
-    };
+    const cmpStr = (a: string, b: string) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" });
     // For the Min sort: highest min first, nulls (no min) at the end.
     const cmpMinDesc = (a: number | null, b: number | null) => {
       if (a === null && b === null) return 0;
@@ -229,35 +255,30 @@ export default function BrandReviewScreen() {
       return b - a;
     };
     filtered.sort((a, b) => {
-      if (sortMode === "brand") {
-        return (
-          cmp(a.brand, b.brand) ||
-          cmp(a.category, b.category) ||
-          cmp(a.vendorName, b.vendorName)
-        );
-      }
-      if (sortMode === "category") {
-        return (
-          cmp(a.category, b.category) ||
-          cmp(a.brand, b.brand) ||
-          cmp(a.vendorName, b.vendorName)
-        );
-      }
       if (sortMode === "min") {
-        return (
-          cmpMinDesc(a.maxMin, b.maxMin) ||
-          cmp(a.brand, b.brand) ||
-          cmp(a.category, b.category)
-        );
+        return cmpMinDesc(a.maxMin, b.maxMin) || cmpStr(a.brand, b.brand);
       }
-      return (
-        cmp(a.vendorName, b.vendorName) ||
-        cmp(a.brand, b.brand) ||
-        cmp(a.category, b.category)
-      );
+      return cmpStr(a.brand, b.brand);
     });
     return filtered;
   }, [rows, search, sortMode]);
+
+  function handleBrandTap(key: string) {
+    const now = Date.now();
+    const last = lastTapRef.current;
+    if (last && last.key === key && now - last.time < DOUBLE_TAP_MS) {
+      // Second tap on the same brand within the window — toggle.
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      lastTapRef.current = null;
+    } else {
+      lastTapRef.current = { key, time: now };
+    }
+  }
 
   const showCountSlash = search.trim() !== "" || minFilterActive;
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
@@ -269,7 +290,7 @@ export default function BrandReviewScreen() {
         <View style={styles.countChip}>
           <Text style={styles.countChipText}>
             {filteredSorted.length}
-            {showCountSlash ? ` / ${totalRowsBeforeFilters}` : ""}
+            {showCountSlash ? ` / ${totalBrandsBeforeFilters}` : ""}
           </Text>
         </View>
       </View>
@@ -341,7 +362,7 @@ export default function BrandReviewScreen() {
 
       <View style={styles.sortRow}>
         <Text style={styles.filterLabel}>Sort by</Text>
-        {(["brand", "category", "vendor", "min"] as SortMode[]).map((m) => (
+        {(["brand", "min"] as SortMode[]).map((m) => (
           <TouchableOpacity
             key={m}
             style={[styles.sortChip, sortMode === m && styles.sortChipActive]}
@@ -354,22 +375,15 @@ export default function BrandReviewScreen() {
                 sortMode === m && styles.sortChipTextActive,
               ]}
             >
-              {m === "brand"
-                ? "Brand"
-                : m === "category"
-                  ? "Category"
-                  : m === "vendor"
-                    ? "Vendor"
-                    : "Min"}
+              {m === "brand" ? "Brand" : "Min"}
             </Text>
           </TouchableOpacity>
         ))}
+        <Text style={styles.hintText}>Double-tap a brand to expand</Text>
       </View>
 
       <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, styles.colBrand]}>Brand</Text>
-        <Text style={[styles.tableHeaderCell, styles.colCategory]}>Category</Text>
-        <Text style={[styles.tableHeaderCell, styles.colVendor]}>Vendor</Text>
         <Text style={[styles.tableHeaderCell, styles.colMin, styles.colMinAlign]}>
           Min
         </Text>
@@ -378,53 +392,106 @@ export default function BrandReviewScreen() {
       <FlatList
         data={filteredSorted}
         keyExtractor={(item) => item.key}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text
-              style={[
-                styles.cell,
-                styles.colBrand,
-                styles.cellBrand,
-                !item.brand && styles.cellEmpty,
-              ]}
-              numberOfLines={2}
-            >
-              {item.brand || PLACEHOLDER}
-            </Text>
-            <Text
-              style={[
-                styles.cell,
-                styles.colCategory,
-                !item.category && styles.cellEmpty,
-              ]}
-              numberOfLines={2}
-            >
-              {item.category || PLACEHOLDER}
-            </Text>
-            <Text
-              style={[
-                styles.cell,
-                styles.colVendor,
-                !item.vendorName && styles.cellEmpty,
-              ]}
-              numberOfLines={2}
-            >
-              {item.vendorName || PLACEHOLDER}
-            </Text>
-            <Text
-              style={[
-                styles.cell,
-                styles.colMin,
-                styles.colMinAlign,
-                styles.cellMin,
-                item.maxMin === null && styles.cellEmpty,
-              ]}
-              numberOfLines={1}
-            >
-              {item.maxMin === null ? PLACEHOLDER : String(item.maxMin)}
-            </Text>
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const isOpen = expanded.has(item.key);
+          return (
+            <View>
+              <TouchableOpacity
+                onPress={() => handleBrandTap(item.key)}
+                activeOpacity={0.7}
+                style={styles.row}
+                accessibilityLabel={`${item.brand}, double-tap to ${
+                  isOpen ? "collapse" : "expand"
+                }`}
+              >
+                <View style={[styles.colBrand, styles.brandCellWrap]}>
+                  <Feather
+                    name={isOpen ? "chevron-down" : "chevron-right"}
+                    size={16}
+                    color={Colors.textSecondary}
+                    style={styles.chevron}
+                  />
+                  <Text
+                    style={[styles.cell, styles.cellBrand, styles.brandText]}
+                    numberOfLines={2}
+                  >
+                    {item.brand}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.cell,
+                    styles.colMin,
+                    styles.colMinAlign,
+                    styles.cellMin,
+                    item.maxMin === null && styles.cellEmpty,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.maxMin === null ? PLACEHOLDER : String(item.maxMin)}
+                </Text>
+              </TouchableOpacity>
+
+              {isOpen && (
+                <View style={styles.detailWrap}>
+                  <View style={styles.detailHeader}>
+                    <Text style={[styles.detailHeaderCell, styles.detailColCategory]}>
+                      Category
+                    </Text>
+                    <Text style={[styles.detailHeaderCell, styles.detailColVendor]}>
+                      Vendor
+                    </Text>
+                    <Text
+                      style={[
+                        styles.detailHeaderCell,
+                        styles.detailColMin,
+                        styles.colMinAlign,
+                      ]}
+                    >
+                      Min
+                    </Text>
+                  </View>
+                  {item.details.map((d) => (
+                    <View key={d.key} style={styles.detailRow}>
+                      <Text
+                        style={[
+                          styles.detailCell,
+                          styles.detailColCategory,
+                          !d.category && styles.cellEmpty,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {d.category || PLACEHOLDER}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.detailCell,
+                          styles.detailColVendor,
+                          !d.vendorName && styles.cellEmpty,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {d.vendorName || PLACEHOLDER}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.detailCell,
+                          styles.detailColMin,
+                          styles.colMinAlign,
+                          styles.cellMin,
+                          d.maxMin === null && styles.cellEmpty,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {d.maxMin === null ? PLACEHOLDER : String(d.maxMin)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={[
           styles.list,
@@ -439,13 +506,13 @@ export default function BrandReviewScreen() {
             <EmptyState
               icon="tag"
               title="No orders yet"
-              subtitle="Import or create orders to start reviewing brands and categories."
+              subtitle="Import or create orders to start reviewing brands."
             />
           ) : minFilterActive ? (
             <EmptyState
               icon="filter"
               title="No matches"
-              subtitle={`No items have min ${
+              subtitle={`No brands have items with min ${
                 MIN_OPERATORS.find((o) => o.code === minOperator)?.label ?? ""
               } ${minThreshold}${
                 search.trim() ? ` matching "${search.trim()}"` : ""
@@ -455,13 +522,13 @@ export default function BrandReviewScreen() {
             <EmptyState
               icon="search"
               title="No matches"
-              subtitle={`Nothing in the orders matches "${search.trim()}".`}
+              subtitle={`Nothing matches "${search.trim()}".`}
             />
           ) : (
             <EmptyState
               icon="tag"
               title="Nothing to review"
-              subtitle="None of your orders have brand, category, or vendor info yet."
+              subtitle="None of your orders have brand info yet."
             />
           )
         }
@@ -601,6 +668,12 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   sortChipTextActive: { color: Colors.textInverse },
+  hintText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontStyle: "italic",
+    marginLeft: "auto",
+  },
   tableHeader: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -620,24 +693,60 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    alignItems: "flex-start",
+    paddingVertical: 14,
+    alignItems: "center",
     backgroundColor: Colors.surface,
   },
+  brandCellWrap: { flexDirection: "row", alignItems: "center" },
+  chevron: { marginRight: 8 },
+  brandText: { flex: 1 },
   cell: {
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.text,
     paddingRight: 8,
   },
   cellBrand: { fontWeight: "700" },
   cellMin: { fontWeight: "700" },
   cellEmpty: { color: Colors.textMuted, fontStyle: "italic", fontWeight: "400" },
-  colBrand: { flex: 1.1 },
-  colCategory: { flex: 1 },
-  colVendor: { flex: 1.3 },
-  colMin: { flex: 0.55 },
+  colBrand: { flex: 1 },
+  colMin: { flex: 0.3 },
   colMinAlign: { textAlign: "right", paddingRight: 0 },
   separator: { height: 1, backgroundColor: Colors.border, marginLeft: 20 },
   list: {},
   listEmpty: { flex: 1, paddingTop: 40 },
+  detailWrap: {
+    backgroundColor: Colors.background,
+    paddingLeft: 44,
+    paddingRight: 20,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  detailHeaderCell: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  detailRow: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    alignItems: "flex-start",
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  detailCell: {
+    fontSize: 13,
+    color: Colors.text,
+    paddingRight: 8,
+  },
+  detailColCategory: { flex: 1 },
+  detailColVendor: { flex: 1.2 },
+  detailColMin: { flex: 0.4 },
 });
