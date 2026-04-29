@@ -384,9 +384,6 @@ export default function BrandReviewScreen() {
 
       <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, styles.colBrand]}>Brand</Text>
-        <Text style={[styles.tableHeaderCell, styles.colMin, styles.colMinAlign]}>
-          Min
-        </Text>
       </View>
 
       <FlatList
@@ -418,18 +415,6 @@ export default function BrandReviewScreen() {
                     {item.brand}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.cell,
-                    styles.colMin,
-                    styles.colMinAlign,
-                    styles.cellMin,
-                    item.maxMin === null && styles.cellEmpty,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {item.maxMin === null ? PLACEHOLDER : String(item.maxMin)}
-                </Text>
               </TouchableOpacity>
 
               {isOpen && (
