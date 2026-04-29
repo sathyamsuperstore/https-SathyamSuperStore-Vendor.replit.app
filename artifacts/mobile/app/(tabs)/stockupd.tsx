@@ -449,15 +449,22 @@ export default function StockUpdScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [vendorScopedOrders]);
 
+  // Categories list is scoped to whatever brand(s) are currently
+  // selected — picking "Brand A" should only offer the categories that
+  // actually have items under Brand A. With no brand selected, fall
+  // back to every category seen in the vendor-scoped orders.
   const allCategories = useMemo(() => {
     const set = new Set<string>();
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     vendorScopedOrders.forEach((o) =>
       o.items.forEach((item) => {
-        if (item.category) set.add(item.category);
+        if (!item.category) return;
+        if (brandSet && !(item.brand != null && brandSet.has(item.brand))) return;
+        set.add(item.category);
       })
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [vendorScopedOrders]);
+  }, [vendorScopedOrders, activeBrands]);
 
   useEffect(() => {
     if (activeBrands.length === 0) return;
@@ -578,8 +585,16 @@ export default function StockUpdScreen() {
   }
 
   function categoryOrderCount(category: string): number {
+    // When a brand is selected, count only orders with at least one
+    // item that matches BOTH the category and one of the active brands —
+    // matches the brand-scoped category list shown in the picker.
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     return vendorScopedOrders.filter((o) =>
-      o.items.some((item) => item.category === category)
+      o.items.some(
+        (item) =>
+          item.category === category &&
+          (!brandSet || (item.brand != null && brandSet.has(item.brand)))
+      )
     ).length;
   }
 
