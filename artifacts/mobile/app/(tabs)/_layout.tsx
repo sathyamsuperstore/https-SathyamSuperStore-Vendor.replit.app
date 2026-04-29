@@ -43,6 +43,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "cart", selected: "cart.fill" }} />
         <Label>Latest Purchases</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="brand-review">
+        <Icon sf={{ default: "tag", selected: "tag.fill" }} />
+        <Label>Brand Review</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -172,6 +176,18 @@ function ClassicTabLayout() {
               <SymbolView name="cart" tintColor={color} size={24} />
             ) : (
               <Feather name="shopping-cart" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="brand-review"
+        options={{
+          title: "Brand Review",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="tag" tintColor={color} size={24} />
+            ) : (
+              <Feather name="tag" size={22} color={color} />
             ),
         }}
       />
