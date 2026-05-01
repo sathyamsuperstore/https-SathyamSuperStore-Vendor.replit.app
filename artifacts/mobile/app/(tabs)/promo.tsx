@@ -499,6 +499,7 @@ export default function PromoScreen() {
 
       const itemNoKey = fieldKeys["Item No"];
       const batchNoKey = fieldKeys["BatchNo"];
+      const mrpKey = fieldKeys["MRP"];
       if (!itemNoKey || !batchNoKey) {
         setErrors([
           `Missing required columns. Expected "Item No" and "BatchNo". Found: ${Object.keys(firstRow).join(", ")}`,
@@ -520,12 +521,15 @@ export default function PromoScreen() {
         const r = raw[i];
         const itemNo = String(r[itemNoKey] ?? "").trim();
         const batchNo = String(r[batchNoKey] ?? "").trim();
+        const mrpRaw = mrpKey ? String(r[mrpKey] ?? "").trim() : "";
         if (!itemNo || !batchNo) {
           localErrors.push(`Row ${i + 2}: missing Item No / BatchNo`);
         } else {
-          // Dedupe by (Item No, BatchNo) — first occurrence wins,
-          // matches the MRP tab's (ItemNo, MRP) dedupe behavior.
-          const key = `${itemNo.toUpperCase()}|${batchNo.toUpperCase()}`;
+          // Dedupe by (Item No, BatchNo, MRP) — first occurrence wins.
+          // Including MRP in the key means the same Item+Batch with
+          // different MRP values survive as separate rows, so the user
+          // can see every MRP/Promo combination on the cards.
+          const key = `${itemNo.toUpperCase()}|${batchNo.toUpperCase()}|${mrpRaw.toUpperCase()}`;
           if (!seenPair.has(key)) {
             seenPair.add(key);
             const entry: PromoEntry = {};
@@ -571,8 +575,9 @@ export default function PromoScreen() {
       setProgress(92);
       setProgressLabel("Sorting entries…");
       await yieldToUI();
-      // Sort by Item No, then BatchNo — so duplicates of the same
-      // item group together visually.
+      // Sort by Item No, then BatchNo, then MRP — so all rows for the
+      // same item group together visually and multiple MRPs for the
+      // same item+batch appear in a stable, ascending order.
       parsed.sort((a, b) => {
         const ai = String(a["Item No"] ?? "");
         const bi = String(b["Item No"] ?? "");
@@ -580,7 +585,11 @@ export default function PromoScreen() {
         if (c !== 0) return c;
         const ab = String(a["BatchNo"] ?? "");
         const bb = String(b["BatchNo"] ?? "");
-        return ab.localeCompare(bb, undefined, { numeric: true, sensitivity: "base" });
+        const cb = ab.localeCompare(bb, undefined, { numeric: true, sensitivity: "base" });
+        if (cb !== 0) return cb;
+        const am = typeof a["MRP"] === "number" ? (a["MRP"] as number) : parseFloat(String(a["MRP"] ?? "")) || 0;
+        const bm = typeof b["MRP"] === "number" ? (b["MRP"] as number) : parseFloat(String(b["MRP"] ?? "")) || 0;
+        return am - bm;
       });
 
       setProgress(95);
@@ -834,7 +843,7 @@ export default function PromoScreen() {
                         </View>
                         {vendor.rows.map((row, i) => (
                           <View
-                            key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${i}`}
+                            key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${i}`}
                             style={[styles.itemCard, i % 2 === 1 && styles.itemCardAlt]}
                           >
                             <View style={styles.cardLine1}>
