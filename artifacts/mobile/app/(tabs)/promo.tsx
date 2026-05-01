@@ -36,6 +36,9 @@ const NUMERIC_FIELDS = new Set<string>([
   "PromotionPrice",
   "Latest MRP",
   "MRP",
+  // On-hand stock quantity. Stored as Double so it survives fractional
+  // unit-of-measure values (kg, ltr) without being silently truncated.
+  "OH Qty",
 ]);
 
 // Date columns. Excel surfaces these as JS Date objects (cellDates:true),
@@ -118,6 +121,7 @@ const COL_WIDTHS: Record<string, number> = {
   BatchNo: 110,
   VendorCode: 110,
   VendorName: 180,
+  "OH Qty": 80,
 };
 
 function colWidth(field: string): number {
@@ -132,7 +136,13 @@ function colWidth(field: string): number {
 const CARD_LINE_1_LEFT = "Item No";
 const CARD_LINE_1_RIGHT = "Item Description";
 const CARD_LINE_2 = "Latest MRP";
-const CARD_LINE_3: readonly string[] = ["MRP", "SP", "PromotionPrice", "PromotionToDate"];
+const CARD_LINE_3: readonly string[] = [
+  "MRP",
+  "SP",
+  "PromotionPrice",
+  "PromotionToDate",
+  "OH Qty",
+];
 
 // Display labels for card fields whose underlying column name we want
 // to abbreviate or soften for the user. The data field name itself
@@ -1515,19 +1525,19 @@ const styles = StyleSheet.create({
   },
   priceListHead: {
     flexDirection: "row",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingTop: 6,
     paddingBottom: 3,
     backgroundColor: Colors.background,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    gap: 8,
+    gap: 4,
   },
   priceListRow: {
     flexDirection: "row",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 6,
-    gap: 8,
+    gap: 4,
     backgroundColor: Colors.surface,
   },
   priceListRowAlt: {
@@ -1537,6 +1547,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     marginBottom: 0,
+    fontSize: 11,
   },
   fieldLabel: {
     fontSize: 9,
