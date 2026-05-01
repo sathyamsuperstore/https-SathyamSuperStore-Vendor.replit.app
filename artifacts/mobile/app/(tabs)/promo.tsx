@@ -124,31 +124,15 @@ function colWidth(field: string): number {
   return COL_WIDTHS[field] ?? 90;
 }
 
-// Columns that are part of the data model (still imported, searchable,
-// and usable for filters) but intentionally hidden from the table view
-// to keep it scannable.
-const HIDDEN_TABLE_FIELDS = new Set<string>([
-  "Category",
-  "NoofBatches",
-  "SoldQty",
-  "VendorCode",
-  "BatchNo",
-]);
-
-// Brand and VendorName are hidden from the column list because they
-// are promoted to nested group headers above the rows (Brand > Vendor).
-const TABLE_FIELDS: readonly string[] = PROMO_FIELDS.filter(
-  (f) => !HIDDEN_TABLE_FIELDS.has(f) && f !== "Brand" && f !== "VendorName"
-);
-
-// Width of one full row in the horizontally-scrolling table. Brand
-// group headers use this so they span the same width as the rows
-// underneath instead of clipping at the viewport edge when the user
-// scrolls right.
-const TOTAL_ROW_WIDTH =
-  TABLE_FIELDS.reduce((s, f) => s + colWidth(f), 0) +
-  Math.max(0, TABLE_FIELDS.length - 1) * 8 + // tableRow `gap: 8`
-  12 * 2; // tableRow `paddingHorizontal: 12`
+// Fields shown in each item card, organized into three stacked lines.
+// Other PROMO_FIELDS (e.g. Category, BatchNo, VendorCode, SoldQty,
+// Brand, VendorName, Promo Create Date) are still imported and remain
+// searchable / filterable; Brand and VendorName drive the nested group
+// headers above each set of cards.
+const CARD_LINE_1_LEFT = "Item No";
+const CARD_LINE_1_RIGHT = "Item Description";
+const CARD_LINE_2 = "Latest MRP";
+const CARD_LINE_3: readonly string[] = ["MRP", "SP", "PromotionPrice", "PromotionToDate"];
 
 // Fields a user is most likely to search by. Numeric fields are
 // excluded so a stray "10" doesn't match every row with a price ending
@@ -802,108 +786,79 @@ export default function PromoScreen() {
               </Text>
             </View>
 
-            <View style={styles.stickyHeaderWrap}>
-              <ScrollView
-                ref={headerScrollRef}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                onScroll={onHeaderScroll}
-                scrollEventThrottle={16}
-              >
-                <View style={styles.tableHead}>
-                  {TABLE_FIELDS.map((f) => {
-                    const numeric = NUMERIC_FIELDS.has(f);
-                    return (
-                      <Text
-                        key={f}
-                        style={[
-                          styles.th,
-                          { width: colWidth(f), textAlign: numeric ? "right" : "left" },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {f}
-                      </Text>
-                    );
-                  })}
+            <View style={styles.cardsWrap}>
+              {filtered.length === 0 ? (
+                <View style={styles.noRows}>
+                  <Feather name="search" size={24} color={Colors.textMuted} />
+                  <Text style={styles.noRowsText}>
+                    {search.trim().length > 0
+                      ? `No items match "${search}"`
+                      : "No items"}
+                  </Text>
                 </View>
-              </ScrollView>
-            </View>
-
-            <View style={styles.tableRowsCard}>
-              <ScrollView
-                ref={rowsScrollRef}
-                horizontal
-                showsHorizontalScrollIndicator
-                onScroll={onRowsScroll}
-                scrollEventThrottle={16}
-              >
-                <View>
-                  {filtered.length === 0 ? (
-                    <View style={styles.noRows}>
-                      <Feather name="search" size={24} color={Colors.textMuted} />
-                      <Text style={styles.noRowsText}>
-                        {search.trim().length > 0
-                          ? `No items match "${search}"`
-                          : "No items"}
+              ) : (
+                grouped.map((group) => (
+                  <View key={`brand:${group.brand}`} style={styles.brandBlock}>
+                    <View style={styles.brandGroupHeader}>
+                      <Feather name="tag" size={13} color={Colors.primary} />
+                      <Text style={styles.brandGroupHeaderText} numberOfLines={1}>
+                        {group.brand}
+                      </Text>
+                      <Text style={styles.brandGroupHeaderCount}>
+                        {group.total} item{group.total !== 1 ? "s" : ""}
                       </Text>
                     </View>
-                  ) : (
-                    grouped.map((group) => (
-                      <View key={`brand:${group.brand}`}>
-                        <View style={[styles.brandGroupHeader, { width: TOTAL_ROW_WIDTH }]}>
-                          <Feather name="tag" size={13} color={Colors.primary} />
-                          <Text style={styles.brandGroupHeaderText} numberOfLines={1}>
-                            {group.brand}
+                    {group.vendors.map((vendor) => (
+                      <View key={`brand:${group.brand}|vendor:${vendor.vendorName}`}>
+                        <View style={styles.vendorGroupHeader}>
+                          <Feather name="briefcase" size={11} color={Colors.textMuted} />
+                          <Text style={styles.vendorGroupHeaderText} numberOfLines={1}>
+                            {vendor.vendorName}
                           </Text>
-                          <Text style={styles.brandGroupHeaderCount}>
-                            {group.total} item{group.total !== 1 ? "s" : ""}
+                          <Text style={styles.vendorGroupHeaderCount}>
+                            {vendor.rows.length}
                           </Text>
                         </View>
-                        {group.vendors.map((vendor) => (
-                          <View key={`brand:${group.brand}|vendor:${vendor.vendorName}`}>
-                            <View style={[styles.vendorGroupHeader, { width: TOTAL_ROW_WIDTH }]}>
-                              <Feather name="briefcase" size={11} color={Colors.textMuted} />
-                              <Text style={styles.vendorGroupHeaderText} numberOfLines={1}>
-                                {vendor.vendorName}
+                        {vendor.rows.map((row, i) => (
+                          <View
+                            key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${i}`}
+                            style={[styles.itemCard, i % 2 === 1 && styles.itemCardAlt]}
+                          >
+                            <View style={styles.cardLine1}>
+                              <Text style={styles.itemNoText} numberOfLines={1}>
+                                {formatCell(CARD_LINE_1_LEFT, row[CARD_LINE_1_LEFT])}
                               </Text>
-                              <Text style={styles.vendorGroupHeaderCount}>
-                                {vendor.rows.length}
+                              <Text style={styles.itemDescText} numberOfLines={2}>
+                                {formatCell(CARD_LINE_1_RIGHT, row[CARD_LINE_1_RIGHT])}
                               </Text>
                             </View>
-                            {vendor.rows.map((row, i) => (
-                              <View
-                                key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${i}`}
-                                style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
-                              >
-                                {TABLE_FIELDS.map((f) => {
-                                  const numeric = NUMERIC_FIELDS.has(f);
-                                  return (
-                                    <Text
-                                      key={f}
-                                      style={[
-                                        styles.td,
-                                        {
-                                          width: colWidth(f),
-                                          textAlign: numeric ? "right" : "left",
-                                          fontWeight: numeric ? "600" : "400",
-                                        },
-                                      ]}
-                                      numberOfLines={1}
-                                    >
-                                      {formatCell(f, row[f])}
-                                    </Text>
-                                  );
-                                })}
-                              </View>
-                            ))}
+
+                            <View style={styles.cardLine2}>
+                              <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
+                              <Text style={styles.fieldValueLg}>
+                                {formatCell(CARD_LINE_2, row[CARD_LINE_2])}
+                              </Text>
+                            </View>
+
+                            <View style={styles.cardLine3}>
+                              {CARD_LINE_3.map((f) => (
+                                <View key={f} style={styles.statBlock}>
+                                  <Text style={styles.fieldLabel} numberOfLines={1}>
+                                    {f}
+                                  </Text>
+                                  <Text style={styles.fieldValue} numberOfLines={1}>
+                                    {formatCell(f, row[f])}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
                           </View>
                         ))}
                       </View>
-                    ))
-                  )}
-                </View>
-              </ScrollView>
+                    ))}
+                  </View>
+                ))
+              )}
             </View>
           </>
         )}
@@ -1374,6 +1329,84 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     opacity: 0.85,
   },
+
+  // Item-card layout (replaces the wide horizontal-scroll table). Each
+  // item renders as three stacked lines: identity, latest MRP, then a
+  // 4-up strip of the promo numbers/date.
+  cardsWrap: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  brandBlock: {},
+  itemCard: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  itemCardAlt: {
+    backgroundColor: Colors.background,
+  },
+  cardLine1: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  itemNoText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+    backgroundColor: Colors.primaryMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+  itemDescText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    lineHeight: 17,
+  },
+  cardLine2: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+  },
+  cardLine3: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  statBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fieldLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  fieldValue: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  fieldValueLg: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: Colors.text,
+  },
+
   noRows: { padding: 24, alignItems: "center", gap: 6 },
   noRowsText: { fontSize: 13, color: Colors.textMuted },
   emptyHint: {
