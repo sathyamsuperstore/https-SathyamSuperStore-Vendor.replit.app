@@ -160,6 +160,9 @@ interface AppContextType {
   latestPurchases: LatestPurchaseEntry[];
   saveLatestPurchasesBatch: (entries: LatestPurchaseEntry[]) => Promise<void>;
   clearLatestPurchases: () => Promise<void>;
+  promoEntries: PromoEntry[];
+  savePromoBatch: (entries: PromoEntry[]) => Promise<void>;
+  clearPromoBatch: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -208,6 +211,33 @@ export const LATEST_PURCHASES_FIELDS = [
 // keeps imports forgiving when a sheet has odd cells in numeric columns.
 export type LatestPurchaseEntry = Record<string, string | number>;
 
+// Canonical column order for the Promo (PromotionMaster) sheet. Order
+// matches the Promo tab's table layout and the export workbook so the
+// importer (header lookup), the viewer (column order), and any future
+// exporter never drift apart. Header matching at import time is
+// whitespace-insensitive, so spreadsheets that label the column
+// "ItemNo" and "Item No" both map correctly.
+export const PROMO_FIELDS = [
+  "PromotionToDate",
+  "Category",
+  "Item No",
+  "Brand",
+  "NoofBatches",
+  "Item Description",
+  "SP",
+  "SoldQty",
+  "PromotionPrice",
+  "Promo Create Date",
+  "Latest MRP",
+  "MRP",
+  "BatchNo",
+] as const;
+
+// Same flexible row shape as Latest Purchases — numbers stay numbers,
+// dates land as "DD/MM/YYYY" strings, everything else is left as the
+// raw string from the cell.
+export type PromoEntry = Record<string, string | number>;
+
 const AppContext = createContext<AppContextType | null>(null);
 
 const SUPPLIERS_KEY = "@suppliers";
@@ -215,6 +245,7 @@ const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
 const LATEST_PURCHASES_KEY = "@latestPurchases";
+const PROMO_KEY = "@promoBatch";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -259,6 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
+  const [promoEntries, setPromoEntries] = useState<PromoEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -267,13 +299,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
         AsyncStorage.getItem(SESSION_KEY),
         AsyncStorage.getItem(MRP_KEY),
         AsyncStorage.getItem(LATEST_PURCHASES_KEY),
+        AsyncStorage.getItem(PROMO_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -283,12 +316,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const loadedLatestPurchases: LatestPurchaseEntry[] = latestPurchasesData
         ? JSON.parse(latestPurchasesData)
         : [];
+      const loadedPromo: PromoEntry[] = promoData ? JSON.parse(promoData) : [];
 
       setSuppliers(loadedSuppliers);
       setOrders(loadedOrders);
       setAppUsers(loadedUsers);
       setMrpEntries(loadedMrp);
       setLatestPurchases(loadedLatestPurchases);
+      setPromoEntries(loadedPromo);
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -330,6 +365,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function clearLatestPurchases() {
     await AsyncStorage.removeItem(LATEST_PURCHASES_KEY);
     setLatestPurchases([]);
+  }
+
+  // Promo helpers mirror the MRP / Latest Purchases write-first pattern:
+  // persist to AsyncStorage first so the on-screen state never shows a
+  // "save" that wasn't actually written.
+  async function savePromoBatch(entries: PromoEntry[]) {
+    await AsyncStorage.setItem(PROMO_KEY, JSON.stringify(entries));
+    setPromoEntries(entries);
+  }
+
+  async function clearPromoBatch() {
+    await AsyncStorage.removeItem(PROMO_KEY);
+    setPromoEntries([]);
   }
 
   async function login(userId: string, password: string): Promise<{ success: boolean; error?: string }> {
@@ -607,6 +655,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         latestPurchases,
         saveLatestPurchasesBatch,
         clearLatestPurchases,
+        promoEntries,
+        savePromoBatch,
+        clearPromoBatch,
         hydrated,
       }}
     >
