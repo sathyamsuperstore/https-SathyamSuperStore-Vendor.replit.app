@@ -131,12 +131,14 @@ const HIDDEN_TABLE_FIELDS = new Set<string>([
   "Category",
   "NoofBatches",
   "SoldQty",
+  "VendorCode",
+  "BatchNo",
 ]);
 
-// Brand is hidden from the column list because it's promoted to a
-// group header above the rows.
+// Brand and VendorName are hidden from the column list because they
+// are promoted to nested group headers above the rows (Brand > Vendor).
 const TABLE_FIELDS: readonly string[] = PROMO_FIELDS.filter(
-  (f) => !HIDDEN_TABLE_FIELDS.has(f) && f !== "Brand"
+  (f) => !HIDDEN_TABLE_FIELDS.has(f) && f !== "Brand" && f !== "VendorName"
 );
 
 // Width of one full row in the horizontally-scrolling table. Brand
@@ -354,30 +356,54 @@ export default function PromoScreen() {
     });
   }, [promoEntries, search, activeVendors, activeBrands, activeCategories]);
 
-  // Group the filtered rows by Brand so the table renders one section
-  // per brand with a header row above each section. Rows inside a
-  // section keep their original (file) order. Brands are sorted
-  // case-insensitively; rows missing a brand value bucket into
-  // "(No Brand)" and sort to the end.
+  // Group the filtered rows by Brand, then by VendorName inside each
+  // brand. Rows inside the innermost group keep their original (file)
+  // order. Brands and vendors are sorted case-insensitively; missing
+  // values bucket into "(No Brand)" / "(No Vendor)" and sort last.
   const grouped = useMemo(() => {
-    const map = new Map<string, PromoEntry[]>();
+    type VendorBucket = { vendorName: string; rows: PromoEntry[] };
+    type BrandBucket = { brand: string; vendors: VendorBucket[]; total: number };
+
+    const sortKeys = (a: string, b: string, missing: string) => {
+      if (a === missing) return 1;
+      if (b === missing) return -1;
+      return a.localeCompare(b, undefined, { sensitivity: "base" });
+    };
+
+    const brandMap = new Map<string, Map<string, PromoEntry[]>>();
     for (const r of filtered) {
-      const raw = String(r["Brand"] ?? "").trim();
-      const key = raw || "(No Brand)";
-      let arr = map.get(key);
+      const brandKey = String(r["Brand"] ?? "").trim() || "(No Brand)";
+      const vendorKey = String(r["VendorName"] ?? "").trim() || "(No Vendor)";
+      let vendorMap = brandMap.get(brandKey);
+      if (!vendorMap) {
+        vendorMap = new Map<string, PromoEntry[]>();
+        brandMap.set(brandKey, vendorMap);
+      }
+      let arr = vendorMap.get(vendorKey);
       if (!arr) {
         arr = [];
-        map.set(key, arr);
+        vendorMap.set(vendorKey, arr);
       }
       arr.push(r);
     }
-    return Array.from(map.entries())
-      .sort(([a], [b]) => {
-        if (a === "(No Brand)") return 1;
-        if (b === "(No Brand)") return -1;
-        return a.localeCompare(b, undefined, { sensitivity: "base" });
-      })
-      .map(([brand, rows]) => ({ brand, rows }));
+
+    const out: BrandBucket[] = [];
+    const brandKeys = Array.from(brandMap.keys()).sort((a, b) =>
+      sortKeys(a, b, "(No Brand)")
+    );
+    for (const brand of brandKeys) {
+      const vendorMap = brandMap.get(brand)!;
+      const vendorKeys = Array.from(vendorMap.keys()).sort((a, b) =>
+        sortKeys(a, b, "(No Vendor)")
+      );
+      const vendors: VendorBucket[] = vendorKeys.map((vendorName) => ({
+        vendorName,
+        rows: vendorMap.get(vendorName)!,
+      }));
+      const total = vendors.reduce((s, v) => s + v.rows.length, 0);
+      out.push({ brand, vendors, total });
+    }
+    return out;
   }, [filtered]);
 
   function yieldToUI(): Promise<void> {
@@ -831,33 +857,46 @@ export default function PromoScreen() {
                             {group.brand}
                           </Text>
                           <Text style={styles.brandGroupHeaderCount}>
-                            {group.rows.length} item{group.rows.length !== 1 ? "s" : ""}
+                            {group.total} item{group.total !== 1 ? "s" : ""}
                           </Text>
                         </View>
-                        {group.rows.map((row, i) => (
-                          <View
-                            key={`${group.brand}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${i}`}
-                            style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
-                          >
-                            {TABLE_FIELDS.map((f) => {
-                              const numeric = NUMERIC_FIELDS.has(f);
-                              return (
-                                <Text
-                                  key={f}
-                                  style={[
-                                    styles.td,
-                                    {
-                                      width: colWidth(f),
-                                      textAlign: numeric ? "right" : "left",
-                                      fontWeight: numeric ? "600" : "400",
-                                    },
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  {formatCell(f, row[f])}
-                                </Text>
-                              );
-                            })}
+                        {group.vendors.map((vendor) => (
+                          <View key={`brand:${group.brand}|vendor:${vendor.vendorName}`}>
+                            <View style={[styles.vendorGroupHeader, { width: TOTAL_ROW_WIDTH }]}>
+                              <Feather name="briefcase" size={11} color={Colors.textMuted} />
+                              <Text style={styles.vendorGroupHeaderText} numberOfLines={1}>
+                                {vendor.vendorName}
+                              </Text>
+                              <Text style={styles.vendorGroupHeaderCount}>
+                                {vendor.rows.length}
+                              </Text>
+                            </View>
+                            {vendor.rows.map((row, i) => (
+                              <View
+                                key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${i}`}
+                                style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
+                              >
+                                {TABLE_FIELDS.map((f) => {
+                                  const numeric = NUMERIC_FIELDS.has(f);
+                                  return (
+                                    <Text
+                                      key={f}
+                                      style={[
+                                        styles.td,
+                                        {
+                                          width: colWidth(f),
+                                          textAlign: numeric ? "right" : "left",
+                                          fontWeight: numeric ? "600" : "400",
+                                        },
+                                      ]}
+                                      numberOfLines={1}
+                                    >
+                                      {formatCell(f, row[f])}
+                                    </Text>
+                                  );
+                                })}
+                              </View>
+                            ))}
                           </View>
                         ))}
                       </View>
@@ -1311,6 +1350,29 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
     opacity: 0.75,
+  },
+  vendorGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 24,
+    paddingVertical: 5,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  vendorGroupHeaderText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.3,
+  },
+  vendorGroupHeaderCount: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    opacity: 0.85,
   },
   noRows: { padding: 24, alignItems: "center", gap: 6 },
   noRowsText: { fontSize: 13, color: Colors.textMuted },
