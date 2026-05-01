@@ -353,13 +353,17 @@ export default function PromoScreen() {
     });
   }, [promoEntries, search, activeVendors, activeBrands, activeCategories]);
 
-  // Group the filtered rows by Brand, then by VendorName inside each
-  // brand. Rows inside the innermost group keep their original (file)
-  // order. Brands and vendors are sorted case-insensitively; missing
-  // values bucket into "(No Brand)" / "(No Vendor)" and sort last.
+  // Group the filtered rows three levels deep:
+  //   Brand -> VendorName -> Item No -> rows (one row per price variant)
+  // so that an Item No with multiple MRP/Batch combinations renders as a
+  // single card whose price strip is a stacked list of variants.
+  // Brands / vendors / item-no order is case-insensitive alphabetical;
+  // missing brand or vendor values bucket into "(No Brand)" /
+  // "(No Vendor)" and sort last.
   const grouped = useMemo(() => {
-    type VendorBucket = { vendorName: string; rows: PromoEntry[] };
-    type BrandBucket = { brand: string; vendors: VendorBucket[]; total: number };
+    type ItemBucket = { itemNo: string; rows: PromoEntry[] };
+    type VendorBucket = { vendorName: string; items: ItemBucket[]; itemCount: number };
+    type BrandBucket = { brand: string; vendors: VendorBucket[]; itemCount: number };
 
     const sortKeys = (a: string, b: string, missing: string) => {
       if (a === missing) return 1;
@@ -367,21 +371,29 @@ export default function PromoScreen() {
       return a.localeCompare(b, undefined, { sensitivity: "base" });
     };
 
-    const brandMap = new Map<string, Map<string, PromoEntry[]>>();
+    // brand -> vendor -> itemNo -> rows[]
+    const brandMap = new Map<string, Map<string, Map<string, PromoEntry[]>>>();
     for (const r of filtered) {
       const brandKey = String(r["Brand"] ?? "").trim() || "(No Brand)";
       const vendorKey = String(r["VendorName"] ?? "").trim() || "(No Vendor)";
+      const itemKey = String(r["Item No"] ?? "").trim() || "(No Item No)";
+
       let vendorMap = brandMap.get(brandKey);
       if (!vendorMap) {
-        vendorMap = new Map<string, PromoEntry[]>();
+        vendorMap = new Map();
         brandMap.set(brandKey, vendorMap);
       }
-      let arr = vendorMap.get(vendorKey);
-      if (!arr) {
-        arr = [];
-        vendorMap.set(vendorKey, arr);
+      let itemMap = vendorMap.get(vendorKey);
+      if (!itemMap) {
+        itemMap = new Map();
+        vendorMap.set(vendorKey, itemMap);
       }
-      arr.push(r);
+      let rows = itemMap.get(itemKey);
+      if (!rows) {
+        rows = [];
+        itemMap.set(itemKey, rows);
+      }
+      rows.push(r);
     }
 
     const out: BrandBucket[] = [];
@@ -393,12 +405,19 @@ export default function PromoScreen() {
       const vendorKeys = Array.from(vendorMap.keys()).sort((a, b) =>
         sortKeys(a, b, "(No Vendor)")
       );
-      const vendors: VendorBucket[] = vendorKeys.map((vendorName) => ({
-        vendorName,
-        rows: vendorMap.get(vendorName)!,
-      }));
-      const total = vendors.reduce((s, v) => s + v.rows.length, 0);
-      out.push({ brand, vendors, total });
+      const vendors: VendorBucket[] = vendorKeys.map((vendorName) => {
+        const itemMap = vendorMap.get(vendorName)!;
+        const itemKeys = Array.from(itemMap.keys()).sort((a, b) =>
+          a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+        );
+        const items: ItemBucket[] = itemKeys.map((itemNo) => ({
+          itemNo,
+          rows: itemMap.get(itemNo)!,
+        }));
+        return { vendorName, items, itemCount: items.length };
+      });
+      const itemCount = vendors.reduce((s, v) => s + v.itemCount, 0);
+      out.push({ brand, vendors, itemCount });
     }
     return out;
   }, [filtered]);
@@ -827,7 +846,7 @@ export default function PromoScreen() {
                         {group.brand}
                       </Text>
                       <Text style={styles.brandGroupHeaderCount}>
-                        {group.total} item{group.total !== 1 ? "s" : ""}
+                        {group.itemCount} item{group.itemCount !== 1 ? "s" : ""}
                       </Text>
                     </View>
                     {group.vendors.map((vendor) => (
@@ -838,44 +857,72 @@ export default function PromoScreen() {
                             {vendor.vendorName}
                           </Text>
                           <Text style={styles.vendorGroupHeaderCount}>
-                            {vendor.rows.length}
+                            {vendor.itemCount}
                           </Text>
                         </View>
-                        {vendor.rows.map((row, i) => (
-                          <View
-                            key={`${group.brand}-${vendor.vendorName}-${row["Item No"] ?? ""}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${i}`}
-                            style={[styles.itemCard, i % 2 === 1 && styles.itemCardAlt]}
-                          >
-                            <View style={styles.cardLine1}>
-                              <Text style={styles.itemNoText} numberOfLines={1}>
-                                {formatCell(CARD_LINE_1_LEFT, row[CARD_LINE_1_LEFT])}
-                              </Text>
-                              <Text style={styles.itemDescText} numberOfLines={2}>
-                                {formatCell(CARD_LINE_1_RIGHT, row[CARD_LINE_1_RIGHT])}
-                              </Text>
-                            </View>
+                        {vendor.items.map((item, i) => {
+                          // All rows for the same Item No share identity-
+                          // level fields (description / latest MRP); pick
+                          // the first row as the representative for the
+                          // top of the card.
+                          const head = item.rows[0];
+                          return (
+                            <View
+                              key={`${group.brand}-${vendor.vendorName}-${item.itemNo}`}
+                              style={[styles.itemCard, i % 2 === 1 && styles.itemCardAlt]}
+                            >
+                              <View style={styles.cardLine1}>
+                                <Text style={styles.itemNoText} numberOfLines={1}>
+                                  {formatCell(CARD_LINE_1_LEFT, head[CARD_LINE_1_LEFT])}
+                                </Text>
+                                <Text style={styles.itemDescText} numberOfLines={2}>
+                                  {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
+                                </Text>
+                              </View>
 
-                            <View style={styles.cardLine2}>
-                              <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
-                              <Text style={styles.fieldValueLg}>
-                                {formatCell(CARD_LINE_2, row[CARD_LINE_2])}
-                              </Text>
-                            </View>
+                              <View style={styles.cardLine2}>
+                                <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
+                                <Text style={styles.fieldValueLg}>
+                                  {formatCell(CARD_LINE_2, head[CARD_LINE_2])}
+                                </Text>
+                              </View>
 
-                            <View style={styles.cardLine3}>
-                              {CARD_LINE_3.map((f) => (
-                                <View key={f} style={styles.statBlock}>
-                                  <Text style={styles.fieldLabel} numberOfLines={1}>
-                                    {cardLabel(f)}
-                                  </Text>
-                                  <Text style={styles.fieldValue} numberOfLines={1}>
-                                    {formatCell(f, row[f])}
-                                  </Text>
+                              <View style={styles.priceList}>
+                                {/* One header row of small labels above the stacked variants */}
+                                <View style={styles.priceListHead}>
+                                  {CARD_LINE_3.map((f) => (
+                                    <Text
+                                      key={`hd:${f}`}
+                                      style={[styles.fieldLabel, styles.priceCell]}
+                                      numberOfLines={1}
+                                    >
+                                      {cardLabel(f)}
+                                    </Text>
+                                  ))}
                                 </View>
-                              ))}
+                                {item.rows.map((row, ri) => (
+                                  <View
+                                    key={`${item.itemNo}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${ri}`}
+                                    style={[
+                                      styles.priceListRow,
+                                      ri % 2 === 1 && styles.priceListRowAlt,
+                                    ]}
+                                  >
+                                    {CARD_LINE_3.map((f) => (
+                                      <Text
+                                        key={f}
+                                        style={[styles.fieldValue, styles.priceCell]}
+                                        numberOfLines={1}
+                                      >
+                                        {formatCell(f, row[f])}
+                                      </Text>
+                                    ))}
+                                  </View>
+                                ))}
+                              </View>
                             </View>
-                          </View>
-                        ))}
+                          );
+                        })}
                       </View>
                     ))}
                   </View>
@@ -1409,6 +1456,41 @@ const styles = StyleSheet.create({
   statBlock: {
     flex: 1,
     minWidth: 0,
+  },
+  // Stacked price-variant list (replaces the single 4-up cardLine3 row
+  // when an Item No has multiple MRP/Batch combinations). One small
+  // label header row, then one value row per variant.
+  priceList: {
+    marginTop: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden",
+  },
+  priceListHead: {
+    flexDirection: "row",
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: 3,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: 8,
+  },
+  priceListRow: {
+    flexDirection: "row",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 8,
+    backgroundColor: Colors.surface,
+  },
+  priceListRowAlt: {
+    backgroundColor: Colors.background,
+  },
+  priceCell: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
   },
   fieldLabel: {
     fontSize: 9,
