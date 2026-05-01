@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -205,6 +206,23 @@ export default function PromoScreen() {
   // appears with more than one distinct MRP value across the imported
   // data. Useful for spotting price discrepancies / multi-batch items.
   const [onlyMultiMrp, setOnlyMultiMrp] = useState(false);
+
+  // When another tab deep-links into Promo with `?q=<itemNo>` (e.g.
+  // tapping an Item No on the Stock Update tab), seed the search box
+  // with that value and clear any active vendor/brand/category/multi-MRP
+  // filters so the targeted item isn't accidentally hidden. Re-runs
+  // whenever the param value changes so repeat taps re-focus.
+  const params = useLocalSearchParams<{ q?: string | string[] }>();
+  const qParam = Array.isArray(params.q) ? params.q[0] : params.q;
+  useEffect(() => {
+    if (typeof qParam === "string" && qParam.trim() !== "") {
+      setSearch(qParam.trim());
+      setActiveVendors([]);
+      setActiveBrands([]);
+      setActiveCategories([]);
+      setOnlyMultiMrp(false);
+    }
+  }, [qParam]);
   // Import progress: 0-100 with a human-readable phase label. Same
   // pattern as the MRP import — the parsing loop yields to the event
   // loop in chunks so the bar can actually paint while we work.

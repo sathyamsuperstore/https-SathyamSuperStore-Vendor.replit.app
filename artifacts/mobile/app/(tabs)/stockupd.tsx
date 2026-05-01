@@ -67,6 +67,9 @@ function StockUpdCard({
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // Used by the tappable "Item No: …" link to deep-link into the
+  // Promo tab pre-filtered to that item.
+  const router = useRouter();
 
   const sortedItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -206,7 +209,25 @@ function StockUpdCard({
                     <Text style={cardSt.itemName}>{desc}</Text>
                     {(item.brand || itemNo) ? (
                       <Text style={cardSt.itemBrand}>
-                        {item.brand ?? ""}{item.brand && itemNo ? "  ·  " : ""}{itemNo ? `Item No: ${itemNo}` : ""}{itemNo && mrpMap[itemNo.trim().toUpperCase()]?.length ? `  ·  MRP ₹${mrpMap[itemNo.trim().toUpperCase()].map((v) => v.toFixed(2)).join(", ")}` : ""}
+                        {item.brand ?? ""}
+                        {item.brand && itemNo ? "  ·  " : ""}
+                        {itemNo ? (
+                          <Text
+                            style={cardSt.itemNoLink}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/promo",
+                                params: { q: itemNo.trim() },
+                              })
+                            }
+                            suppressHighlighting
+                          >
+                            Item No: {itemNo}
+                          </Text>
+                        ) : null}
+                        {itemNo && mrpMap[itemNo.trim().toUpperCase()]?.length
+                          ? `  ·  MRP ₹${mrpMap[itemNo.trim().toUpperCase()].map((v) => v.toFixed(2)).join(", ")}`
+                          : ""}
                       </Text>
                     ) : null}
                     <Text style={cardSt.itemMeta}>
@@ -333,6 +354,7 @@ const cardSt = StyleSheet.create({
   },
   itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
+  itemNoLink: { color: Colors.primary, textDecorationLine: "underline", fontWeight: "700" },
   itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
   itemNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   notesInputRow: {
