@@ -22,7 +22,7 @@ import * as Haptics from "expo-haptics";
 import * as Print from "expo-print";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus, Order, OrderItem, showStorageErrorAlert } from "@/context/AppContext";
+import { useApp, OrderStatus, Order, OrderItem, PromoEntry, showStorageErrorAlert } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -39,6 +39,19 @@ function calcTotal(items: OrderItem[]): number {
   return items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
 }
 
+// Format a numeric promo cell. Numbers render as integer when whole,
+// 2dp otherwise (matches the Promo tab convention). Strings pass
+// through trimmed; missing values become an empty string so the
+// caller can fall back to a placeholder.
+function fmtPromoNum(v: unknown): string {
+  if (v === undefined || v === null || v === "") return "";
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "";
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+  return String(v).trim();
+}
+
 function StockUpdCard({
   order,
   vendorCode,
@@ -49,6 +62,7 @@ function StockUpdCard({
   showNotes,
   multipleMrpOnly,
   mrpMap,
+  promoMap,
   onSave,
 }: {
   order: Order;
@@ -60,6 +74,7 @@ function StockUpdCard({
   showNotes: boolean;
   multipleMrpOnly: boolean;
   mrpMap: Record<string, number[]>;
+  promoMap: Record<string, PromoEntry[]>;
   onSave: (id: string, items: OrderItem[]) => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -240,6 +255,39 @@ function StockUpdCard({
                     ) : null}
                   </View>
                 </View>
+                {/* Promo snapshot: only rendered when this item's
+                    Item No has a matching row in the Promo tab. Picks
+                    the first promo entry (matches the first-wins
+                    dedupe used by the Promo tab itself). Five cells
+                    in one neatly-stacked row: MRP / SP / Promo /
+                    Valid Till / OH Qty. */}
+                {(() => {
+                  const k = itemNo ? itemNo.trim().toUpperCase() : "";
+                  const list = k ? promoMap[k] : undefined;
+                  const p = list && list.length > 0 ? list[0] : undefined;
+                  if (!p) return null;
+                  const cells: { label: string; value: string }[] = [
+                    { label: "MRP", value: fmtPromoNum(p["MRP"]) },
+                    { label: "SP", value: fmtPromoNum(p["SP"]) },
+                    { label: "Promo", value: fmtPromoNum(p["PromotionPrice"]) },
+                    { label: "Valid Till", value: String(p["PromotionToDate"] ?? "") },
+                    { label: "OH Qty", value: fmtPromoNum(p["OH Qty"]) },
+                  ];
+                  return (
+                    <View style={cardSt.promoStrip}>
+                      {cells.map((c) => (
+                        <View key={c.label} style={cardSt.promoCell}>
+                          <Text style={cardSt.promoLabel} numberOfLines={1}>
+                            {c.label}
+                          </Text>
+                          <Text style={cardSt.promoValue} numberOfLines={1}>
+                            {c.value || "—"}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
                 {/* Bottom: inputs with labels */}
                 <View style={cardSt.inputRow}>
                   <View style={cardSt.inputGroup}>
@@ -355,6 +403,31 @@ const cardSt = StyleSheet.create({
   itemName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   itemBrand: { fontSize: 11, fontWeight: "600", color: Colors.primary, marginTop: 1 },
   itemNoLink: { color: Colors.primary, textDecorationLine: "underline", fontWeight: "700" },
+  // Promo snapshot strip — single row of 5 equal-width cells shown
+  // above the Ord Qty / New Stock inputs whenever the item appears
+  // in the imported Promo data.
+  promoStrip: {
+    flexDirection: "row",
+    marginTop: 6,
+    marginBottom: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    gap: 4,
+  },
+  promoCell: { flex: 1, minWidth: 0, alignItems: "flex-start" },
+  promoLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  promoValue: { fontSize: 11, fontWeight: "700", color: Colors.text },
   itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
   itemNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   notesInputRow: {
@@ -419,7 +492,7 @@ const cardSt = StyleSheet.create({
 });
 
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers, updateOrder, mrpEntries } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder, mrpEntries, promoEntries } = useApp();
   const mrpMap = useMemo(() => {
     const m: Record<string, number[]> = {};
     for (const e of mrpEntries) {
@@ -430,6 +503,21 @@ export default function StockUpdScreen() {
     for (const k of Object.keys(m)) m[k].sort((a, b) => a - b);
     return m;
   }, [mrpEntries]);
+  // Index of promo rows by Item No (uppercase, trimmed). Each Item No
+  // can have several promo variants (different MRP / Batch); we keep
+  // the full list so the row strip can pick the most relevant one
+  // (currently the first occurrence — same first-wins rule the Promo
+  // tab uses for its dedupe).
+  const promoMap = useMemo(() => {
+    const m: Record<string, PromoEntry[]> = {};
+    for (const e of promoEntries) {
+      const k = String(e["Item No"] ?? "").trim().toUpperCase();
+      if (!k) continue;
+      if (!m[k]) m[k] = [];
+      m[k].push(e);
+    }
+    return m;
+  }, [promoEntries]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
@@ -1184,7 +1272,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} />
         )}
         contentContainerStyle={[
           styles.list,
