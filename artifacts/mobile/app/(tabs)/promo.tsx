@@ -134,6 +134,19 @@ const CARD_LINE_1_RIGHT = "Item Description";
 const CARD_LINE_2 = "Latest MRP";
 const CARD_LINE_3: readonly string[] = ["MRP", "SP", "PromotionPrice", "PromotionToDate"];
 
+// Display labels for card fields whose underlying column name we want
+// to abbreviate or soften for the user. The data field name itself
+// stays unchanged (still `PromotionPrice` / `PromotionToDate` in the
+// imported rows, search, filters, etc).
+const CARD_FIELD_LABEL: Record<string, string> = {
+  PromotionPrice: "Promo",
+  PromotionToDate: "Valid Till",
+};
+
+function cardLabel(field: string): string {
+  return CARD_FIELD_LABEL[field] ?? field;
+}
+
 // Fields a user is most likely to search by. Numeric fields are
 // excluded so a stray "10" doesn't match every row with a price ending
 // in 10.
@@ -844,7 +857,7 @@ export default function PromoScreen() {
                               {CARD_LINE_3.map((f) => (
                                 <View key={f} style={styles.statBlock}>
                                   <Text style={styles.fieldLabel} numberOfLines={1}>
-                                    {f}
+                                    {cardLabel(f)}
                                   </Text>
                                   <Text style={styles.fieldValue} numberOfLines={1}>
                                     {formatCell(f, row[f])}
