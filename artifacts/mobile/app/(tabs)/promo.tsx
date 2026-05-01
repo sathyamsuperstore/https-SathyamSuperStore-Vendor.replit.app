@@ -437,31 +437,32 @@ export default function PromoScreen() {
 
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={[styles.pickBtn, loading && { opacity: 0.6 }, { flex: 1 }]}
+              style={[styles.pickBtn, loading && { opacity: 0.6 }]}
               onPress={pickAndImport}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator size="small" color={Colors.textInverse} />
+                <ActivityIndicator size="small" color={Colors.primary} />
               ) : (
-                <Feather name="upload" size={18} color={Colors.textInverse} />
+                <Feather name="upload" size={16} color={Colors.primary} />
               )}
               <Text style={styles.pickBtnText}>
                 {loading
                   ? "Importing…"
                   : promoEntries.length > 0
-                    ? "Re-Import (Replace)"
-                    : "Choose Excel File"}
+                    ? "Re-Import"
+                    : "Excel"}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.deleteBtn, promoEntries.length === 0 && { opacity: 0.4 }]}
-              onPress={handleClear}
-              disabled={promoEntries.length === 0}
-            >
-              <Feather name="trash-2" size={18} color={Colors.textInverse} />
-              <Text style={styles.deleteBtnText}>Delete All</Text>
-            </TouchableOpacity>
+            {promoEntries.length > 0 && (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={handleClear}
+              >
+                <Feather name="trash-2" size={16} color={Colors.danger} />
+                <Text style={styles.deleteBtnText}>Delete</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {loading && (
@@ -654,29 +655,35 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.text,
   },
-  actionRow: { flexDirection: "row", gap: 8 },
+  // Pill-style action buttons that match the Orders tab: compact,
+  // colored background tinted toward the action's role (blue =
+  // primary action, red = destructive), thin colored border, bold
+  // 13pt label.
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   pickBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 10,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
   },
-  pickBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 15 },
+  pickBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: Colors.danger,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 10,
+    backgroundColor: Colors.dangerLight,
+    borderWidth: 1,
+    borderColor: Colors.danger + "30",
   },
-  deleteBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 14 },
+  deleteBtnText: { fontSize: 13, fontWeight: "700", color: Colors.danger },
   progressWrap: { gap: 6 },
   progressLabelRow: {
     flexDirection: "row",
