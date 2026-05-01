@@ -233,6 +233,7 @@ export const PROMO_FIELDS = [
   "BatchNo",
   "VendorCode",
   "VendorName",
+  "OH Qty",
 ] as const;
 
 // Same flexible row shape as Latest Purchases — numbers stay numbers,
