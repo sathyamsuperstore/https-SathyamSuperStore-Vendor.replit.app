@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -153,6 +154,20 @@ export default function PromoScreen() {
   const [errors, setErrors] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  // Multi-select filters that mirror the StockUpd tab — sheet-style
+  // pickers, search-as-you-type inside each modal, and progressive
+  // scoping (vendor narrows brand list, vendor + brand narrow
+  // category list).
+  const [activeVendors, setActiveVendors] = useState<string[]>([]);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [activeBrands, setActiveBrands] = useState<string[]>([]);
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [brandSearch, setBrandSearch] = useState("");
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
   // Import progress: 0-100 with a human-readable phase label. Same
   // pattern as the MRP import — the parsing loop yields to the event
   // loop in chunks so the bar can actually paint while we work.
@@ -187,13 +202,133 @@ export default function PromoScreen() {
     headerScrollRef.current?.scrollTo({ x, animated: false });
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return promoEntries;
-    return promoEntries.filter((r) =>
-      SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))
+  // Vendor list = every distinct VendorName seen in the data, sorted
+  // case-insensitively.
+  const allVendors = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of promoEntries) {
+      const v = String(r["VendorName"] ?? "").trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [promoEntries]);
+
+  // Rows that survive the vendor filter — used to scope the brand
+  // picker so users only see brands that actually exist for the
+  // selected vendor(s). With no vendor selected, this is the full
+  // dataset.
+  const vendorScopedEntries = useMemo(() => {
+    if (activeVendors.length === 0) return promoEntries;
+    const set = new Set(activeVendors);
+    return promoEntries.filter(
+      (r) => set.has(String(r["VendorName"] ?? "").trim())
     );
-  }, [promoEntries, search]);
+  }, [promoEntries, activeVendors]);
+
+  const allBrands = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of vendorScopedEntries) {
+      const v = String(r["Brand"] ?? "").trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [vendorScopedEntries]);
+
+  // Categories are scoped by both vendor and brand, so picking a brand
+  // only offers categories that actually have rows under that brand
+  // (and vendor, if one is selected).
+  const allCategories = useMemo(() => {
+    const set = new Set<string>();
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
+    for (const r of vendorScopedEntries) {
+      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) continue;
+      const v = String(r["Category"] ?? "").trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [vendorScopedEntries, activeBrands]);
+
+  // If the underlying data changes (e.g. a re-import) such that a
+  // previously-selected vendor / brand / category no longer exists,
+  // drop those selections so the UI never shows a "phantom" active
+  // filter that hides every row.
+  React.useEffect(() => {
+    if (activeVendors.length === 0) return;
+    const allowed = new Set(allVendors);
+    const next = activeVendors.filter((v) => allowed.has(v));
+    if (next.length !== activeVendors.length) setActiveVendors(next);
+  }, [allVendors, activeVendors]);
+
+  React.useEffect(() => {
+    if (activeBrands.length === 0) return;
+    const allowed = new Set(allBrands);
+    const next = activeBrands.filter((b) => allowed.has(b));
+    if (next.length !== activeBrands.length) setActiveBrands(next);
+  }, [allBrands, activeBrands]);
+
+  React.useEffect(() => {
+    if (activeCategories.length === 0) return;
+    const allowed = new Set(allCategories);
+    const next = activeCategories.filter((c) => allowed.has(c));
+    if (next.length !== activeCategories.length) setActiveCategories(next);
+  }, [allCategories, activeCategories]);
+
+  function toggleVendor(name: string) {
+    setActiveVendors((prev) =>
+      prev.includes(name) ? prev.filter((v) => v !== name) : [...prev, name]
+    );
+  }
+  function toggleBrand(brand: string) {
+    setActiveBrands((prev) =>
+      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
+    );
+  }
+  function toggleCategory(category: string) {
+    setActiveCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  }
+
+  // Per-row counts shown next to each option in the picker. Vendor
+  // counts are over the full dataset; brand counts respect the vendor
+  // filter; category counts respect both vendor + brand.
+  function vendorRowCount(name: string): number {
+    let n = 0;
+    for (const r of promoEntries) {
+      if (String(r["VendorName"] ?? "").trim() === name) n++;
+    }
+    return n;
+  }
+  function brandRowCount(brand: string): number {
+    let n = 0;
+    for (const r of vendorScopedEntries) {
+      if (String(r["Brand"] ?? "").trim() === brand) n++;
+    }
+    return n;
+  }
+  function categoryRowCount(category: string): number {
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
+    let n = 0;
+    for (const r of vendorScopedEntries) {
+      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) continue;
+      if (String(r["Category"] ?? "").trim() === category) n++;
+    }
+    return n;
+  }
+
+  const filtered = useMemo(() => {
+    const vendorSet = activeVendors.length > 0 ? new Set(activeVendors) : null;
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
+    const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    const q = search.trim().toLowerCase();
+    return promoEntries.filter((r) => {
+      if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
+      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
+      if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
+      if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [promoEntries, search, activeVendors, activeBrands, activeCategories]);
 
   function yieldToUI(): Promise<void> {
     return new Promise((r) => setTimeout(r, 0));
@@ -408,6 +543,9 @@ export default function PromoScreen() {
         setStatusMsg(null);
         setErrors([]);
         setSearch("");
+        setActiveVendors([]);
+        setActiveBrands([]);
+        setActiveCategories([]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         showStorageErrorAlert("Couldn't Clear");
@@ -517,6 +655,49 @@ export default function PromoScreen() {
 
         {promoEntries.length > 0 && (
           <>
+            {/* Vendor / Brand / Category filter bars — same UX as the
+                StockUpd tab. Each opens a slide-up sheet with a search
+                box and multi-select rows. */}
+            <FilterBar
+              icon="users"
+              label={
+                activeVendors.length === 0
+                  ? "All Vendors"
+                  : activeVendors.length === 1
+                    ? activeVendors[0]
+                    : `${activeVendors.length} Vendors`
+              }
+              active={activeVendors.length > 0}
+              onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
+              onClear={() => setActiveVendors([])}
+            />
+            <FilterBar
+              icon="tag"
+              label={
+                activeBrands.length === 0
+                  ? "All Brands"
+                  : activeBrands.length === 1
+                    ? activeBrands[0]
+                    : `${activeBrands.length} Brands`
+              }
+              active={activeBrands.length > 0}
+              onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
+              onClear={() => setActiveBrands([])}
+            />
+            <FilterBar
+              icon="folder"
+              label={
+                activeCategories.length === 0
+                  ? "All Categories"
+                  : activeCategories.length === 1
+                    ? activeCategories[0]
+                    : `${activeCategories.length} Categories`
+              }
+              active={activeCategories.length > 0}
+              onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+              onClear={() => setActiveCategories([])}
+            />
+
             <View style={styles.searchWrap}>
               <Feather name="search" size={15} color={Colors.textMuted} />
               <TextInput
@@ -634,7 +815,247 @@ export default function PromoScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Vendor filter modal */}
+      <FilterModal
+        visible={showVendorModal}
+        title="Filter by Vendor"
+        emptyIcon="users"
+        emptyTitle="No Vendors Yet"
+        emptySub="Import a Promo file with a VendorName column to filter by vendor."
+        searchPlaceholder="Search vendors…"
+        searchValue={vendorSearch}
+        onChangeSearch={setVendorSearch}
+        items={allVendors}
+        active={activeVendors}
+        countLabel={(v) => `${vendorRowCount(v)} row${vendorRowCount(v) !== 1 ? "s" : ""}`}
+        allLabel="All Vendors"
+        allCount={`${promoEntries.length} rows`}
+        onToggle={toggleVendor}
+        onClear={() => setActiveVendors([])}
+        onClose={() => setShowVendorModal(false)}
+        bottomInset={insets.bottom}
+      />
+
+      {/* Brand filter modal */}
+      <FilterModal
+        visible={showBrandModal}
+        title="Filter by Brand"
+        emptyIcon="tag"
+        emptyTitle="No Brands Yet"
+        emptySub="Import a Promo file with a Brand column to filter by brand."
+        searchPlaceholder="Search brands…"
+        searchValue={brandSearch}
+        onChangeSearch={setBrandSearch}
+        items={allBrands}
+        active={activeBrands}
+        countLabel={(b) => `${brandRowCount(b)} row${brandRowCount(b) !== 1 ? "s" : ""}`}
+        allLabel="All Brands"
+        allCount={`${vendorScopedEntries.length} rows`}
+        onToggle={toggleBrand}
+        onClear={() => setActiveBrands([])}
+        onClose={() => setShowBrandModal(false)}
+        bottomInset={insets.bottom}
+      />
+
+      {/* Category filter modal */}
+      <FilterModal
+        visible={showCategoryModal}
+        title="Filter by Category"
+        emptyIcon="folder"
+        emptyTitle="No Categories Yet"
+        emptySub="Import a Promo file with a Category column to filter by category."
+        searchPlaceholder="Search categories…"
+        searchValue={categorySearch}
+        onChangeSearch={setCategorySearch}
+        items={allCategories}
+        active={activeCategories}
+        countLabel={(c) => `${categoryRowCount(c)} row${categoryRowCount(c) !== 1 ? "s" : ""}`}
+        allLabel="All Categories"
+        allCount={`${vendorScopedEntries.length} rows`}
+        onToggle={toggleCategory}
+        onClear={() => setActiveCategories([])}
+        onClose={() => setShowCategoryModal(false)}
+        bottomInset={insets.bottom}
+      />
     </View>
+  );
+}
+
+// Compact filter pill the user taps to open the picker for a given
+// dimension (Vendor / Brand / Category). Mirrors the visual treatment
+// used by the StockUpd tab.
+type FilterBarProps = {
+  icon: React.ComponentProps<typeof Feather>["name"];
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  onClear: () => void;
+};
+function FilterBar({ icon, label, active, onPress, onClear }: FilterBarProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.filterBar, active && styles.filterBarActive]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <Feather
+        name={icon}
+        size={14}
+        color={active ? Colors.textInverse : Colors.textSecondary}
+      />
+      <Text
+        style={[styles.filterBarText, active && styles.filterBarTextActive]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+      {active ? (
+        <TouchableOpacity
+          onPress={(e) => { e.stopPropagation?.(); onClear(); }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Feather name="x-circle" size={15} color={Colors.textInverse} />
+        </TouchableOpacity>
+      ) : (
+        <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// Generic slide-up sheet for picking multiple values from a list with
+// a search box. All three filter modals (Vendor / Brand / Category)
+// render through this component to keep them consistent.
+type FilterModalProps = {
+  visible: boolean;
+  title: string;
+  emptyIcon: React.ComponentProps<typeof Feather>["name"];
+  emptyTitle: string;
+  emptySub: string;
+  searchPlaceholder: string;
+  searchValue: string;
+  onChangeSearch: (s: string) => void;
+  items: string[];
+  active: string[];
+  countLabel: (item: string) => string;
+  allLabel: string;
+  allCount: string;
+  onToggle: (item: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+  bottomInset: number;
+};
+function FilterModal(props: FilterModalProps) {
+  const {
+    visible, title, emptyIcon, emptyTitle, emptySub,
+    searchPlaceholder, searchValue, onChangeSearch,
+    items, active, countLabel, allLabel, allCount,
+    onToggle, onClear, onClose, bottomInset,
+  } = props;
+  const q = searchValue.trim().toLowerCase();
+  const visibleItems = q ? items.filter((b) => b.toLowerCase().includes(q)) : items;
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={styles.modalBackdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+      <View style={[styles.modalSheet, { paddingBottom: bottomInset + 16 }]}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>{title}</Text>
+          {active.length > 0 && (
+            <TouchableOpacity onPress={onClear}>
+              <Text style={styles.modalClear}>Clear All</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {items.length > 0 && (
+          <View style={styles.modalSearchWrap}>
+            <Feather name="search" size={15} color={Colors.textMuted} />
+            <TextInput
+              style={styles.modalSearchInput}
+              value={searchValue}
+              onChangeText={onChangeSearch}
+              placeholder={searchPlaceholder}
+              placeholderTextColor={Colors.textMuted}
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
+            {searchValue.length > 0 && Platform.OS !== "ios" && (
+              <TouchableOpacity onPress={() => onChangeSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="x" size={14} color={Colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {items.length === 0 ? (
+          <View style={styles.modalEmpty}>
+            <Feather name={emptyIcon} size={32} color={Colors.textMuted} />
+            <Text style={styles.modalEmptyTitle}>{emptyTitle}</Text>
+            <Text style={styles.modalEmptySub}>{emptySub}</Text>
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} style={styles.modalList} keyboardShouldPersistTaps="handled">
+            {!q && (
+              <TouchableOpacity
+                style={[styles.modalRow, active.length === 0 && styles.modalRowActive]}
+                onPress={onClear}
+              >
+                <Text style={[styles.modalRowName, active.length === 0 && styles.modalRowNameActive]}>
+                  {allLabel}
+                </Text>
+                <Text style={styles.modalRowCount}>{allCount}</Text>
+                {active.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
+              </TouchableOpacity>
+            )}
+            {visibleItems.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <Feather name="search" size={28} color={Colors.textMuted} />
+                <Text style={styles.modalEmptyTitle}>No match</Text>
+                <Text style={styles.modalEmptySub}>No matches for "{searchValue}"</Text>
+              </View>
+            ) : (
+              visibleItems.map((item) => {
+                const isSelected = active.includes(item);
+                return (
+                  <TouchableOpacity
+                    key={item}
+                    style={[styles.modalRow, isSelected && styles.modalRowActive]}
+                    onPress={() => onToggle(item)}
+                  >
+                    <Feather
+                      name={isSelected ? "check-square" : "square"}
+                      size={17}
+                      color={isSelected ? Colors.primary : Colors.textMuted}
+                    />
+                    <Text style={[styles.modalRowName, isSelected && styles.modalRowNameActive]} numberOfLines={1}>
+                      {item}
+                    </Text>
+                    <Text style={styles.modalRowCount}>{countLabel(item)}</Text>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity style={styles.modalDoneBtn} onPress={onClose}>
+          <Text style={styles.modalDoneBtnText}>
+            {active.length === 0 ? "Close" : `Apply (${active.length} selected)`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
 }
 
@@ -813,4 +1234,102 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   emptyHintText: { fontSize: 12, color: Colors.textMuted },
+
+  // Filter bar pills (Vendor / Brand / Category)
+  filterBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterBarActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  filterBarTextActive: { color: Colors.textInverse },
+
+  // Bottom-sheet modal shared by all three filters
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  modalSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    maxHeight: "70%",
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  modalSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
+  modalEmpty: { alignItems: "center", padding: 40, gap: 10 },
+  modalEmptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  modalEmptySub: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  modalList: { paddingHorizontal: 20 },
+  modalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalRowActive: { backgroundColor: Colors.primaryMuted + "80" },
+  modalRowName: { flex: 1, fontSize: 15, fontWeight: "600", color: Colors.text },
+  modalRowNameActive: { color: Colors.primary },
+  modalRowCount: { fontSize: 12, color: Colors.textMuted, marginRight: 4 },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
 });
