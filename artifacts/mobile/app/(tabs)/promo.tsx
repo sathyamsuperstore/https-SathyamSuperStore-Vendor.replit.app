@@ -191,6 +191,10 @@ export default function PromoScreen() {
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
+  // Quick toggle: when on, restrict the table to items whose Item No
+  // appears with more than one distinct MRP value across the imported
+  // data. Useful for spotting price discrepancies / multi-batch items.
+  const [onlyMultiMrp, setOnlyMultiMrp] = useState(false);
   // Import progress: 0-100 with a human-readable phase label. Same
   // pattern as the MRP import — the parsing loop yields to the event
   // loop in chunks so the bar can actually paint while we work.
@@ -344,14 +348,44 @@ export default function PromoScreen() {
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
     const q = search.trim().toLowerCase();
-    return promoEntries.filter((r) => {
+    const base = promoEntries.filter((r) => {
       if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
       if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
       if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
       if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [promoEntries, search, activeVendors, activeBrands, activeCategories]);
+    if (!onlyMultiMrp) return base;
+    // Keep only rows whose Item No, within the current view, has more
+    // than one distinct MRP value. Distinct comparison normalises to a
+    // numeric where possible so "100" and 100 match; falls back to a
+    // trimmed string for non-numerics / blanks.
+    const mrpsByItem = new Map<string, Set<string>>();
+    for (const r of base) {
+      const itemNo = String(r["Item No"] ?? "").trim();
+      if (!itemNo) continue;
+      const mrpRaw = r["MRP"];
+      const norm =
+        typeof mrpRaw === "number"
+          ? String(mrpRaw)
+          : (() => {
+              const s = String(mrpRaw ?? "").trim();
+              const n = parseFloat(s);
+              return isNaN(n) ? s : String(n);
+            })();
+      let s = mrpsByItem.get(itemNo);
+      if (!s) {
+        s = new Set();
+        mrpsByItem.set(itemNo, s);
+      }
+      s.add(norm);
+    }
+    return base.filter((r) => {
+      const itemNo = String(r["Item No"] ?? "").trim();
+      const set = itemNo ? mrpsByItem.get(itemNo) : undefined;
+      return !!set && set.size > 1;
+    });
+  }, [promoEntries, search, activeVendors, activeBrands, activeCategories, onlyMultiMrp]);
 
   // Group the filtered rows three levels deep:
   //   Brand -> VendorName -> Item No -> rows (one row per price variant)
@@ -798,6 +832,14 @@ export default function PromoScreen() {
               onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
               onClear={() => setActiveCategories([])}
             />
+            <FilterBar
+              icon="layers"
+              label="Multiple MRP"
+              active={onlyMultiMrp}
+              toggleOnly
+              onPress={() => setOnlyMultiMrp((v) => !v)}
+              onClear={() => setOnlyMultiMrp(false)}
+            />
 
             <View style={styles.searchWrap}>
               <Feather name="search" size={15} color={Colors.textMuted} />
@@ -1017,8 +1059,12 @@ type FilterBarProps = {
   active: boolean;
   onPress: () => void;
   onClear: () => void;
+  // When true, the bar acts as a simple on/off toggle (no expansion
+  // sheet) — the chevron-down is suppressed so the affordance reads
+  // as a toggle rather than a dropdown.
+  toggleOnly?: boolean;
 };
-function FilterBar({ icon, label, active, onPress, onClear }: FilterBarProps) {
+function FilterBar({ icon, label, active, onPress, onClear, toggleOnly }: FilterBarProps) {
   return (
     <TouchableOpacity
       style={[styles.filterBar, active && styles.filterBarActive]}
@@ -1043,7 +1089,7 @@ function FilterBar({ icon, label, active, onPress, onClear }: FilterBarProps) {
         >
           <Feather name="x-circle" size={15} color={Colors.textInverse} />
         </TouchableOpacity>
-      ) : (
+      ) : toggleOnly ? null : (
         <Feather name="chevron-down" size={14} color={Colors.textMuted} />
       )}
     </TouchableOpacity>
