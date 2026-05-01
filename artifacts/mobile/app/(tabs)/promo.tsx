@@ -115,6 +115,8 @@ const COL_WIDTHS: Record<string, number> = {
   "Latest MRP": 100,
   MRP: 80,
   BatchNo: 110,
+  VendorCode: 110,
+  VendorName: 180,
 };
 
 function colWidth(field: string): number {
@@ -124,7 +126,15 @@ function colWidth(field: string): number {
 // Fields a user is most likely to search by. Numeric fields are
 // excluded so a stray "10" doesn't match every row with a price ending
 // in 10.
-const SEARCH_FIELDS = ["Item No", "BatchNo", "Brand", "Category", "Item Description"];
+const SEARCH_FIELDS = [
+  "Item No",
+  "BatchNo",
+  "Brand",
+  "Category",
+  "Item Description",
+  "VendorCode",
+  "VendorName",
+];
 
 function formatCell(field: string, value: string | number | undefined): string {
   if (value === undefined || value === null || value === "") return "";
@@ -513,7 +523,7 @@ export default function PromoScreen() {
                 style={styles.searchInput}
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Search Item No, BatchNo, Brand…"
+                placeholder="Search Item No, BatchNo, Brand, Vendor…"
                 placeholderTextColor={Colors.textMuted}
                 autoCorrect={false}
                 clearButtonMode="while-editing"
