@@ -40,6 +40,9 @@ const NUMERIC_FIELDS = new Set<string>([
   // On-hand stock quantity. Stored as Double so it survives fractional
   // unit-of-measure values (kg, ltr) without being silently truncated.
   "OH Qty",
+  // Wholesale / purchase cost per unit. Decimal so values like 12.50
+  // survive the round trip through Excel.
+  "Cost",
 ]);
 
 // Date columns. Excel surfaces these as JS Date objects (cellDates:true),
@@ -123,6 +126,7 @@ const COL_WIDTHS: Record<string, number> = {
   VendorCode: 110,
   VendorName: 180,
   "OH Qty": 80,
+  Cost: 80,
 };
 
 function colWidth(field: string): number {
@@ -140,6 +144,7 @@ const CARD_LINE_2 = "Latest MRP";
 const CARD_LINE_3: readonly string[] = [
   "MRP",
   "SP",
+  "Cost",
   "PromotionPrice",
   "PromotionToDate",
   "OH Qty",

@@ -239,6 +239,10 @@ export const PROMO_FIELDS = [
   "VendorCode",
   "VendorName",
   "OH Qty",
+  // Wholesale / purchase cost per unit. Stored as a decimal so values
+  // like 12.50 round-trip correctly through Excel and JSON. Optional —
+  // existing imports without this column hydrate with the cell blank.
+  "Cost",
 ] as const;
 
 // Same flexible row shape as Latest Purchases — numbers stay numbers,
