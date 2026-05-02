@@ -22,7 +22,7 @@ import * as Haptics from "expo-haptics";
 import * as Print from "expo-print";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { Colors } from "@/constants/colors";
-import { useApp, OrderStatus, Order, OrderItem, PromoEntry, showStorageErrorAlert } from "@/context/AppContext";
+import { useApp, OrderStatus, Order, OrderItem, PromoEntry, Supplier, showStorageErrorAlert } from "@/context/AppContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -55,6 +55,7 @@ function fmtPromoNum(v: unknown): string {
 function StockUpdCard({
   order,
   vendorCode,
+  supplier,
   activeBrands,
   activeCategories,
   itemSearch,
@@ -64,9 +65,11 @@ function StockUpdCard({
   mrpMap,
   promoMap,
   onSave,
+  onSaveSupplierNotes,
 }: {
   order: Order;
   vendorCode?: string;
+  supplier?: Supplier;
   activeBrands: string[];
   activeCategories: string[];
   itemSearch: string;
@@ -76,12 +79,53 @@ function StockUpdCard({
   mrpMap: Record<string, number[]>;
   promoMap: Record<string, PromoEntry[]>;
   onSave: (id: string, items: OrderItem[]) => Promise<boolean>;
+  onSaveSupplierNotes: (id: string, notes: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
   const [nsqEdits, setNsqEdits] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  // Supplier-level notes box: same shape as the one on the Orders tab,
+  // backed by the same `supplier.generalNotes` field, so saving here
+  // immediately reflects on the Orders tab and PDF footers.
+  const savedSupplierNotes = supplier?.generalNotes ?? "";
+  const [supplierNotesDraft, setSupplierNotesDraft] = useState(savedSupplierNotes);
+  const [supplierNotesSaving, setSupplierNotesSaving] = useState(false);
+  const [supplierNotesSavedAt, setSupplierNotesSavedAt] = useState<number | null>(null);
+
+  // Re-seed the input whenever the supplier in view changes OR the saved
+  // notes value changes (e.g. saved from the Orders tab while this card
+  // is mounted), but not on every keystroke for the same supplier.
+  useEffect(() => {
+    setSupplierNotesDraft(savedSupplierNotes);
+  }, [supplier?.id, savedSupplierNotes]);
+
+  // Auto-clear the inline "Saved" badge a couple of seconds after a write.
+  useEffect(() => {
+    if (supplierNotesSavedAt == null) return;
+    const t = setTimeout(() => setSupplierNotesSavedAt(null), 2500);
+    return () => clearTimeout(t);
+  }, [supplierNotesSavedAt]);
+
+  const supplierNotesDirty = supplierNotesDraft.trim() !== savedSupplierNotes.trim();
+
+  async function handleSaveSupplierNotes() {
+    if (!supplier || supplierNotesSaving || !supplierNotesDirty) return;
+    const trimmed = supplierNotesDraft.trim();
+    setSupplierNotesSaving(true);
+    try {
+      await onSaveSupplierNotes(supplier.id, trimmed);
+      setSupplierNotesDraft(trimmed);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSupplierNotesSavedAt(Date.now());
+    } catch {
+      showStorageErrorAlert();
+    } finally {
+      setSupplierNotesSaving(false);
+    }
+  }
   // Used by the tappable "Item No: …" link to deep-link into the
   // Promo tab pre-filtered to that item.
   const router = useRouter();
@@ -336,6 +380,53 @@ function StockUpdCard({
             );
           })}
 
+          {supplier && (
+            <View style={cardSt.supplierNotesBox}>
+              <View style={cardSt.supplierNotesHeader}>
+                <Feather name="message-square" size={13} color={Colors.textSecondary} />
+                <Text style={cardSt.supplierNotesLabel} numberOfLines={1}>
+                  Notes for {supplier.name || supplier.vendorCode}
+                </Text>
+                {supplierNotesSavedAt != null && (
+                  <View style={cardSt.supplierNotesSavedPill}>
+                    <Feather name="check" size={11} color="#065F46" />
+                    <Text style={cardSt.supplierNotesSavedText}>Saved</Text>
+                  </View>
+                )}
+              </View>
+              <TextInput
+                style={cardSt.supplierNotesInput}
+                value={supplierNotesDraft}
+                onChangeText={setSupplierNotesDraft}
+                placeholder="Add a note for this supplier (shown in the PDF footer)…"
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                textAlignVertical="top"
+                editable={!supplierNotesSaving}
+              />
+              <View style={cardSt.supplierNotesActionRow}>
+                <TouchableOpacity
+                  style={[
+                    cardSt.supplierNotesSaveBtn,
+                    (!supplierNotesDirty || supplierNotesSaving) && cardSt.supplierNotesSaveBtnDisabled,
+                  ]}
+                  onPress={handleSaveSupplierNotes}
+                  disabled={!supplierNotesDirty || supplierNotesSaving}
+                  activeOpacity={0.8}
+                >
+                  {supplierNotesSaving ? (
+                    <ActivityIndicator size="small" color={Colors.textInverse} />
+                  ) : (
+                    <Feather name="save" size={14} color={Colors.textInverse} />
+                  )}
+                  <Text style={cardSt.supplierNotesSaveText}>
+                    {supplierNotesSaving ? "Saving…" : "SAVE"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[cardSt.saveBtn, !dirty && cardSt.saveBtnDisabled]}
             onPress={handleSave}
@@ -487,12 +578,68 @@ const cardSt = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   saveBtnDisabled: { backgroundColor: Colors.surfaceSecondary, borderWidth: 1, borderColor: Colors.border },
+  // Per-supplier notes box — mirrors the one on the Orders tab so saved
+  // values stay in sync (both write to supplier.generalNotes).
+  supplierNotesBox: {
+    marginHorizontal: 12,
+    marginTop: 4,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 6,
+  },
+  supplierNotesHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+  supplierNotesLabel: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  supplierNotesSavedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "#D1FAE5",
+  },
+  supplierNotesSavedText: { fontSize: 10, fontWeight: "700", color: "#065F46" },
+  supplierNotesInput: {
+    minHeight: 60,
+    maxHeight: 140,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  supplierNotesActionRow: { flexDirection: "row", justifyContent: "flex-end" },
+  supplierNotesSaveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
+  },
+  supplierNotesSaveBtnDisabled: { opacity: 0.45 },
+  supplierNotesSaveText: { fontSize: 12, fontWeight: "800", color: Colors.textInverse, letterSpacing: 0.5 },
   saveBtnText: { fontSize: 14, fontWeight: "700", color: Colors.textInverse },
   saveBtnTextDisabled: { color: Colors.textMuted },
 });
 
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers, updateOrder, mrpEntries, promoEntries } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder, setSupplierGeneralNotes, mrpEntries, promoEntries } = useApp();
   const mrpMap = useMemo(() => {
     const m: Record<string, number[]> = {};
     for (const e of mrpEntries) {
@@ -1272,7 +1419,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} supplier={suppliers.find((s) => s.id === item.supplierId)} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} onSaveSupplierNotes={setSupplierGeneralNotes} />
         )}
         contentContainerStyle={[
           styles.list,
