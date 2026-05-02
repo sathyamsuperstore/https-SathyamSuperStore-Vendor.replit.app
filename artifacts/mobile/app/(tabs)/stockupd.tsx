@@ -231,8 +231,8 @@ function StockUpdCard({
                             style={cardSt.itemNoLink}
                             onPress={() =>
                               router.push({
-                                pathname: "/promo",
-                                params: { q: itemNo.trim() },
+                                pathname: "/catalog",
+                                params: { view: "promo", q: itemNo.trim() },
                               })
                             }
                             suppressHighlighting

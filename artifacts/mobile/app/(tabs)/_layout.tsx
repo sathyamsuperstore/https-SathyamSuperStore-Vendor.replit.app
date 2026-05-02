@@ -8,48 +8,63 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 import { Colors } from "@/constants/colors";
 
+/**
+ * Tab bar shows 5 hubs:
+ *
+ *   Dashboard | Orders (Place + My Orders) | Stock (Update + Latest
+ *   Purchases) | Catalog (MRP + Promo + Brand Review) | Directory
+ *   (Suppliers + Users)
+ *
+ * The original 9 sub-screen routes (orders, myorders, stockupd,
+ * latest-purchases, mrp, promo, brand-review, suppliers, users) still
+ * exist as files so they can be embedded inside the hub wrappers, but
+ * they are hidden from the tab bar (`href: null`) so the user only
+ * sees the 5 consolidated tabs. Deep links inside the app are routed
+ * through the hubs with a `?view=` query param.
+ */
+
 function NativeTabLayout() {
+  // Native tabs (iOS Liquid Glass) only render the triggers we list
+  // here, so the original sub-screen routes are automatically
+  // excluded from the bar.
+  //
+  // No internal navigation in the app targets the legacy routes
+  // (`/promo`, `/orders`, `/stockupd`, etc.) directly anymore — every
+  // redirect and link points to a hub URL with `?view=`. The legacy
+  // route files only exist so their default-exported screen
+  // components can be imported into the hub wrappers; users never
+  // reach them by tapping anything.
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
         <Label>Dashboard</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="orders">
+      <NativeTabs.Trigger name="orders-hub">
         <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
         <Label>Orders</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="suppliers">
+      <NativeTabs.Trigger name="stock">
+        <Icon
+          sf={{
+            default: "square.and.arrow.up",
+            selected: "square.and.arrow.up.fill",
+          }}
+        />
+        <Label>Stock</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="catalog">
+        <Icon
+          sf={{
+            default: "indianrupeesign.circle",
+            selected: "indianrupeesign.circle.fill",
+          }}
+        />
+        <Label>Catalog</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="directory">
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
-        <Label>Suppliers</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="users">
-        <Icon sf={{ default: "person.badge.key", selected: "person.badge.key.fill" }} />
-        <Label>Users</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="myorders">
-        <Icon sf={{ default: "tray", selected: "tray.fill" }} />
-        <Label>My Orders</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="stockupd">
-        <Icon sf={{ default: "square.and.arrow.up", selected: "square.and.arrow.up.fill" }} />
-        <Label>StockUpd</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="mrp">
-        <Icon sf={{ default: "indianrupeesign.circle", selected: "indianrupeesign.circle.fill" }} />
-        <Label>MRP</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="latest-purchases">
-        <Icon sf={{ default: "cart", selected: "cart.fill" }} />
-        <Label>Latest Purchases</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="promo">
-        <Icon sf={{ default: "megaphone", selected: "megaphone.fill" }} />
-        <Label>Promo</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="brand-review">
-        <Icon sf={{ default: "tag", selected: "tag.fill" }} />
-        <Label>Brand Review</Label>
+        <Label>Directory</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -87,6 +102,7 @@ function ClassicTabLayout() {
           ) : null,
       }}
     >
+      {/* === 5 visible hubs === */}
       <Tabs.Screen
         name="index"
         options={{
@@ -100,7 +116,7 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="orders"
+        name="orders-hub"
         options={{
           title: "Orders",
           tabBarIcon: ({ color }) =>
@@ -112,45 +128,9 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="suppliers"
+        name="stock"
         options={{
-          title: "Suppliers",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="person.2" tintColor={color} size={24} />
-            ) : (
-              <Feather name="users" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="users"
-        options={{
-          title: "Users",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="person.badge.key" tintColor={color} size={24} />
-            ) : (
-              <Feather name="shield" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="myorders"
-        options={{
-          title: "My Orders",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="tray" tintColor={color} size={24} />
-            ) : (
-              <Feather name="inbox" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="stockupd"
-        options={{
-          title: "StockUpd",
+          title: "Stock",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="square.and.arrow.up" tintColor={color} size={24} />
@@ -160,9 +140,9 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="mrp"
+        name="catalog"
         options={{
-          title: "MRP",
+          title: "Catalog",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="indianrupeesign.circle" tintColor={color} size={24} />
@@ -172,41 +152,30 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="latest-purchases"
+        name="directory"
         options={{
-          title: "Latest Purchases",
+          title: "Directory",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="cart" tintColor={color} size={24} />
+              <SymbolView name="person.2" tintColor={color} size={24} />
             ) : (
-              <Feather name="shopping-cart" size={22} color={color} />
+              <Feather name="users" size={22} color={color} />
             ),
         }}
       />
-      <Tabs.Screen
-        name="promo"
-        options={{
-          title: "Promo",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="megaphone" tintColor={color} size={24} />
-            ) : (
-              <Feather name="speaker" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="brand-review"
-        options={{
-          title: "Brand Review",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="tag" tintColor={color} size={24} />
-            ) : (
-              <Feather name="tag" size={22} color={color} />
-            ),
-        }}
-      />
+
+      {/* === Hidden sub-screen routes (still navigable via `router.push`,
+          but excluded from the bottom bar). They are embedded inside
+          the hubs above. === */}
+      <Tabs.Screen name="orders" options={{ href: null }} />
+      <Tabs.Screen name="myorders" options={{ href: null }} />
+      <Tabs.Screen name="stockupd" options={{ href: null }} />
+      <Tabs.Screen name="latest-purchases" options={{ href: null }} />
+      <Tabs.Screen name="mrp" options={{ href: null }} />
+      <Tabs.Screen name="promo" options={{ href: null }} />
+      <Tabs.Screen name="brand-review" options={{ href: null }} />
+      <Tabs.Screen name="suppliers" options={{ href: null }} />
+      <Tabs.Screen name="users" options={{ href: null }} />
     </Tabs>
   );
 }

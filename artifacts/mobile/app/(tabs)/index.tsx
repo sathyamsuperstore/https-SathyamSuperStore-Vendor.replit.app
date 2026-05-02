@@ -158,7 +158,7 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Orders</Text>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/orders")}>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/orders-hub")}>
             <Text style={styles.seeAll}>See all</Text>
           </TouchableOpacity>
         </View>
@@ -171,7 +171,7 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Negative Stock</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/stockupd")}>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/stock?view=update")}>
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>

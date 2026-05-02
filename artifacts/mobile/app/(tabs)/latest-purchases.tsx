@@ -602,7 +602,7 @@ export default function LatestPurchasesScreen() {
       // Jump to the Promo tab so the user immediately sees the freshly
       // imported purchase data alongside the live promo offers, which is
       // the most common next step after a Latest Purchases import.
-      router.replace("/promo");
+      router.replace("/catalog?view=promo");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {

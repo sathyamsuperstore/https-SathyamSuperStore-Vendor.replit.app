@@ -694,7 +694,7 @@ export default function PromoScreen() {
       // Jump to the Orders tab so the user can immediately start placing
       // orders against the freshly imported promo data, which is the
       // most common next step after a Promo import.
-      router.replace("/orders");
+      router.replace("/orders-hub?view=place");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {
