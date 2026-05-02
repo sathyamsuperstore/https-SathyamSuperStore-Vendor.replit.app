@@ -25,3 +25,4 @@ run = [ "pnpm", "--filter", "@workspace/mobile", "run", "serve" ]
 [services.env]
 PORT = "18115"
 BASE_PATH = "/"
+WATCHMAN_RECAP_THRESHOLD = "30000"
