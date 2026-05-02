@@ -174,7 +174,7 @@ function LoginForm({ topPt }: { topPt: number }) {
 }
 
 function OrdersView({ topPt }: { topPt: number }) {
-  const { currentUser, logout, orders, suppliers } = useApp();
+  const { currentUser, logout, orders, suppliers, setSupplierGeneralNotes } = useApp();
   const insets = useSafeAreaInsets();
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -186,6 +186,14 @@ function OrdersView({ topPt }: { topPt: number }) {
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
+  // Local draft for the supplier-level notes box. We seed it from the
+  // resolved supplier's saved notes whenever the supplier in view changes
+  // (or its saved notes change after a successful save) so the input stays
+  // a faithful mirror of what's persisted, while still being freely
+  // editable in between.
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
 
   const vendorOrders = useMemo(() => {
     if (!currentUser) return [];
@@ -293,6 +301,61 @@ function OrdersView({ topPt }: { topPt: number }) {
 
   const totalValue = useMemo(() => vendorOrders.reduce((s, o) => s + o.totalAmount, 0), [vendorOrders]);
   const pendingCount = useMemo(() => vendorOrders.filter((o) => o.status === "pending").length, [vendorOrders]);
+
+  // Resolve the single supplier whose notes the box should edit. We key
+  // off `filtered` (the orders currently on screen after status / brand /
+  // category filters) instead of the full `vendorOrders` set, so an
+  // Admin/Manager who narrows the list down to a single supplier via
+  // filtering still gets the box — without it spuriously editing one
+  // arbitrary supplier when many are visible. Vendors only ever see one
+  // supplier in `filtered`, so their behavior is unchanged. The supplier
+  // record (not just its id) is what drives prefill + persistence.
+  const notesSupplier = useMemo(() => {
+    if (filtered.length === 0) return null;
+    const ids = new Set(filtered.map((o) => o.supplierId));
+    if (ids.size !== 1) return null;
+    const supplierId = filtered[0].supplierId;
+    return suppliers.find((s) => s.id === supplierId) ?? null;
+  }, [filtered, suppliers]);
+
+  const savedNotes = notesSupplier?.generalNotes ?? "";
+
+  // Re-seed the input whenever the supplier in view changes, OR after a
+  // successful save (savedNotes itself updates). This keeps the box in
+  // sync with disk without stomping the user's in-progress typing for the
+  // SAME supplier (the dependency is the supplier id + saved value).
+  useEffect(() => {
+    setNotesDraft(savedNotes);
+  }, [notesSupplier?.id, savedNotes]);
+
+  // Auto-clear the inline "Saved" badge a couple of seconds after a write
+  // so the confirmation feels lightweight (no toast lib needed cross-plat).
+  useEffect(() => {
+    if (notesSavedAt == null) return;
+    const t = setTimeout(() => setNotesSavedAt(null), 2500);
+    return () => clearTimeout(t);
+  }, [notesSavedAt]);
+
+  const notesDirty = notesDraft.trim() !== savedNotes.trim();
+
+  async function handleSaveNotes() {
+    if (!notesSupplier || notesSaving || !notesDirty) return;
+    const trimmed = notesDraft.trim();
+    setNotesSaving(true);
+    try {
+      await setSupplierGeneralNotes(notesSupplier.id, trimmed);
+      // Reflect the trimmed value back into the box so the dirty check
+      // immediately shows "no unsaved changes" without waiting for the
+      // savedNotes-driven effect to land.
+      setNotesDraft(trimmed);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setNotesSavedAt(Date.now());
+    } catch {
+      showStorageErrorAlert();
+    } finally {
+      setNotesSaving(false);
+    }
+  }
 
   async function handleDownload() {
     if (vendorOrders.length === 0) {
@@ -422,8 +485,40 @@ function OrdersView({ topPt }: { topPt: number }) {
         }
       }
 
-      const supplierName = vendorOrders.length > 0 ? vendorOrders[0].supplierName : (currentUser?.vendorName ?? "");
+      // The footer supplier identity is taken from `filtered` (the orders
+      // we actually iterated for the table above) and only falls back to
+      // `vendorOrders`/`currentUser` if filtered is empty. This keeps the
+      // footer name + the looked-up supplier note + the supplier the
+      // on-screen notes box just edited all referring to the same record,
+      // including the Admin/Manager case where filters narrow many
+      // suppliers down to one.
+      const footerOrder = filtered[0] ?? vendorOrders[0];
+      const supplierName = footerOrder?.supplierName ?? (currentUser?.vendorName ?? "");
       const exportDate = new Date().toLocaleDateString("en-IN");
+
+      // Look up the saved supplier-level notes for the supplier whose name
+      // we're about to render in the footer. We escape the value before
+      // inlining it into HTML to avoid breaking the markup if the user
+      // typed quotes/angle brackets/&. Newlines become <br/> so multi-line
+      // notes preserve the user's line breaks in the rendered PDF. When
+      // the trimmed value is empty we emit nothing — keeps the existing
+      // footer pixel-identical for suppliers with no notes (no stray gap,
+      // no empty label).
+      const footerSupplierId = footerOrder?.supplierId ?? "";
+      const footerSupplier = footerSupplierId
+        ? suppliers.find((s) => s.id === footerSupplierId)
+        : undefined;
+      const footerNotesRaw = (footerSupplier?.generalNotes ?? "").trim();
+      const escapeHtml = (s: string) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      const footerNotesHtml = footerNotesRaw
+        ? `<div class="footer-notes">${escapeHtml(footerNotesRaw).replace(/\r?\n/g, "<br/>")}</div>`
+        : "";
 
       const thCells = cols.map((c) => `<th>${c}</th>`).join("");
       const tdRows = rows.map((row, i) => {
@@ -452,6 +547,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   td { text-align: left; }
   td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
+  .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
   .clearfix::after { content: ""; display: block; clear: both; }
 </style>
 </head>
@@ -475,6 +571,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   <tbody>${tdRows}</tbody>
 </table>
 <div class="footer">
+  ${footerNotesHtml}
   <div>Supplier : ${supplierName}</div>
   <div>Order Date : ${exportDate}</div>
 </div>
@@ -670,6 +767,53 @@ function OrdersView({ topPt }: { topPt: number }) {
             <Feather name="chevron-down" size={14} color={Colors.textMuted} />
           )}
         </TouchableOpacity>
+      )}
+
+      {notesSupplier && (
+        <View style={styles.notesBox}>
+          <View style={styles.notesHeader}>
+            <Feather name="message-square" size={13} color={Colors.textSecondary} />
+            <Text style={styles.notesLabel} numberOfLines={1}>
+              Notes for {notesSupplier.name || notesSupplier.vendorCode}
+            </Text>
+            {notesSavedAt != null && (
+              <View style={styles.notesSavedPill}>
+                <Feather name="check" size={11} color="#065F46" />
+                <Text style={styles.notesSavedText}>Saved</Text>
+              </View>
+            )}
+          </View>
+          <TextInput
+            style={styles.notesInput}
+            value={notesDraft}
+            onChangeText={setNotesDraft}
+            placeholder="Add a note for this supplier (shown in the PDF footer)…"
+            placeholderTextColor={Colors.textMuted}
+            multiline
+            textAlignVertical="top"
+            editable={!notesSaving}
+          />
+          <View style={styles.notesActionRow}>
+            <TouchableOpacity
+              style={[
+                styles.notesSaveBtn,
+                (!notesDirty || notesSaving) && styles.notesSaveBtnDisabled,
+              ]}
+              onPress={handleSaveNotes}
+              disabled={!notesDirty || notesSaving}
+              activeOpacity={0.8}
+            >
+              {notesSaving ? (
+                <ActivityIndicator size="small" color={Colors.textInverse} />
+              ) : (
+                <Feather name="save" size={14} color={Colors.textInverse} />
+              )}
+              <Text style={styles.notesSaveText}>
+                {notesSaving ? "Saving…" : "SAVE"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       {!currentUser?.vendorCode ? (
@@ -1355,6 +1499,39 @@ const styles = StyleSheet.create({
   brandBarActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   brandBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   brandBarTextActive: { color: Colors.textInverse },
+  notesBox: {
+    marginHorizontal: 20, marginBottom: 12,
+    padding: 12, borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+    gap: 8,
+  },
+  notesHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+  notesLabel: {
+    flex: 1, fontSize: 12, fontWeight: "700",
+    color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.4,
+  },
+  notesSavedPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 10, backgroundColor: "#D1FAE5",
+  },
+  notesSavedText: { fontSize: 11, fontWeight: "700", color: "#065F46" },
+  notesInput: {
+    minHeight: 70, maxHeight: 160,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.border,
+    fontSize: 13, color: Colors.text, lineHeight: 18,
+  },
+  notesActionRow: { flexDirection: "row", justifyContent: "flex-end" },
+  notesSaveBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  notesSaveBtnDisabled: { opacity: 0.45 },
+  notesSaveText: { fontSize: 13, fontWeight: "800", color: Colors.textInverse, letterSpacing: 0.5 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,

@@ -29,6 +29,10 @@ export interface Supplier {
   phone: string;
   address: string;
   category: string;
+  // Free-text supplier-level notes the user wants to surface to the supplier
+  // on PDF exports (not the Excel export). Optional so existing suppliers
+  // already in AsyncStorage hydrate cleanly without a migration step.
+  generalNotes?: string;
   createdAt: string;
 }
 
@@ -132,6 +136,7 @@ interface AppContextType {
   logout: () => Promise<void>;
   addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => Promise<void>;
   updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
+  setSupplierGeneralNotes: (id: string, generalNotes: string) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => Promise<void>;
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => Promise<void>;
@@ -491,6 +496,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers(suppliers.map((s) => (s.id === id ? { ...s, ...data } : s)));
   }
 
+  // Targeted setter for the supplier-level "general notes" string. Kept as a
+  // dedicated entry point (instead of relying on updateSupplier from the
+  // My Orders screen) so the order screen never needs the full Supplier
+  // shape, and so any caller writing notes touches only this one field.
+  async function setSupplierGeneralNotes(id: string, generalNotes: string) {
+    await saveSuppliers(
+      suppliers.map((s) => (s.id === id ? { ...s, generalNotes } : s))
+    );
+  }
+
   async function deleteSupplier(id: string) {
     await saveSuppliers(suppliers.filter((s) => s.id !== id));
   }
@@ -638,6 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         logout,
         addSupplier,
         updateSupplier,
+        setSupplierGeneralNotes,
         deleteSupplier,
         addOrder,
         addOrdersBatch,
