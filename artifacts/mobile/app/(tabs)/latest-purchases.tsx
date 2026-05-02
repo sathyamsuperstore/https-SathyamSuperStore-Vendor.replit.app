@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -176,6 +176,7 @@ function formatCell(field: string, value: string | number | undefined): string {
 }
 
 export default function LatestPurchasesScreen() {
+  const router = useRouter();
   const { latestPurchases, saveLatestPurchasesBatch, clearLatestPurchases, suppliers } = useApp();
 
   // VendorCode (uppercased, trimmed) → supplier name. Built once per
@@ -556,6 +557,10 @@ export default function LatestPurchasesScreen() {
       );
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Jump to the Promo tab so the user immediately sees the freshly
+      // imported purchase data alongside the live promo offers, which is
+      // the most common next step after a Latest Purchases import.
+      router.replace("/promo");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {
