@@ -217,6 +217,12 @@ export default function LatestPurchasesScreen() {
   const [search, setSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Import progress: 0-100 with a human-readable phase label. Same
+  // pattern as the Promo tab so the user gets visible feedback during
+  // the long workbook-read + parse cycle on large purchase histories.
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState<string>("");
+
   // Multi-select filters. Empty array = "All". Modeled after the brand
   // filter on the Orders tab so the UX feels consistent.
   const [activeVendorCodes, setActiveVendorCodes] = useState<string[]>([]);
@@ -378,6 +384,8 @@ export default function LatestPurchasesScreen() {
       setLoading(true);
       setErrors([]);
       setStatusMsg(null);
+      setProgress(0);
+      setProgressLabel("");
 
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -393,6 +401,9 @@ export default function LatestPurchasesScreen() {
         setLoading(false);
         return;
       }
+
+      setProgress(5);
+      setProgressLabel("Opening file…");
 
       const asset = result.assets[0];
       await new Promise((r) => setTimeout(r, 50));
@@ -412,6 +423,8 @@ export default function LatestPurchasesScreen() {
           };
           xhr.send();
         });
+        setProgress(25);
+        setProgressLabel("Reading workbook…");
         workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array", cellDates: true });
       } else {
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
@@ -420,8 +433,13 @@ export default function LatestPurchasesScreen() {
         if (!base64 || base64.length === 0) {
           throw new Error("Could not read file content. Make sure the file is a valid Excel file.");
         }
+        setProgress(25);
+        setProgressLabel("Reading workbook…");
         workbook = XLSX.read(base64, { type: "base64", cellDates: true });
       }
+
+      setProgress(40);
+      setProgressLabel("Extracting rows…");
 
       const sheetName =
         workbook.SheetNames.find((n) => n.toLowerCase() === "latestpurchases") ??
@@ -455,6 +473,13 @@ export default function LatestPurchasesScreen() {
         setLoading(false);
         return;
       }
+
+      // Walk rows in chunks so we can drive the progress bar through
+      // the parse phase. Aim for ~25 progress updates regardless of
+      // file size; mirrors the Promo tab's chunked-parse pattern.
+      const PARSE_FROM = 40;
+      const PARSE_TO = 90;
+      const chunkSize = Math.max(1, Math.ceil(raw.length / 25));
 
       const seenPair = new Set<string>();
       const parsed: LatestPurchaseEntry[] = [];
@@ -497,6 +522,15 @@ export default function LatestPurchasesScreen() {
           }
         }
         parsed.push(entry);
+
+        // Yield to the UI thread between chunks so the progress bar
+        // can actually paint while the parse loop runs.
+        if ((i + 1) % chunkSize === 0 || i === raw.length - 1) {
+          const ratio = (i + 1) / raw.length;
+          setProgress(Math.round(PARSE_FROM + (PARSE_TO - PARSE_FROM) * ratio));
+          setProgressLabel(`Parsing rows ${i + 1} of ${raw.length}…`);
+          await new Promise((r) => setTimeout(r, 0));
+        }
       }
 
       if (parsed.length === 0) {
@@ -507,6 +541,9 @@ export default function LatestPurchasesScreen() {
         setLoading(false);
         return;
       }
+
+      setProgress(92);
+      setProgressLabel("Sorting entries…");
 
       // Sort priority (per user request):
       //   1. DODate descending (newest delivery order first)
@@ -542,6 +579,9 @@ export default function LatestPurchasesScreen() {
         return textCmp(a["Category"], b["Category"]);
       });
 
+      setProgress(95);
+      setProgressLabel("Saving…");
+
       try {
         await saveLatestPurchasesBatch(parsed);
       } catch {
@@ -552,6 +592,8 @@ export default function LatestPurchasesScreen() {
         setLoading(false);
         return;
       }
+      setProgress(100);
+      setProgressLabel("Done");
       setStatusMsg(
         `Imported ${parsed.length} row${parsed.length !== 1 ? "s" : ""} from "${asset.name}".`
       );
@@ -738,6 +780,25 @@ export default function LatestPurchasesScreen() {
               <Text style={styles.deleteBtnText}>Delete All</Text>
             </TouchableOpacity>
           </View>
+
+          {loading && (
+            <View style={styles.progressWrap}>
+              <View style={styles.progressLabelRow}>
+                <Text style={styles.progressLabelText} numberOfLines={1}>
+                  {progressLabel || "Starting…"}
+                </Text>
+                <Text style={styles.progressPercentText}>{progress}%</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.max(0, Math.min(100, progress))}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
         {/* 1: errors box (always rendered, content conditional) */}
@@ -1408,6 +1469,36 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   deleteBtnText: { color: Colors.textInverse, fontWeight: "700", fontSize: 14 },
+  progressWrap: { gap: 6, marginTop: 12 },
+  progressLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressLabelText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    flex: 1,
+    marginRight: 8,
+  },
+  progressPercentText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.primary,
+    fontVariant: ["tabular-nums"],
+  },
+  progressTrack: {
+    height: 8,
+    backgroundColor: Colors.border,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+  },
   errorBox: {
     flexDirection: "row",
     gap: 10,
