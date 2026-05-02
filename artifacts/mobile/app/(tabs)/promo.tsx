@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -181,6 +181,7 @@ function formatCell(field: string, value: string | number | undefined): string {
 }
 
 export default function PromoScreen() {
+  const router = useRouter();
   const { promoEntries, savePromoBatch, clearPromoBatch } = useApp();
   const insets = useSafeAreaInsets();
 
@@ -690,6 +691,10 @@ export default function PromoScreen() {
       );
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Jump to the Orders tab so the user can immediately start placing
+      // orders against the freshly imported promo data, which is the
+      // most common next step after a Promo import.
+      router.replace("/orders");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {
