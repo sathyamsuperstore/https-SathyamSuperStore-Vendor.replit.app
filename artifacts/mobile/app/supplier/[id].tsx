@@ -51,6 +51,7 @@ export default function SupplierDetailScreen() {
       phone: supplier!.phone,
       address: supplier!.address,
       category: supplier!.category,
+      generalNotes: supplier!.generalNotes ?? "",
     });
     setEditing(true);
   }
@@ -79,7 +80,11 @@ export default function SupplierDetailScreen() {
     }
     setSaving(true);
     try {
-      await updateSupplier(supplier!.id, { ...form, vendorCode: form.vendorCode!.trim().toUpperCase() });
+      await updateSupplier(supplier!.id, {
+        ...form,
+        vendorCode: form.vendorCode!.trim().toUpperCase(),
+        generalNotes: (form.generalNotes ?? "").trim(),
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditing(false);
     } catch {
@@ -246,6 +251,18 @@ export default function SupplierDetailScreen() {
                 ))}
               </ScrollView>
             </View>
+            <View style={styles.formField}>
+              <Text style={styles.fieldLabel}>Notes for supplier</Text>
+              <TextInput
+                style={[styles.input, styles.notesInput]}
+                value={form.generalNotes ?? ""}
+                onChangeText={(v) => setForm((p) => ({ ...p, generalNotes: v }))}
+                placeholder="Internal notes shown on My Orders and the PDF footer"
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
           </View>
         ) : (
           <>
@@ -256,7 +273,8 @@ export default function SupplierDetailScreen() {
               <InfoRow icon="mail" label="Email" value={supplier.email} />
               <InfoRow icon="phone" label="Phone" value={supplier.phone} />
               <InfoRow icon="map-pin" label="Address" value={supplier.address} />
-              <InfoRow icon="layers" label="Vendor Category" value={supplier.category} last />
+              <InfoRow icon="layers" label="Vendor Category" value={supplier.category} />
+              <InfoRow icon="file-text" label="Notes for supplier" value={supplier.generalNotes ?? ""} last />
             </View>
 
             <View style={styles.ordersSection}>
@@ -392,6 +410,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
   },
+  notesInput: { minHeight: 96, paddingTop: 12 },
   categories: { gap: 8, paddingVertical: 4 },
   catBtn: {
     paddingHorizontal: 14,

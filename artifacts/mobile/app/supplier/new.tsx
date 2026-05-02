@@ -31,6 +31,7 @@ export default function NewSupplierScreen() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState("Other");
+  const [generalNotes, setGeneralNotes] = useState("");
 
   const vendorCodeDuplicate = vendorCode.trim().length > 0 &&
     suppliers.some((s) => s.vendorCode.toUpperCase() === vendorCode.trim().toUpperCase());
@@ -53,7 +54,7 @@ export default function NewSupplierScreen() {
     }
     setSaving(true);
     try {
-      await addSupplier({ name, vendorCode: vendorCode.trim().toUpperCase(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category });
+      await addSupplier({ name, vendorCode: vendorCode.trim().toUpperCase(), vendorGstNo: vendorGstNo.trim(), contactName, email, phone, address, category, generalNotes: generalNotes.trim() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch {
@@ -188,6 +189,19 @@ export default function NewSupplierScreen() {
           </ScrollView>
         </View>
 
+        <View style={styles.formField}>
+          <Text style={styles.label}>Notes for supplier</Text>
+          <TextInput
+            style={[styles.input, styles.notesInput]}
+            value={generalNotes}
+            onChangeText={setGeneralNotes}
+            placeholder="Internal notes shown on My Orders and the PDF footer"
+            placeholderTextColor={Colors.textMuted}
+            multiline
+            textAlignVertical="top"
+          />
+        </View>
+
         <TouchableOpacity
           style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
           onPress={handleSubmit}
@@ -226,6 +240,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
   },
+  notesInput: { minHeight: 96, paddingTop: 12 },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   pkBadge: {
     flexDirection: "row",
