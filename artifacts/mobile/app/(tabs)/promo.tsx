@@ -182,7 +182,7 @@ function formatCell(field: string, value: string | number | undefined): string {
 
 export default function PromoScreen() {
   const router = useRouter();
-  const { promoEntries, savePromoBatch, clearPromoBatch } = useApp();
+  const { promoEntries, mrpEntries, savePromoBatch, clearPromoBatch } = useApp();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(false);
@@ -416,6 +416,26 @@ export default function PromoScreen() {
     });
   }, [promoEntries, search, activeVendors, activeBrands, activeCategories, onlyMultiMrp]);
 
+  // Map of normalised Item No -> sorted unique MRP values pulled from
+  // the MRP tab. Used below to surface MRPs that exist in the MRP tab
+  // but have no matching Promo row for the same Item No, so the user
+  // can see at a glance which prices are missing promo data.
+  const mrpByItem = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (const e of mrpEntries) {
+      const key = e.itemNo.trim().toLowerCase();
+      if (!key) continue;
+      let arr = m.get(key);
+      if (!arr) {
+        arr = [];
+        m.set(key, arr);
+      }
+      if (!arr.includes(e.mrp)) arr.push(e.mrp);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a - b);
+    return m;
+  }, [mrpEntries]);
+
   // Group the filtered rows three levels deep:
   //   Brand -> VendorName -> Item No -> rows (one row per price variant)
   // so that an Item No with multiple MRP/Batch combinations renders as a
@@ -473,17 +493,58 @@ export default function PromoScreen() {
         const itemKeys = Array.from(itemMap.keys()).sort((a, b) =>
           a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
         );
-        const items: ItemBucket[] = itemKeys.map((itemNo) => ({
-          itemNo,
-          rows: itemMap.get(itemNo)!,
-        }));
+        const items: ItemBucket[] = itemKeys.map((itemNo) => {
+          const existingRows = itemMap.get(itemNo)!;
+          // Collect MRP values already represented in this Item No's
+          // promo rows. Numbers and numeric strings ("100", 100) collapse
+          // to the same key so they don't double-count.
+          const existingMrps = new Set<string>();
+          for (const r of existingRows) {
+            const v = r["MRP"];
+            const n =
+              typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
+            if (!isNaN(n)) existingMrps.add(String(n));
+          }
+          // Look up MRP-tab values for this Item No (case/whitespace
+          // insensitive). Any MRP present in the MRP tab but missing
+          // from the Promo rows is appended as a synthetic row that
+          // shows the MRP and leaves SP / Promo / Valid Till / OH Qty
+          // intentionally blank so the user can spot the gap.
+          const lookupKey = itemNo.trim().toLowerCase();
+          const mrpListFromTab =
+            lookupKey && lookupKey !== "(no item no)"
+              ? mrpByItem.get(lookupKey) ?? []
+              : [];
+          const head = existingRows[0];
+          const synthetic: PromoEntry[] = [];
+          for (const m of mrpListFromTab) {
+            if (existingMrps.has(String(m))) continue;
+            synthetic.push({
+              "Item No": String(head["Item No"] ?? itemNo),
+              Brand: String(head["Brand"] ?? ""),
+              Category: String(head["Category"] ?? ""),
+              VendorName: String(head["VendorName"] ?? ""),
+              "Item Description": String(head["Item Description"] ?? ""),
+              MRP: m,
+              // Marker (non-PROMO_FIELDS key) used by the row renderer
+              // to apply a subtle highlight so the user can see this
+              // row was injected from the MRP tab and has no promo
+              // detail of its own.
+              __mrpFromMrpTab: 1,
+            } as PromoEntry);
+          }
+          return {
+            itemNo,
+            rows: synthetic.length > 0 ? [...existingRows, ...synthetic] : existingRows,
+          };
+        });
         return { vendorName, items, itemCount: items.length };
       });
       const itemCount = vendors.reduce((s, v) => s + v.itemCount, 0);
       out.push({ brand, vendors, itemCount });
     }
     return out;
-  }, [filtered]);
+  }, [filtered, mrpByItem]);
 
   function yieldToUI(): Promise<void> {
     return new Promise((r) => setTimeout(r, 0));
@@ -975,25 +1036,39 @@ export default function PromoScreen() {
                                     </Text>
                                   ))}
                                 </View>
-                                {item.rows.map((row, ri) => (
-                                  <View
-                                    key={`${item.itemNo}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${ri}`}
-                                    style={[
-                                      styles.priceListRow,
-                                      ri % 2 === 1 && styles.priceListRowAlt,
-                                    ]}
-                                  >
-                                    {CARD_LINE_3.map((f) => (
-                                      <Text
-                                        key={f}
-                                        style={[styles.fieldValue, styles.priceCell]}
-                                        numberOfLines={1}
-                                      >
-                                        {formatCell(f, row[f])}
-                                      </Text>
-                                    ))}
-                                  </View>
-                                ))}
+                                {item.rows.map((row, ri) => {
+                                  // Synthetic rows are MRPs that exist in
+                                  // the MRP tab but have no matching Promo
+                                  // row for this Item No. Soft amber tint
+                                  // + italic value text signals to the
+                                  // user "this MRP has no promo data".
+                                  const isFromMrpTab =
+                                    (row as Record<string, unknown>)["__mrpFromMrpTab"] === 1;
+                                  return (
+                                    <View
+                                      key={`${item.itemNo}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${ri}${isFromMrpTab ? "-mrptab" : ""}`}
+                                      style={[
+                                        styles.priceListRow,
+                                        ri % 2 === 1 && styles.priceListRowAlt,
+                                        isFromMrpTab && styles.priceListRowFromMrpTab,
+                                      ]}
+                                    >
+                                      {CARD_LINE_3.map((f) => (
+                                        <Text
+                                          key={f}
+                                          style={[
+                                            styles.fieldValue,
+                                            styles.priceCell,
+                                            isFromMrpTab && styles.fieldValueFromMrpTab,
+                                          ]}
+                                          numberOfLines={1}
+                                        >
+                                          {formatCell(f, row[f])}
+                                        </Text>
+                                      ))}
+                                    </View>
+                                  );
+                                })}
                               </View>
                             </View>
                           );
@@ -1565,6 +1640,21 @@ const styles = StyleSheet.create({
   },
   priceListRowAlt: {
     backgroundColor: Colors.background,
+  },
+  // Subtle amber tint applied to rows whose MRP came from the MRP tab
+  // (i.e. there's no matching Promo row for this Item No / MRP). The
+  // tint is applied last so it overrides the alternating-row colour.
+  priceListRowFromMrpTab: {
+    backgroundColor: "#FFFBEA",
+    borderTopWidth: 1,
+    borderTopColor: "#FDE68A",
+  },
+  // Italic + muted colour for synthetic MRP rows so the lone MRP value
+  // visually reads as "informational" rather than a confirmed price.
+  fieldValueFromMrpTab: {
+    fontStyle: "italic",
+    color: Colors.textSecondary,
+    fontWeight: "600",
   },
   priceCell: {
     flex: 1,
