@@ -22,6 +22,28 @@ import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderItem, Supplier } from "@/context/AppContext";
 
+// React Native's Alert.alert is a silent no-op on web (react-native-web
+// implements only a stub). Without this wrapper, validation errors and
+// failure messages from the import flow would never appear in the
+// browser preview, leaving the Create Orders button feeling broken.
+// On web we route through window.alert and fire the first button's
+// onPress (typically the OK / dismiss handler) so flows like
+// "Orders Created → router.back()" still complete.
+function webSafeAlert(
+  title: string,
+  message?: string,
+  buttons?: Array<{ text: string; onPress?: () => void }>
+) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+      window.alert(message ? `${title}\n\n${message}` : title);
+    }
+    buttons?.[0]?.onPress?.();
+    return;
+  }
+  Alert.alert(title, message, buttons);
+}
+
 interface ParsedRow {
   VendorCode: string;
   "Item No": string;
@@ -776,7 +798,7 @@ export default function ImportOrderScreen() {
       });
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
-      Alert.alert("Bulk Action Failed", msg);
+      webSafeAlert("Bulk Action Failed", msg);
     } finally {
       setBulkBusy(false);
     }
@@ -824,7 +846,7 @@ export default function ImportOrderScreen() {
         });
       } catch (e: any) {
         const msg = e?.message ?? String(e) ?? "Unknown error";
-        Alert.alert("Bulk Action Failed", msg);
+        webSafeAlert("Bulk Action Failed", msg);
       } finally {
         setBulkBusy(false);
       }
@@ -854,7 +876,7 @@ export default function ImportOrderScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
-      Alert.alert("Undo Failed", msg);
+      webSafeAlert("Undo Failed", msg);
     } finally {
       setUndoBusy(false);
     }
@@ -865,7 +887,10 @@ export default function ImportOrderScreen() {
     if (creatingRef.current) return;
     const unmatched = vendorGroups.filter((g) => !g.supplierId);
     if (unmatched.length > 0) {
-      Alert.alert("Missing Supplier", `Please select a supplier for: ${unmatched.map((g) => g.vendorCode).join(", ")}`);
+      webSafeAlert(
+        "Missing Supplier",
+        `Please select a supplier for: ${unmatched.map((g) => g.vendorCode).join(", ")}`
+      );
       return;
     }
     creatingRef.current = true;
@@ -976,15 +1001,12 @@ export default function ImportOrderScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const successMsg = `${total} order${total > 1 ? "s" : ""} created successfully.`;
-      if (Platform.OS === "web") {
-        window.alert(`Orders Created\n\n${successMsg}`);
-        router.back();
-      } else {
-        Alert.alert("Orders Created", successMsg, [{ text: "OK", onPress: () => router.back() }]);
-      }
+      webSafeAlert("Orders Created", successMsg, [
+        { text: "OK", onPress: () => router.back() },
+      ]);
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";
-      Alert.alert("Failed to Create Orders", msg);
+      webSafeAlert("Failed to Create Orders", msg);
     } finally {
       setCreating(false);
       setCreateProgress("");
