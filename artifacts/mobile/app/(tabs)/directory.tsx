@@ -2,6 +2,7 @@ import React from "react";
 import { HubTab } from "@/components/HubTab";
 import SuppliersScreen from "./suppliers";
 import UsersScreen from "./users";
+import MrpScreen from "./mrp";
 
 export default function DirectoryHubScreen() {
   return (
@@ -17,6 +18,11 @@ export default function DirectoryHubScreen() {
           key: "users",
           label: "Users",
           render: () => <UsersScreen />,
+        },
+        {
+          key: "mrp",
+          label: "MRP",
+          render: () => <MrpScreen />,
         },
       ]}
     />
