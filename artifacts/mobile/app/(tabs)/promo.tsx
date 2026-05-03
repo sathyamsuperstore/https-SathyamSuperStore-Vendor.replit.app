@@ -1121,11 +1121,16 @@ export default function PromoScreen() {
     try {
       setExporting(true);
       // Collect every itemNo that has at least one batch with a
-      // user-entered New Qty value.
+      // user-entered New Qty value. Normalize (trim + lowercase) so
+      // raw rows whose Item No has stray whitespace or differing case
+      // still match — the grouped-card path stores keys built from a
+      // trimmed itemNo, while raw promoEntries rows may not be
+      // trimmed.
+      const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
       const touchedItemNos = new Set<string>();
       for (const key of Object.keys(promoNewQty)) {
         if (promoNewQty[key] === undefined) continue;
-        const itemNo = key.split("|")[0];
+        const itemNo = norm(key.split("|")[0]);
         if (itemNo) touchedItemNos.add(itemNo);
       }
       if (touchedItemNos.size === 0) {
@@ -1135,10 +1140,16 @@ export default function PromoScreen() {
       const headers = [...PROMO_FIELDS, NEW_QTY_FIELD];
       const data: (string | number)[][] = [headers];
       for (const row of promoEntries) {
-        const itemNo = String(row["Item No"] ?? "");
-        if (!touchedItemNos.has(itemNo)) continue;
+        const rowItemNoRaw = String(row["Item No"] ?? "");
+        const rowItemNoTrim = rowItemNoRaw.trim();
+        if (!touchedItemNos.has(rowItemNoTrim.toLowerCase())) continue;
+        // The New Qty map is keyed by `${trimmedItemNo}|${batchNoStr}`
+        // where batchNoStr can legitimately be the empty string for
+        // rows whose BatchNo column was blank in the import. Look the
+        // qty up using the same trimmed key shape so empty-BatchNo
+        // rows pick up their stored value.
         const batchNoStr = String(row["BatchNo"] ?? "");
-        const qtyKey = `${itemNo}|${batchNoStr}`;
+        const qtyKey = `${rowItemNoTrim}|${batchNoStr}`;
         const qty = promoNewQty[qtyKey];
         const out: (string | number)[] = headers.map((h) => {
           if (h === NEW_QTY_FIELD) return qty ?? "";
