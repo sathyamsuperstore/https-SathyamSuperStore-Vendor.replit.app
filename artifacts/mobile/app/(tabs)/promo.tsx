@@ -183,18 +183,13 @@ const CARD_LINE_2 = "Latest MRP";
 // are intentionally omitted here. Cost is removed for non-Admin users
 // downstream.
 const CARD_LINE_3: readonly string[] = [
-  "BatchNo",
   "MRP",
   "SP",
   "Cost",
   "PromotionPrice",
   "New Qty",
   "PromotionToDate",
-  "Promo CR Date",
   "OH Qty",
-  "NoofBatches",
-  "SoldQty",
-  "VendorCode",
   "Category",
 ];
 
