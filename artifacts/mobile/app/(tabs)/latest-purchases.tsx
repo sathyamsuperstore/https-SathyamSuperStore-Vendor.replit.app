@@ -152,6 +152,7 @@ const HIDDEN_DISPLAY_COLUMNS: ReadonlySet<string> = new Set([
   "Free Qty",
   "Tax",
   "Weight",
+  "Brand",
   // Synthetic vendor-name column (rendered next to VendorCode) is
   // suppressed alongside it so neither vendor identifier shows up.
   VENDOR_NAME_COL,
