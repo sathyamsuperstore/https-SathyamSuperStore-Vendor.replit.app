@@ -138,15 +138,35 @@ function colWidth(field: string): number {
 // schema and must stay in sync with the source spreadsheet.
 const VENDOR_NAME_COL = "Vendor Name";
 
+// Columns intentionally suppressed from the on-screen table. They
+// remain part of LATEST_PURCHASES_FIELDS so import/export keep
+// reading and writing them — we just don't render them. Listed using
+// the same spelling as the schema constants so the lookup is exact.
+const HIDDEN_DISPLAY_COLUMNS: ReadonlySet<string> = new Set([
+  "GidNo",
+  "SortNo",
+  "VendorCode",
+  "GidDate",
+  "DONo",
+  "CreatedDate",
+  "Free Qty",
+  "Tax",
+  "Weight",
+  // Synthetic vendor-name column (rendered next to VendorCode) is
+  // suppressed alongside it so neither vendor identifier shows up.
+  VENDOR_NAME_COL,
+]);
+
 // Build the on-screen column order by inserting the synthetic
-// "Vendor Name" column immediately after "VendorCode".
+// "Vendor Name" column immediately after "VendorCode", then dropping
+// any column the user has asked to hide.
 function buildDisplayColumns(fields: readonly string[]): string[] {
   const out: string[] = [];
   for (const f of fields) {
     out.push(f);
     if (f === "VendorCode") out.push(VENDOR_NAME_COL);
   }
-  return out;
+  return out.filter((f) => !HIDDEN_DISPLAY_COLUMNS.has(f));
 }
 
 // Fields a user is likely to know to search by. SortNo included so
