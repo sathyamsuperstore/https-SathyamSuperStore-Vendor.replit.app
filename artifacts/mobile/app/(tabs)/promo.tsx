@@ -1207,114 +1207,131 @@ export default function PromoScreen() {
           <>
             {/* Vendor / Brand / Category filter bars — same UX as the
                 StockUpd tab. Each opens a slide-up sheet with a search
-                box and multi-select rows. */}
-            {/* Promoted quick-action toggle: "Missing Promo" lives at
-                the top of the filter list (above the vendor / brand /
-                category dropdowns) and uses an amber alert-style
-                treatment so users notice it immediately and can jump
-                to items that have MRP-tab values missing from their
-                Promo rows. */}
-            <FilterBar
-              icon="alert-circle"
-              label="Missing Promo"
-              active={missingPromo}
-              toggleOnly
-              variant="alert"
-              onPress={() => setMissingPromo((v) => !v)}
-              onClear={() => setMissingPromo(false)}
-            />
-            {/* Toggles inline editing for the "New Qty" cell. Drops any
-                in-progress drafts when turning off so the next "Modify"
-                session starts from the persisted values. */}
-            <FilterBar
-              icon="edit-3"
-              label="Modify"
-              active={modifyMode}
-              toggleOnly
-              onPress={() => {
-                setModifyMode((v) => {
-                  if (v) setNewQtyDrafts({});
-                  return !v;
-                });
-              }}
-              onClear={() => {
-                setModifyMode(false);
-                setNewQtyDrafts({});
-              }}
-            />
-            <FilterBar
-              icon="layers"
-              label="Multiple MRP"
-              active={onlyMultiMrp}
-              toggleOnly
-              onPress={() => setOnlyMultiMrp((v) => !v)}
-              onClear={() => setOnlyMultiMrp(false)}
-            />
-            <FilterBar
-              icon="users"
-              label={
-                activeVendors.length === 0
-                  ? "All Vendors"
-                  : activeVendors.length === 1
-                    ? activeVendors[0]
-                    : `${activeVendors.length} Vendors`
-              }
-              active={activeVendors.length > 0}
-              onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
-              onClear={() => setActiveVendors([])}
-            />
-            <FilterBar
-              icon="tag"
-              label={
-                activeBrands.length === 0
-                  ? "All Brands"
-                  : activeBrands.length === 1
-                    ? activeBrands[0]
-                    : `${activeBrands.length} Brands`
-              }
-              active={activeBrands.length > 0}
-              onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
-              onClear={() => setActiveBrands([])}
-            />
-            <FilterBar
-              icon="folder"
-              label={
-                activeCategories.length === 0
-                  ? "All Categories"
-                  : activeCategories.length === 1
-                    ? activeCategories[0]
-                    : `${activeCategories.length} Categories`
-              }
-              active={activeCategories.length > 0}
-              onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
-              onClear={() => setActiveCategories([])}
-            />
-            {/* Promo CR Date range filter. Active label shows the
-                currently-applied bounds (open-ended on either side
-                when only one bound is set) so the user can see the
-                range without opening the modal. */}
-            <FilterBar
-              icon="calendar"
-              label={
-                promoCrFrom || promoCrTo
-                  ? `${promoCrFrom ? formatDDMMYYYY(promoCrFrom) : "Any"} → ${promoCrTo ? formatDDMMYYYY(promoCrTo) : "Any"}`
-                  : "All Promo CR Dates"
-              }
-              active={!!(promoCrFrom || promoCrTo)}
-              onPress={() => {
-                const today = startOfDay(new Date());
-                setPromoCrFromDraft(promoCrFrom ?? today);
-                setPromoCrToDraft(promoCrTo ?? today);
-                setShowPromoCrFromPicker(false);
-                setShowPromoCrToPicker(false);
-                setPromoCrError(null);
-                setShowPromoCrModal(true);
-              }}
-              onClear={() => {
-                setPromoCrFrom(null);
-                setPromoCrTo(null);
-              }}
-            />
+                box and multi-select rows. Laid out in a 2-column grid
+                so the chips take half the vertical space they used to. */}
+            <View style={styles.filterGrid}>
+              {/* Promoted quick-action toggle: "Missing Promo" lives at
+                  the top of the filter list (above the vendor / brand /
+                  category dropdowns) and uses an amber alert-style
+                  treatment so users notice it immediately and can jump
+                  to items that have MRP-tab values missing from their
+                  Promo rows. */}
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="alert-circle"
+                  label="Missing Promo"
+                  active={missingPromo}
+                  toggleOnly
+                  variant="alert"
+                  onPress={() => setMissingPromo((v) => !v)}
+                  onClear={() => setMissingPromo(false)}
+                />
+              </View>
+              {/* Toggles inline editing for the "New Qty" cell. Drops any
+                  in-progress drafts when turning off so the next "Modify"
+                  session starts from the persisted values. */}
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="edit-3"
+                  label="Modify"
+                  active={modifyMode}
+                  toggleOnly
+                  onPress={() => {
+                    setModifyMode((v) => {
+                      if (v) setNewQtyDrafts({});
+                      return !v;
+                    });
+                  }}
+                  onClear={() => {
+                    setModifyMode(false);
+                    setNewQtyDrafts({});
+                  }}
+                />
+              </View>
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="layers"
+                  label="Multiple MRP"
+                  active={onlyMultiMrp}
+                  toggleOnly
+                  onPress={() => setOnlyMultiMrp((v) => !v)}
+                  onClear={() => setOnlyMultiMrp(false)}
+                />
+              </View>
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="users"
+                  label={
+                    activeVendors.length === 0
+                      ? "All Vendors"
+                      : activeVendors.length === 1
+                        ? activeVendors[0]
+                        : `${activeVendors.length} Vendors`
+                  }
+                  active={activeVendors.length > 0}
+                  onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
+                  onClear={() => setActiveVendors([])}
+                />
+              </View>
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="tag"
+                  label={
+                    activeBrands.length === 0
+                      ? "All Brands"
+                      : activeBrands.length === 1
+                        ? activeBrands[0]
+                        : `${activeBrands.length} Brands`
+                  }
+                  active={activeBrands.length > 0}
+                  onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
+                  onClear={() => setActiveBrands([])}
+                />
+              </View>
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="folder"
+                  label={
+                    activeCategories.length === 0
+                      ? "All Categories"
+                      : activeCategories.length === 1
+                        ? activeCategories[0]
+                        : `${activeCategories.length} Categories`
+                  }
+                  active={activeCategories.length > 0}
+                  onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+                  onClear={() => setActiveCategories([])}
+                />
+              </View>
+              {/* Promo CR Date range filter. Active label shows the
+                  currently-applied bounds (open-ended on either side
+                  when only one bound is set) so the user can see the
+                  range without opening the modal. */}
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="calendar"
+                  label={
+                    promoCrFrom || promoCrTo
+                      ? `${promoCrFrom ? formatDDMMYYYY(promoCrFrom) : "Any"} → ${promoCrTo ? formatDDMMYYYY(promoCrTo) : "Any"}`
+                      : "All Promo CR Dates"
+                  }
+                  active={!!(promoCrFrom || promoCrTo)}
+                  onPress={() => {
+                    const today = startOfDay(new Date());
+                    setPromoCrFromDraft(promoCrFrom ?? today);
+                    setPromoCrToDraft(promoCrTo ?? today);
+                    setShowPromoCrFromPicker(false);
+                    setShowPromoCrToPicker(false);
+                    setPromoCrError(null);
+                    setShowPromoCrModal(true);
+                  }}
+                  onClear={() => {
+                    setPromoCrFrom(null);
+                    setPromoCrTo(null);
+                  }}
+                />
+              </View>
+            </View>
 
             <View style={styles.searchWrap}>
               <Feather name="search" size={15} color={Colors.textMuted} />
@@ -2351,6 +2368,20 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   emptyHintText: { fontSize: 12, color: Colors.textMuted },
+
+  // 2-column grid wrapper for the filter chips so they fit two-up
+  // and take half the vertical space they used to.
+  filterGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterCol: {
+    // ~50% width per chip with the 8-px gap accounted for, so two
+    // chips sit side-by-side and the leftover one wraps to its own
+    // half-row instead of stretching to full width.
+    width: "48.5%",
+  },
 
   // Filter bar pills (Vendor / Brand / Category)
   filterBar: {
