@@ -958,6 +958,29 @@ export default function PromoScreen() {
             {/* Vendor / Brand / Category filter bars — same UX as the
                 StockUpd tab. Each opens a slide-up sheet with a search
                 box and multi-select rows. */}
+            {/* Promoted quick-action toggle: "Missing Promo" lives at
+                the top of the filter list (above the vendor / brand /
+                category dropdowns) and uses an amber alert-style
+                treatment so users notice it immediately and can jump
+                to items that have MRP-tab values missing from their
+                Promo rows. */}
+            <FilterBar
+              icon="alert-circle"
+              label="Missing Promo"
+              active={missingPromo}
+              toggleOnly
+              variant="alert"
+              onPress={() => setMissingPromo((v) => !v)}
+              onClear={() => setMissingPromo(false)}
+            />
+            <FilterBar
+              icon="layers"
+              label="Multiple MRP"
+              active={onlyMultiMrp}
+              toggleOnly
+              onPress={() => setOnlyMultiMrp((v) => !v)}
+              onClear={() => setOnlyMultiMrp(false)}
+            />
             <FilterBar
               icon="users"
               label={
@@ -996,22 +1019,6 @@ export default function PromoScreen() {
               active={activeCategories.length > 0}
               onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
               onClear={() => setActiveCategories([])}
-            />
-            <FilterBar
-              icon="layers"
-              label="Multiple MRP"
-              active={onlyMultiMrp}
-              toggleOnly
-              onPress={() => setOnlyMultiMrp((v) => !v)}
-              onClear={() => setOnlyMultiMrp(false)}
-            />
-            <FilterBar
-              icon="alert-circle"
-              label="Missing Promo"
-              active={missingPromo}
-              toggleOnly
-              onPress={() => setMissingPromo((v) => !v)}
-              onClear={() => setMissingPromo(false)}
             />
 
             <View style={styles.searchWrap}>
@@ -1250,21 +1257,38 @@ type FilterBarProps = {
   // sheet) — the chevron-down is suppressed so the affordance reads
   // as a toggle rather than a dropdown.
   toggleOnly?: boolean;
+  // Optional visual variant. "alert" gives the chip an amber
+  // attention-grabbing treatment so a promoted quick-action toggle
+  // (e.g. "Missing Promo") stands out from the neutral
+  // dropdown-style filter chips around it.
+  variant?: "default" | "alert";
 };
-function FilterBar({ icon, label, active, onPress, onClear, toggleOnly }: FilterBarProps) {
+function FilterBar({ icon, label, active, onPress, onClear, toggleOnly, variant = "default" }: FilterBarProps) {
+  const isAlert = variant === "alert";
+  const inactiveIconColor = isAlert ? Colors.warning : Colors.textSecondary;
+  const activeIconColor = Colors.textInverse;
+  const activeClearColor = Colors.textInverse;
   return (
     <TouchableOpacity
-      style={[styles.filterBar, active && styles.filterBarActive]}
+      style={[
+        styles.filterBar,
+        isAlert && styles.filterBarAlert,
+        active && (isAlert ? styles.filterBarAlertActive : styles.filterBarActive),
+      ]}
       onPress={onPress}
       activeOpacity={0.75}
     >
       <Feather
         name={icon}
-        size={14}
-        color={active ? Colors.textInverse : Colors.textSecondary}
+        size={isAlert ? 15 : 14}
+        color={active ? activeIconColor : inactiveIconColor}
       />
       <Text
-        style={[styles.filterBarText, active && styles.filterBarTextActive]}
+        style={[
+          styles.filterBarText,
+          isAlert && styles.filterBarAlertText,
+          active && (isAlert ? styles.filterBarAlertTextActive : styles.filterBarTextActive),
+        ]}
         numberOfLines={1}
       >
         {label}
@@ -1274,7 +1298,7 @@ function FilterBar({ icon, label, active, onPress, onClear, toggleOnly }: Filter
           onPress={(e) => { e.stopPropagation?.(); onClear(); }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Feather name="x-circle" size={15} color={Colors.textInverse} />
+          <Feather name="x-circle" size={15} color={activeClearColor} />
         </TouchableOpacity>
       ) : toggleOnly ? null : (
         <Feather name="chevron-down" size={14} color={Colors.textMuted} />
@@ -1789,6 +1813,20 @@ const styles = StyleSheet.create({
   },
   filterBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   filterBarTextActive: { color: Colors.textInverse },
+  // "Alert"-style variant used to promote a quick-action toggle (e.g.
+  // "Missing Promo") so it stands out from the neutral
+  // dropdown-style filter chips around it.
+  filterBarAlert: {
+    backgroundColor: Colors.warningLight,
+    borderColor: Colors.warning,
+    borderWidth: 1.5,
+  },
+  filterBarAlertActive: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  filterBarAlertText: { color: Colors.warning, fontWeight: "700" },
+  filterBarAlertTextActive: { color: Colors.textInverse, fontWeight: "700" },
 
   // Bottom-sheet modal shared by all three filters
   modalBackdrop: {
