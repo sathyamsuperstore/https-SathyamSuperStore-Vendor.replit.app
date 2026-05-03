@@ -153,13 +153,25 @@ function colWidth(field: string): number {
 const CARD_LINE_1_LEFT = "Item No";
 const CARD_LINE_1_RIGHT = "Item Description";
 const CARD_LINE_2 = "Latest MRP";
+// All Promo columns shown in the per-row table on each card. Item No /
+// Item Description / Latest MRP appear above the table on lines 1 and
+// 2, and Brand / VendorName drive the nested group headers, so they
+// are intentionally omitted here. Cost is removed for non-Admin users
+// downstream.
 const CARD_LINE_3: readonly string[] = [
+  "BatchNo",
   "MRP",
   "SP",
   "Cost",
   "PromotionPrice",
   "PromotionToDate",
+  "Promo Create Date",
+  "Promo CR Date",
   "OH Qty",
+  "NoofBatches",
+  "SoldQty",
+  "VendorCode",
+  "Category",
   "New Qty",
 ];
 
@@ -1299,12 +1311,24 @@ export default function PromoScreen() {
                               </View>
 
                               <View style={styles.priceList}>
-                                {/* One header row of small labels above the stacked variants */}
+                                {/* The full promo column set is wider than
+                                    a phone screen, so the header + value
+                                    rows scroll together inside one
+                                    horizontal ScrollView. Each cell gets
+                                    a fixed width from colWidth() so the
+                                    header labels stay aligned with their
+                                    values across rows. */}
+                                <ScrollView
+                                  horizontal
+                                  showsHorizontalScrollIndicator
+                                  contentContainerStyle={styles.priceListScrollContent}
+                                >
+                                  <View>
                                 <View style={styles.priceListHead}>
                                   {cardLine3.map((f) => (
                                     <Text
                                       key={`hd:${f}`}
-                                      style={[styles.fieldLabel, styles.priceCell]}
+                                      style={[styles.fieldLabel, styles.priceCellFixed, { width: colWidth(f) }]}
                                       numberOfLines={1}
                                     >
                                       {cardLabel(f)}
@@ -1355,7 +1379,11 @@ export default function PromoScreen() {
                                             return (
                                               <TextInput
                                                 key={f}
-                                                style={[styles.priceCell, styles.newQtyInput]}
+                                                style={[
+                                                  styles.priceCellFixed,
+                                                  { width: colWidth(f) },
+                                                  styles.newQtyInput,
+                                                ]}
                                                 value={value}
                                                 onChangeText={(text) =>
                                                   setNewQtyDrafts((d) => ({
@@ -1398,7 +1426,8 @@ export default function PromoScreen() {
                                               key={f}
                                               style={[
                                                 styles.fieldValue,
-                                                styles.priceCell,
+                                                styles.priceCellFixed,
+                                                { width: colWidth(f) },
                                                 isFromMrpTab && styles.fieldValueFromMrpTab,
                                               ]}
                                               numberOfLines={1}
@@ -1412,7 +1441,8 @@ export default function PromoScreen() {
                                             key={f}
                                             style={[
                                               styles.fieldValue,
-                                              styles.priceCell,
+                                              styles.priceCellFixed,
+                                              { width: colWidth(f) },
                                               isFromMrpTab && styles.fieldValueFromMrpTab,
                                             ]}
                                             numberOfLines={1}
@@ -1424,6 +1454,8 @@ export default function PromoScreen() {
                                     </View>
                                   );
                                 })}
+                                  </View>
+                                </ScrollView>
                               </View>
                             </View>
                           );
@@ -2047,6 +2079,17 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginBottom: 0,
     fontSize: 11,
+  },
+  // Fixed-width variant of priceCell used inside the horizontal
+  // ScrollView. Width comes from colWidth(field) per cell so the
+  // header labels stay aligned with their values across rows.
+  priceCellFixed: {
+    marginBottom: 0,
+    fontSize: 11,
+    paddingHorizontal: 2,
+  },
+  priceListScrollContent: {
+    paddingRight: 8,
   },
   // Inline editor used for the "New Qty" cell when Modify mode is on.
   // Sized to match the surrounding price cells so the row layout
