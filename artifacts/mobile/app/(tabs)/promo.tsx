@@ -56,6 +56,12 @@ const DATE_FIELDS = new Set<string>(["PromotionToDate", "Promo Create Date"]);
 // schema). Other numeric fields use 2dp.
 const INTEGER_FIELDS = new Set<string>(["NoofBatches"]);
 
+// Columns that should always render with two decimal places, even when
+// the underlying value is a whole number (e.g. Cost of 12 displays as
+// "12.00"). Other numeric fields keep the existing behaviour where
+// integers render without trailing zeros.
+const DECIMAL_FIELDS = new Set<string>(["Cost"]);
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -179,6 +185,8 @@ const SEARCH_FIELDS = [
 function formatCell(field: string, value: string | number | undefined): string {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "";
+    if (DECIMAL_FIELDS.has(field)) return value.toFixed(2);
     if (INTEGER_FIELDS.has(field) || Number.isInteger(value)) return String(value);
     return value.toFixed(2);
   }
@@ -706,7 +714,7 @@ export default function PromoScreen() {
       const mrpKey = fieldKeys["MRP"];
       if (!itemNoKey || !batchNoKey) {
         setErrors([
-          `Missing required columns. Expected "Item No" and "BatchNo". Found: ${Object.keys(firstRow).join(", ")}`,
+          `Missing required columns. Expected "Item No" and "BatchNo" (other columns like "Cost" are optional). Found: ${Object.keys(firstRow).join(", ")}`,
         ]);
         setLoading(false);
         return;
@@ -870,7 +878,9 @@ export default function PromoScreen() {
             Excel file with the promotion-master layout. Required columns:{" "}
             <Text style={styles.mono}>Item No</Text> and{" "}
             <Text style={styles.mono}>BatchNo</Text>. Each (Item No, BatchNo)
-            pair is a unique row.
+            pair is a unique row. Other columns like{" "}
+            <Text style={styles.mono}>Cost</Text> are optional — sheets
+            without them still import successfully.
           </Text>
 
           <View style={styles.actionRow}>
