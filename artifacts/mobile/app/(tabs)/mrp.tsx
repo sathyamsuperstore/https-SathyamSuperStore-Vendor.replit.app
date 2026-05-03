@@ -213,7 +213,7 @@ export default function MrpScreen() {
       // 100% bar render before we navigate away.
       setLoading(false);
       setTimeout(() => {
-        router.push("/(tabs)/stock?view=purchases");
+        router.push("/(tabs)/catalog?view=purchases");
       }, 400);
       return;
     } catch (e: any) {
