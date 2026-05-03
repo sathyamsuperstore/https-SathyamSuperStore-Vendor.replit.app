@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   View,
@@ -68,6 +69,12 @@ const DECIMAL_FIELDS = new Set<string>(["Cost"]);
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+// Strip the time component so date comparisons are inclusive on
+// whole-day boundaries regardless of when the picker fires.
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 function formatDDMMYYYY(d: Date): string {
@@ -287,8 +294,16 @@ export default function PromoScreen() {
   const [promoCrFrom, setPromoCrFrom] = useState<Date | null>(null);
   const [promoCrTo, setPromoCrTo] = useState<Date | null>(null);
   const [showPromoCrModal, setShowPromoCrModal] = useState(false);
-  const [promoCrFromDraft, setPromoCrFromDraft] = useState("");
-  const [promoCrToDraft, setPromoCrToDraft] = useState("");
+  // Calendar-picker drafts. Defaults to "today" so the picker opens
+  // on a sensible date instead of an arbitrary epoch. The actual
+  // committed filter (promoCrFrom/promoCrTo) is only updated on Apply.
+  const [promoCrFromDraft, setPromoCrFromDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [promoCrToDraft, setPromoCrToDraft] = useState<Date>(() => startOfDay(new Date()));
+  // Which sub-picker is currently visible. On Android, DateTimePicker
+  // is a one-shot dialog; on iOS/web we render it inline below the
+  // matching field button.
+  const [showPromoCrFromPicker, setShowPromoCrFromPicker] = useState(false);
+  const [showPromoCrToPicker, setShowPromoCrToPicker] = useState(false);
   const [promoCrError, setPromoCrError] = useState<string | null>(null);
   // When on, the "New Qty" cell becomes an inline decimal TextInput so
   // the user can type a quantity per row. Off by default so the table
@@ -1287,8 +1302,11 @@ export default function PromoScreen() {
               }
               active={!!(promoCrFrom || promoCrTo)}
               onPress={() => {
-                setPromoCrFromDraft(promoCrFrom ? formatDDMMYYYY(promoCrFrom) : "");
-                setPromoCrToDraft(promoCrTo ? formatDDMMYYYY(promoCrTo) : "");
+                const today = startOfDay(new Date());
+                setPromoCrFromDraft(promoCrFrom ?? today);
+                setPromoCrToDraft(promoCrTo ?? today);
+                setShowPromoCrFromPicker(false);
+                setShowPromoCrToPicker(false);
                 setPromoCrError(null);
                 setShowPromoCrModal(true);
               }}
@@ -1597,12 +1615,11 @@ export default function PromoScreen() {
         bottomInset={insets.bottom}
       />
 
-      {/* Promo CR Date range filter modal. Two free-text DD/MM/YYYY
-          inputs (no native date-picker dependency). Both bounds are
-          optional — leaving either blank means "no lower / upper
-          limit". Apply only commits when both inputs parse cleanly
-          (or are empty); otherwise we surface a small inline error
-          and keep the modal open. */}
+      {/* Promo CR Date range filter modal. Two date buttons that open
+          a calendar via @react-native-community/datetimepicker.
+          Defaults to today on first open; Clear resets the bounds
+          (and the drafts) back to today. Apply commits the drafts
+          to promoCrFrom/promoCrTo. */}
       <Modal
         visible={showPromoCrModal}
         transparent
@@ -1620,8 +1637,13 @@ export default function PromoScreen() {
             <Text style={styles.modalTitle}>Promo CR Date</Text>
             <TouchableOpacity
               onPress={() => {
-                setPromoCrFromDraft("");
-                setPromoCrToDraft("");
+                const today = startOfDay(new Date());
+                setPromoCrFromDraft(today);
+                setPromoCrToDraft(today);
+                setPromoCrFrom(null);
+                setPromoCrTo(null);
+                setShowPromoCrFromPicker(false);
+                setShowPromoCrToPicker(false);
                 setPromoCrError(null);
               }}
             >
@@ -1631,29 +1653,63 @@ export default function PromoScreen() {
           <View style={styles.dateRangeWrap}>
             <View style={styles.dateRangeField}>
               <Text style={styles.dateRangeLabel}>From</Text>
-              <TextInput
-                style={styles.dateRangeInput}
-                value={promoCrFromDraft}
-                onChangeText={(t) => { setPromoCrFromDraft(t); setPromoCrError(null); }}
-                placeholder="DD/MM/YYYY"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              />
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowPromoCrToPicker(false);
+                  setShowPromoCrFromPicker((v) => !v);
+                  setPromoCrError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(promoCrFromDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showPromoCrFromPicker && (
+                <DateTimePicker
+                  value={promoCrFromDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowPromoCrFromPicker(false);
+                    if (selected) {
+                      setPromoCrFromDraft(startOfDay(selected));
+                      setPromoCrError(null);
+                    }
+                  }}
+                />
+              )}
             </View>
             <View style={styles.dateRangeField}>
               <Text style={styles.dateRangeLabel}>To</Text>
-              <TextInput
-                style={styles.dateRangeInput}
-                value={promoCrToDraft}
-                onChangeText={(t) => { setPromoCrToDraft(t); setPromoCrError(null); }}
-                placeholder="DD/MM/YYYY"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              />
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowPromoCrFromPicker(false);
+                  setShowPromoCrToPicker((v) => !v);
+                  setPromoCrError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(promoCrToDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showPromoCrToPicker && (
+                <DateTimePicker
+                  value={promoCrToDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowPromoCrToPicker(false);
+                    if (selected) {
+                      setPromoCrToDraft(startOfDay(selected));
+                      setPromoCrError(null);
+                    }
+                  }}
+                />
+              )}
             </View>
           </View>
           {promoCrError && (
@@ -1662,24 +1718,16 @@ export default function PromoScreen() {
           <TouchableOpacity
             style={styles.modalDoneBtn}
             onPress={() => {
-              const fromStr = promoCrFromDraft.trim();
-              const toStr = promoCrToDraft.trim();
-              const from = fromStr ? parseDDMMYYYY(fromStr) : null;
-              const to = toStr ? parseDDMMYYYY(toStr) : null;
-              if (fromStr && !from) {
-                setPromoCrError("From date must be DD/MM/YYYY.");
-                return;
-              }
-              if (toStr && !to) {
-                setPromoCrError("To date must be DD/MM/YYYY.");
-                return;
-              }
-              if (from && to && from.getTime() > to.getTime()) {
+              const from = startOfDay(promoCrFromDraft);
+              const to = startOfDay(promoCrToDraft);
+              if (from.getTime() > to.getTime()) {
                 setPromoCrError("From date can't be after To date.");
                 return;
               }
               setPromoCrFrom(from);
               setPromoCrTo(to);
+              setShowPromoCrFromPicker(false);
+              setShowPromoCrToPicker(false);
               setPromoCrError(null);
               setShowPromoCrModal(false);
             }}
@@ -2441,6 +2489,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  dateRangeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text,
   },
   dateRangeError: {
     fontSize: 12,
