@@ -174,6 +174,10 @@ interface AppContextType {
   promoEntries: PromoEntry[];
   savePromoBatch: (entries: PromoEntry[]) => Promise<void>;
   clearPromoBatch: () => Promise<void>;
+  // User-entered "New Qty" overrides per Promo row. Map key is
+  // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
+  promoNewQty: Record<string, number>;
+  setPromoNewQtyValue: (key: string, value: number | undefined) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -264,6 +268,11 @@ const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
 const LATEST_PURCHASES_KEY = "@latestPurchases";
 const PROMO_KEY = "@promoBatch";
+// User-entered "New Qty" overrides per Promo row, keyed by
+// `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
+// Promo workbook (which replaces every row) doesn't blow away the
+// quantities the user typed in. Cleared together with the Promo batch.
+const PROMO_NEW_QTY_KEY = "@promoNewQty";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -317,6 +326,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
   const [promoEntries, setPromoEntries] = useState<PromoEntry[]>([]);
+  const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -325,7 +335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoNewQtyData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -333,6 +343,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(MRP_KEY),
         AsyncStorage.getItem(LATEST_PURCHASES_KEY),
         AsyncStorage.getItem(PROMO_KEY),
+        AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -350,6 +361,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMrpEntries(loadedMrp);
       setLatestPurchases(loadedLatestPurchases);
       setPromoEntries(loadedPromo);
+      const loadedPromoNewQty: Record<string, number> = promoNewQtyData
+        ? JSON.parse(promoNewQtyData)
+        : {};
+      setPromoNewQty(loadedPromoNewQty);
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -402,8 +417,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   async function clearPromoBatch() {
-    await AsyncStorage.removeItem(PROMO_KEY);
+    await AsyncStorage.multiRemove([PROMO_KEY, PROMO_NEW_QTY_KEY]);
     setPromoEntries([]);
+    setPromoNewQty({});
+  }
+
+  // Single-row write for the "New Qty" overrides map. Mirrors the
+  // write-first pattern used elsewhere — persists the next snapshot to
+  // AsyncStorage before updating React state so a failed save never
+  // leaves the UI ahead of disk. Pass `undefined` to remove the entry.
+  async function setPromoNewQtyValue(key: string, value: number | undefined) {
+    const next = { ...promoNewQty };
+    if (value === undefined || !Number.isFinite(value)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    await AsyncStorage.setItem(PROMO_NEW_QTY_KEY, JSON.stringify(next));
+    setPromoNewQty(next);
   }
 
   async function login(userId: string, password: string): Promise<{ success: boolean; error?: string }> {
@@ -708,6 +739,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         promoEntries,
         savePromoBatch,
         clearPromoBatch,
+        promoNewQty,
+        setPromoNewQtyValue,
         hydrated,
       }}
     >

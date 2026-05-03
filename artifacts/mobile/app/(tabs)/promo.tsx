@@ -154,7 +154,13 @@ const CARD_LINE_3: readonly string[] = [
   "PromotionPrice",
   "PromotionToDate",
   "OH Qty",
+  "New Qty",
 ];
+
+// Sentinel field name for the user-editable "New Qty" cell. Not a real
+// imported column — it's stored separately in AppContext keyed by
+// `${itemNo}|${batchNo}` so a fresh Promo import doesn't blow it away.
+const NEW_QTY_FIELD = "New Qty";
 
 // Display labels for card fields whose underlying column name we want
 // to abbreviate or soften for the user. The data field name itself
@@ -195,7 +201,15 @@ function formatCell(field: string, value: string | number | undefined): string {
 
 export default function PromoScreen() {
   const router = useRouter();
-  const { promoEntries, mrpEntries, savePromoBatch, clearPromoBatch, currentUser } = useApp();
+  const {
+    promoEntries,
+    mrpEntries,
+    savePromoBatch,
+    clearPromoBatch,
+    currentUser,
+    promoNewQty,
+    setPromoNewQtyValue,
+  } = useApp();
   // Cost (wholesale / purchase price per unit) is sensitive margin info,
   // so it's only shown to admin-privileged users. Vendors / Managers /
   // Staff see the same card layout with the Cost cell removed.
@@ -231,6 +245,14 @@ export default function PromoScreen() {
   // amber "from MRP tab" row). Lets the user jump straight to items
   // that need their promo data filled in.
   const [missingPromo, setMissingPromo] = useState(false);
+  // When on, the "New Qty" cell becomes an inline decimal TextInput so
+  // the user can type a quantity per row. Off by default so the table
+  // stays scrollable / tap-safe.
+  const [modifyMode, setModifyMode] = useState(false);
+  // Local in-progress text per (itemNo|batchNo) while the user is
+  // typing. Lets us accept partial values like "12." that aren't yet a
+  // valid number, and only commit on blur.
+  const [newQtyDrafts, setNewQtyDrafts] = useState<Record<string, string>>({});
 
   // When another tab deep-links into Promo with `?q=<itemNo>` (e.g.
   // tapping an Item No on the Stock Update tab), seed the search box
@@ -982,6 +1004,25 @@ export default function PromoScreen() {
               onPress={() => setMissingPromo((v) => !v)}
               onClear={() => setMissingPromo(false)}
             />
+            {/* Toggles inline editing for the "New Qty" cell. Drops any
+                in-progress drafts when turning off so the next "Modify"
+                session starts from the persisted values. */}
+            <FilterBar
+              icon="edit-3"
+              label="Modify"
+              active={modifyMode}
+              toggleOnly
+              onPress={() => {
+                setModifyMode((v) => {
+                  if (v) setNewQtyDrafts({});
+                  return !v;
+                });
+              }}
+              onClear={() => {
+                setModifyMode(false);
+                setNewQtyDrafts({});
+              }}
+            />
             <FilterBar
               icon="layers"
               label="Multiple MRP"
@@ -1148,19 +1189,99 @@ export default function PromoScreen() {
                                         isFromMrpTab && styles.priceListRowFromMrpTab,
                                       ]}
                                     >
-                                      {cardLine3.map((f) => (
-                                        <Text
-                                          key={f}
-                                          style={[
-                                            styles.fieldValue,
-                                            styles.priceCell,
-                                            isFromMrpTab && styles.fieldValueFromMrpTab,
-                                          ]}
-                                          numberOfLines={1}
-                                        >
-                                          {formatCell(f, row[f])}
-                                        </Text>
-                                      ))}
+                                      {cardLine3.map((f) => {
+                                        if (f === NEW_QTY_FIELD) {
+                                          // The "New Qty" cell is the
+                                          // user-editable column. It has
+                                          // no underlying imported value
+                                          // — we read/write the standalone
+                                          // promoNewQty map keyed by
+                                          // (itemNo, BatchNo). Synthetic
+                                          // "from MRP tab" rows have no
+                                          // BatchNo to key on, so they
+                                          // render the cell as blank /
+                                          // disabled.
+                                          const batchNoStr = String(row["BatchNo"] ?? "");
+                                          const qtyKey = `${item.itemNo}|${batchNoStr}`;
+                                          const editable = !isFromMrpTab && modifyMode;
+                                          const persisted = promoNewQty[qtyKey];
+                                          const draft = newQtyDrafts[qtyKey];
+                                          if (editable) {
+                                            const value =
+                                              draft !== undefined
+                                                ? draft
+                                                : persisted !== undefined
+                                                  ? String(persisted)
+                                                  : "";
+                                            return (
+                                              <TextInput
+                                                key={f}
+                                                style={[styles.priceCell, styles.newQtyInput]}
+                                                value={value}
+                                                onChangeText={(text) =>
+                                                  setNewQtyDrafts((d) => ({
+                                                    ...d,
+                                                    [qtyKey]: text,
+                                                  }))
+                                                }
+                                                onEndEditing={() => {
+                                                  const raw = (
+                                                    newQtyDrafts[qtyKey] ?? ""
+                                                  ).trim();
+                                                  setNewQtyDrafts((d) => {
+                                                    const { [qtyKey]: _drop, ...rest } = d;
+                                                    return rest;
+                                                  });
+                                                  if (raw === "") {
+                                                    if (persisted !== undefined) {
+                                                      void setPromoNewQtyValue(qtyKey, undefined);
+                                                    }
+                                                    return;
+                                                  }
+                                                  const num = Number(raw);
+                                                  if (!Number.isFinite(num) || num < 0) return;
+                                                  void setPromoNewQtyValue(qtyKey, num);
+                                                }}
+                                                keyboardType="decimal-pad"
+                                                inputMode="decimal"
+                                                placeholder="0"
+                                                placeholderTextColor={Colors.textMuted}
+                                                selectTextOnFocus
+                                              />
+                                            );
+                                          }
+                                          const display =
+                                            persisted !== undefined
+                                              ? formatCell(f, persisted)
+                                              : "";
+                                          return (
+                                            <Text
+                                              key={f}
+                                              style={[
+                                                styles.fieldValue,
+                                                styles.priceCell,
+                                                isFromMrpTab && styles.fieldValueFromMrpTab,
+                                              ]}
+                                              numberOfLines={1}
+                                            >
+                                              {display}
+                                            </Text>
+                                          );
+                                        }
+                                        return (
+                                          <Text
+                                            key={f}
+                                            style={[
+                                              styles.fieldValue,
+                                              styles.priceCell,
+                                              isFromMrpTab && styles.fieldValueFromMrpTab,
+                                            ]}
+                                            numberOfLines={1}
+                                          >
+                                            {formatCell(f, row[f])}
+                                          </Text>
+                                        );
+                                      })}
                                     </View>
                                   );
                                 })}
@@ -1773,6 +1894,21 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginBottom: 0,
     fontSize: 11,
+  },
+  // Inline editor used for the "New Qty" cell when Modify mode is on.
+  // Sized to match the surrounding price cells so the row layout
+  // doesn't jump when toggling Modify.
+  newQtyInput: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.text,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: Colors.border ?? "#D1D5DB",
+    borderRadius: 4,
+    backgroundColor: Colors.surface,
+    textAlign: "center",
   },
   fieldLabel: {
     fontSize: 9,
