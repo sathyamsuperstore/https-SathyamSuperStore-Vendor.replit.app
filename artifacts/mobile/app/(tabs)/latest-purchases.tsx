@@ -279,6 +279,19 @@ export default function LatestPurchasesScreen() {
   const [doDateFromDraft, setDoDateFromDraft] = useState("");
   const [doDateToDraft, setDoDateToDraft] = useState("");
   const [doDateError, setDoDateError] = useState<string | null>(null);
+  // Vendors the user has collapsed in the grouped table view. Stored
+  // as a Set of vendor names; absence = expanded (the default), so
+  // newly-imported / newly-filtered vendors are visible right away.
+  const [collapsedVendors, setCollapsedVendors] = useState<Set<string>>(
+    () => new Set()
+  );
+  const toggleVendorCollapsed = (vendor: string) =>
+    setCollapsedVendors((prev) => {
+      const next = new Set(prev);
+      if (next.has(vendor)) next.delete(vendor);
+      else next.add(vendor);
+      return next;
+    });
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [vendorOptionSearch, setVendorOptionSearch] = useState("");
   const [categoryOptionSearch, setCategoryOptionSearch] = useState("");
@@ -1217,9 +1230,20 @@ export default function LatestPurchasesScreen() {
                     // Category. Group headers span the full table
                     // width so they line up correctly when the user
                     // scrolls horizontally.
-                    grouped.map((g) => (
+                    grouped.map((g) => {
+                      const isCollapsed = collapsedVendors.has(g.vendor);
+                      return (
                       <View key={`v|${g.vendor}`}>
-                        <View style={[styles.groupVendorHeader, { width: tableWidth }]}>
+                        <TouchableOpacity
+                          style={[styles.groupVendorHeader, { width: tableWidth }]}
+                          activeOpacity={0.7}
+                          onPress={() => toggleVendorCollapsed(g.vendor)}
+                        >
+                          <Feather
+                            name={isCollapsed ? "chevron-right" : "chevron-down"}
+                            size={14}
+                            color={Colors.primary}
+                          />
                           <Feather name="users" size={13} color={Colors.primary} />
                           <Text style={styles.groupVendorText} numberOfLines={1}>
                             {g.vendor}
@@ -1227,8 +1251,8 @@ export default function LatestPurchasesScreen() {
                           <Text style={styles.groupVendorCount}>
                             {g.count} row{g.count === 1 ? "" : "s"}
                           </Text>
-                        </View>
-                        {g.brands.map((bg) => (
+                        </TouchableOpacity>
+                        {!isCollapsed && g.brands.map((bg) => (
                           <View key={`v|${g.vendor}|b|${bg.brand}`}>
                             <View style={[styles.groupBrandHeader, { width: tableWidth }]}>
                               <Feather name="tag" size={11} color={Colors.textMuted} />
@@ -1292,7 +1316,8 @@ export default function LatestPurchasesScreen() {
                           </View>
                         ))}
                       </View>
-                    ))
+                      );
+                    })
                   )}
                 </View>
               </ScrollView>
