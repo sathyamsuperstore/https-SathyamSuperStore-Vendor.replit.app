@@ -546,6 +546,42 @@ export default function PromoScreen() {
     return m;
   }, [mrpEntries]);
 
+  // Pre-computed set of trimmed Item Nos that qualify for the
+  // "Missing Promo" filter — an Item No qualifies if the MRP tab
+  // lists at least one MRP value that isn't represented in any of
+  // the Item's existing Promo rows. This used to be re-derived
+  // inside the `filtered` useMemo on every toggle (and every
+  // unrelated filter change), which scanned all promo rows and
+  // walked the MRP map for each item — noticeable on large data
+  // sets. Now it's memoised against the raw `promoEntries` and
+  // `mrpByItem` so toggling Missing Promo collapses to a single
+  // Set lookup per row.
+  const missingPromoItemSet = useMemo(() => {
+    const existingByItem = new Map<string, Set<string>>();
+    for (const r of promoEntries) {
+      const itemNo = String(r["Item No"] ?? "").trim();
+      if (!itemNo) continue;
+      const v = r["MRP"];
+      const n =
+        typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
+      if (isNaN(n)) continue;
+      let s = existingByItem.get(itemNo);
+      if (!s) {
+        s = new Set();
+        existingByItem.set(itemNo, s);
+      }
+      s.add(String(n));
+    }
+    const qualifies = new Set<string>();
+    for (const [itemNo, existing] of existingByItem) {
+      const list = mrpByItem.get(itemNo.toLowerCase()) ?? [];
+      if (list.some((m) => !existing.has(String(m)))) {
+        qualifies.add(itemNo);
+      }
+    }
+    return qualifies;
+  }, [promoEntries, mrpByItem]);
+
   const filtered = useMemo(() => {
     const vendorSet = activeVendors.length > 0 ? new Set(activeVendors) : null;
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
@@ -616,40 +652,14 @@ export default function PromoScreen() {
       });
     }
 
-    // "Missing Promo" toggle: keep only rows whose Item No has at
-    // least one MRP in the MRP tab that is NOT represented in the
-    // Item's existing Promo rows. Mirrors the synthetic-row injection
-    // logic in `grouped` so the two stay in sync.
+    // "Missing Promo" toggle: keep only rows whose Item No is in the
+    // pre-computed `missingPromoItemSet`. The set is derived from the
+    // full `promoEntries` + MRP-tab data once (see `missingPromoItemSet`
+    // above) so toggling this chip is a cheap O(n) Set lookup over
+    // the current `base` instead of re-scanning everything.
     if (missingPromo) {
-      // Collect existing MRPs (normalised numeric) per Item No from
-      // the post-filter rows, so the comparison respects the active
-      // vendor/brand/category/search filters.
-      const existingByItem = new Map<string, Set<string>>();
-      for (const r of base) {
-        const itemNo = String(r["Item No"] ?? "").trim();
-        if (!itemNo) continue;
-        const v = r["MRP"];
-        const n =
-          typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
-        if (isNaN(n)) continue;
-        let s = existingByItem.get(itemNo);
-        if (!s) {
-          s = new Set();
-          existingByItem.set(itemNo, s);
-        }
-        s.add(String(n));
-      }
-      // An Item No qualifies if its MRP-tab list contains any value
-      // not in its existing Promo MRP set.
-      const qualifies = new Set<string>();
-      for (const [itemNo, existing] of existingByItem) {
-        const list = mrpByItem.get(itemNo.toLowerCase()) ?? [];
-        if (list.some((m) => !existing.has(String(m)))) {
-          qualifies.add(itemNo);
-        }
-      }
       base = base.filter((r) =>
-        qualifies.has(String(r["Item No"] ?? "").trim())
+        missingPromoItemSet.has(String(r["Item No"] ?? "").trim())
       );
     }
 
@@ -662,7 +672,7 @@ export default function PromoScreen() {
     activeCategories,
     onlyMultiMrp,
     missingPromo,
-    mrpByItem,
+    missingPromoItemSet,
   ]);
 
   // Group the filtered rows three levels deep:
