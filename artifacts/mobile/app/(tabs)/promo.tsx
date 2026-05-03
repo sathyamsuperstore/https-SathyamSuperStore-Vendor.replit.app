@@ -212,6 +212,12 @@ export default function PromoScreen() {
   // appears with more than one distinct MRP value across the imported
   // data. Useful for spotting price discrepancies / multi-batch items.
   const [onlyMultiMrp, setOnlyMultiMrp] = useState(false);
+  // Quick toggle: when on, restrict the table to Item Nos that have at
+  // least one MRP value present in the MRP tab but missing from this
+  // item's Promo rows (the same items that would render an injected
+  // amber "from MRP tab" row). Lets the user jump straight to items
+  // that need their promo data filled in.
+  const [missingPromo, setMissingPromo] = useState(false);
 
   // When another tab deep-links into Promo with `?q=<itemNo>` (e.g.
   // tapping an Item No on the Stock Update tab), seed the search box
@@ -227,6 +233,7 @@ export default function PromoScreen() {
       setActiveBrands([]);
       setActiveCategories([]);
       setOnlyMultiMrp(false);
+      setMissingPromo(false);
     }
   }, [qParam]);
   // Import progress: 0-100 with a human-readable phase label. Same
@@ -377,50 +384,6 @@ export default function PromoScreen() {
     return n;
   }
 
-  const filtered = useMemo(() => {
-    const vendorSet = activeVendors.length > 0 ? new Set(activeVendors) : null;
-    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
-    const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
-    const q = search.trim().toLowerCase();
-    const base = promoEntries.filter((r) => {
-      if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
-      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
-      if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
-      if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
-      return true;
-    });
-    if (!onlyMultiMrp) return base;
-    // Keep only rows whose Item No, within the current view, has more
-    // than one distinct MRP value. Distinct comparison normalises to a
-    // numeric where possible so "100" and 100 match; falls back to a
-    // trimmed string for non-numerics / blanks.
-    const mrpsByItem = new Map<string, Set<string>>();
-    for (const r of base) {
-      const itemNo = String(r["Item No"] ?? "").trim();
-      if (!itemNo) continue;
-      const mrpRaw = r["MRP"];
-      const norm =
-        typeof mrpRaw === "number"
-          ? String(mrpRaw)
-          : (() => {
-              const s = String(mrpRaw ?? "").trim();
-              const n = parseFloat(s);
-              return isNaN(n) ? s : String(n);
-            })();
-      let s = mrpsByItem.get(itemNo);
-      if (!s) {
-        s = new Set();
-        mrpsByItem.set(itemNo, s);
-      }
-      s.add(norm);
-    }
-    return base.filter((r) => {
-      const itemNo = String(r["Item No"] ?? "").trim();
-      const set = itemNo ? mrpsByItem.get(itemNo) : undefined;
-      return !!set && set.size > 1;
-    });
-  }, [promoEntries, search, activeVendors, activeBrands, activeCategories, onlyMultiMrp]);
-
   // Map of normalised Item No -> sorted unique MRP values pulled from
   // the MRP tab. Used below to surface MRPs that exist in the MRP tab
   // but have no matching Promo row for the same Item No, so the user
@@ -440,6 +403,99 @@ export default function PromoScreen() {
     for (const arr of m.values()) arr.sort((a, b) => a - b);
     return m;
   }, [mrpEntries]);
+
+  const filtered = useMemo(() => {
+    const vendorSet = activeVendors.length > 0 ? new Set(activeVendors) : null;
+    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
+    const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    const q = search.trim().toLowerCase();
+    let base = promoEntries.filter((r) => {
+      if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
+      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
+      if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
+      if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+
+    // "Multiple MRP" toggle: keep only rows whose Item No, within the
+    // current view, has more than one distinct MRP value. Numeric
+    // normalisation so "100" and 100 collapse to the same value.
+    if (onlyMultiMrp) {
+      const mrpsByItem = new Map<string, Set<string>>();
+      for (const r of base) {
+        const itemNo = String(r["Item No"] ?? "").trim();
+        if (!itemNo) continue;
+        const mrpRaw = r["MRP"];
+        const norm =
+          typeof mrpRaw === "number"
+            ? String(mrpRaw)
+            : (() => {
+                const s = String(mrpRaw ?? "").trim();
+                const n = parseFloat(s);
+                return isNaN(n) ? s : String(n);
+              })();
+        let s = mrpsByItem.get(itemNo);
+        if (!s) {
+          s = new Set();
+          mrpsByItem.set(itemNo, s);
+        }
+        s.add(norm);
+      }
+      base = base.filter((r) => {
+        const itemNo = String(r["Item No"] ?? "").trim();
+        const set = itemNo ? mrpsByItem.get(itemNo) : undefined;
+        return !!set && set.size > 1;
+      });
+    }
+
+    // "Missing Promo" toggle: keep only rows whose Item No has at
+    // least one MRP in the MRP tab that is NOT represented in the
+    // Item's existing Promo rows. Mirrors the synthetic-row injection
+    // logic in `grouped` so the two stay in sync.
+    if (missingPromo) {
+      // Collect existing MRPs (normalised numeric) per Item No from
+      // the post-filter rows, so the comparison respects the active
+      // vendor/brand/category/search filters.
+      const existingByItem = new Map<string, Set<string>>();
+      for (const r of base) {
+        const itemNo = String(r["Item No"] ?? "").trim();
+        if (!itemNo) continue;
+        const v = r["MRP"];
+        const n =
+          typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
+        if (isNaN(n)) continue;
+        let s = existingByItem.get(itemNo);
+        if (!s) {
+          s = new Set();
+          existingByItem.set(itemNo, s);
+        }
+        s.add(String(n));
+      }
+      // An Item No qualifies if its MRP-tab list contains any value
+      // not in its existing Promo MRP set.
+      const qualifies = new Set<string>();
+      for (const [itemNo, existing] of existingByItem) {
+        const list = mrpByItem.get(itemNo.toLowerCase()) ?? [];
+        if (list.some((m) => !existing.has(String(m)))) {
+          qualifies.add(itemNo);
+        }
+      }
+      base = base.filter((r) =>
+        qualifies.has(String(r["Item No"] ?? "").trim())
+      );
+    }
+
+    return base;
+  }, [
+    promoEntries,
+    search,
+    activeVendors,
+    activeBrands,
+    activeCategories,
+    onlyMultiMrp,
+    missingPromo,
+    mrpByItem,
+  ]);
 
   // Group the filtered rows three levels deep:
   //   Brand -> VendorName -> Item No -> rows (one row per price variant)
@@ -938,6 +994,14 @@ export default function PromoScreen() {
               toggleOnly
               onPress={() => setOnlyMultiMrp((v) => !v)}
               onClear={() => setOnlyMultiMrp(false)}
+            />
+            <FilterBar
+              icon="alert-circle"
+              label="Missing Promo"
+              active={missingPromo}
+              toggleOnly
+              onPress={() => setMissingPromo((v) => !v)}
+              onClear={() => setMissingPromo(false)}
             />
 
             <View style={styles.searchWrap}>
