@@ -188,9 +188,9 @@ const CARD_LINE_3: readonly string[] = [
   "SP",
   "Cost",
   "PromotionPrice",
+  "OH Qty",
   "New Qty",
   "PromotionToDate",
-  "OH Qty",
   "Category",
 ];
 
