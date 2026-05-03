@@ -188,6 +188,7 @@ const CARD_LINE_3: readonly string[] = [
   "SP",
   "Cost",
   "PromotionPrice",
+  "New Qty",
   "PromotionToDate",
   "Promo CR Date",
   "OH Qty",
@@ -195,7 +196,6 @@ const CARD_LINE_3: readonly string[] = [
   "SoldQty",
   "VendorCode",
   "Category",
-  "New Qty",
 ];
 
 // Sentinel field name for the user-editable "New Qty" cell. Not a real
