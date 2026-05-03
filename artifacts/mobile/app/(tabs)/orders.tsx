@@ -107,9 +107,18 @@ export default function OrdersScreen() {
         )
       );
     }
-    return [...base].sort((a, b) =>
-      (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
-    );
+    // Sort by items count descending so the largest orders surface
+    // first, with supplier name as a stable tiebreaker for orders
+    // that have the same number of items.
+    return [...base].sort((a, b) => {
+      const diff = (b.items?.length ?? 0) - (a.items?.length ?? 0);
+      if (diff !== 0) return diff;
+      return (a.supplierName ?? "").localeCompare(
+        b.supplierName ?? "",
+        undefined,
+        { sensitivity: "base" }
+      );
+    });
   }, [statusFiltered, activeBrandKeys, activeCategoryKeys]);
 
   function toggleBrand(brand: string) {
