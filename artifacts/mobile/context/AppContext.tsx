@@ -242,7 +242,6 @@ export const PROMO_FIELDS = [
   "SP",
   "SoldQty",
   "PromotionPrice",
-  "Promo Create Date",
   "Latest MRP",
   "MRP",
   "BatchNo",

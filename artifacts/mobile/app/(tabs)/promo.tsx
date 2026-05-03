@@ -52,7 +52,6 @@ const NUMERIC_FIELDS = new Set<string>([
 // them. Normalised to "DD/MM/YYYY".
 const DATE_FIELDS = new Set<string>([
   "PromotionToDate",
-  "Promo Create Date",
   "Promo CR Date",
 ]);
 
@@ -130,7 +129,6 @@ const COL_WIDTHS: Record<string, number> = {
   SP: 80,
   SoldQty: 90,
   PromotionPrice: 110,
-  "Promo Create Date": 130,
   "Promo CR Date": 120,
   "Latest MRP": 100,
   MRP: 80,
@@ -147,7 +145,7 @@ function colWidth(field: string): number {
 
 // Fields shown in each item card, organized into three stacked lines.
 // Other PROMO_FIELDS (e.g. Category, BatchNo, VendorCode, SoldQty,
-// Brand, VendorName, Promo Create Date) are still imported and remain
+// Brand, VendorName) are still imported and remain
 // searchable / filterable; Brand and VendorName drive the nested group
 // headers above each set of cards.
 const CARD_LINE_1_LEFT = "Item No";
@@ -165,7 +163,6 @@ const CARD_LINE_3: readonly string[] = [
   "Cost",
   "PromotionPrice",
   "PromotionToDate",
-  "Promo Create Date",
   "Promo CR Date",
   "OH Qty",
   "NoofBatches",
