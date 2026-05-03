@@ -177,16 +177,53 @@ const HIDDEN_DISPLAY_COLUMNS: ReadonlySet<string> = new Set([
   VENDOR_NAME_COL,
 ]);
 
-// Build the on-screen column order by inserting the synthetic
-// "Vendor Name" column immediately after "VendorCode", then dropping
-// any column the user has asked to hide.
+// Explicit on-screen column order, decoupled from the schema order
+// in LATEST_PURCHASES_FIELDS so we can rearrange the table without
+// touching the import/export contract. Any column listed here that
+// also appears in HIDDEN_DISPLAY_COLUMNS is dropped at the final
+// filter step below.
+const DISPLAY_COLUMN_ORDER: readonly string[] = [
+  "Item Description",
+  "MRP",
+  "Purchase Qty",
+  "NetCost",
+  "Item No",
+  "Category",
+  "DODate",
+  // Trailing columns kept here so that toggling them back on in
+  // HIDDEN_DISPLAY_COLUMNS still produces a stable, predictable
+  // order rather than appending in schema order.
+  "VendorCode",
+  VENDOR_NAME_COL,
+  "Brand",
+  "Free Qty",
+  "Tax",
+  "Weight",
+  "GidNo",
+  "SortNo",
+  "DONo",
+  "GidDate",
+  "CreatedDate",
+];
+
+// Build the on-screen column list using the explicit display order
+// above, dropping any column the user has asked to hide. The
+// `fields` parameter is unused — kept for call-site stability — but
+// asserted against the order list in dev to surface schema additions
+// that haven't been placed in DISPLAY_COLUMN_ORDER yet.
 function buildDisplayColumns(fields: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const f of fields) {
-    out.push(f);
-    if (f === "VendorCode") out.push(VENDOR_NAME_COL);
+  if (__DEV__) {
+    const known = new Set([...DISPLAY_COLUMN_ORDER, VENDOR_NAME_COL]);
+    for (const f of fields) {
+      if (!known.has(f)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[latest-purchases] Schema field "${f}" is not present in DISPLAY_COLUMN_ORDER; it will not be rendered.`
+        );
+      }
+    }
   }
-  return out.filter((f) => !HIDDEN_DISPLAY_COLUMNS.has(f));
+  return DISPLAY_COLUMN_ORDER.filter((f) => !HIDDEN_DISPLAY_COLUMNS.has(f));
 }
 
 // Fields a user is likely to know to search by. SortNo included so
