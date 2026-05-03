@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   View,
@@ -52,6 +53,12 @@ function pad2(n: number): string {
 
 function formatDDMMYYYY(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Strip the time component so date comparisons are inclusive on
+// whole-day boundaries regardless of when the picker fires.
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 // Inverse of formatDDMMYYYY — accepts "DD/MM/YYYY" (or DD-MM-YYYY,
@@ -323,8 +330,16 @@ export default function LatestPurchasesScreen() {
   const [doDateFrom, setDoDateFrom] = useState<Date | null>(null);
   const [doDateTo, setDoDateTo] = useState<Date | null>(null);
   const [showDoDateModal, setShowDoDateModal] = useState(false);
-  const [doDateFromDraft, setDoDateFromDraft] = useState("");
-  const [doDateToDraft, setDoDateToDraft] = useState("");
+  // Calendar-picker drafts. Defaults to "today" so the picker opens
+  // on a sensible date instead of an arbitrary epoch. The actual
+  // committed filter (doDateFrom/doDateTo) is only updated on Apply.
+  const [doDateFromDraft, setDoDateFromDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [doDateToDraft, setDoDateToDraft] = useState<Date>(() => startOfDay(new Date()));
+  // Which sub-picker is currently visible. On Android, DateTimePicker
+  // is a one-shot dialog; on iOS/web we render it inline below the
+  // matching field button.
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
   const [doDateError, setDoDateError] = useState<string | null>(null);
   // Vendors the user has collapsed in the grouped table view. Stored
   // as a Set of vendor names; absence = expanded (the default), so
@@ -1149,8 +1164,11 @@ export default function LatestPurchasesScreen() {
                     (doDateFrom || doDateTo) && styles.filterChipActive,
                   ]}
                   onPress={() => {
-                    setDoDateFromDraft(doDateFrom ? formatDDMMYYYY(doDateFrom) : "");
-                    setDoDateToDraft(doDateTo ? formatDDMMYYYY(doDateTo) : "");
+                    const today = startOfDay(new Date());
+                    setDoDateFromDraft(doDateFrom ?? today);
+                    setDoDateToDraft(doDateTo ?? today);
+                    setShowFromPicker(false);
+                    setShowToPicker(false);
                     setDoDateError(null);
                     setShowDoDateModal(true);
                   }}
@@ -1397,12 +1415,11 @@ export default function LatestPurchasesScreen() {
         )}
       </ScrollView>
 
-      {/* DODate range filter modal. Two free-text DD/MM/YYYY inputs
-          (no native date-picker dependency). Both bounds are
-          optional — leaving either blank means "no lower / upper
-          limit". Apply only commits when both inputs parse cleanly
-          (or are empty); otherwise we surface a small inline error
-          and keep the modal open. */}
+      {/* DODate range filter modal. Two date buttons that open a
+          calendar via @react-native-community/datetimepicker.
+          Defaults to today on first open; Clear resets the bounds
+          (and the drafts) back to today. Apply commits the drafts
+          to doDateFrom/doDateTo. */}
       <Modal
         visible={showDoDateModal}
         transparent
@@ -1420,8 +1437,13 @@ export default function LatestPurchasesScreen() {
             <Text style={styles.modalTitle}>DODate</Text>
             <TouchableOpacity
               onPress={() => {
-                setDoDateFromDraft("");
-                setDoDateToDraft("");
+                const today = startOfDay(new Date());
+                setDoDateFromDraft(today);
+                setDoDateToDraft(today);
+                setDoDateFrom(null);
+                setDoDateTo(null);
+                setShowFromPicker(false);
+                setShowToPicker(false);
                 setDoDateError(null);
               }}
             >
@@ -1431,29 +1453,65 @@ export default function LatestPurchasesScreen() {
           <View style={styles.dateRangeWrap}>
             <View style={styles.dateRangeField}>
               <Text style={styles.dateRangeLabel}>From</Text>
-              <TextInput
-                style={styles.dateRangeInput}
-                value={doDateFromDraft}
-                onChangeText={(t) => { setDoDateFromDraft(t); setDoDateError(null); }}
-                placeholder="DD/MM/YYYY"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              />
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowToPicker(false);
+                  setShowFromPicker((v) => !v);
+                  setDoDateError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(doDateFromDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showFromPicker && (
+                <DateTimePicker
+                  value={doDateFromDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    // Android closes the dialog on every event;
+                    // iOS/web keep the inline picker visible.
+                    if (Platform.OS !== "ios") setShowFromPicker(false);
+                    if (selected) {
+                      setDoDateFromDraft(startOfDay(selected));
+                      setDoDateError(null);
+                    }
+                  }}
+                />
+              )}
             </View>
             <View style={styles.dateRangeField}>
               <Text style={styles.dateRangeLabel}>To</Text>
-              <TextInput
-                style={styles.dateRangeInput}
-                value={doDateToDraft}
-                onChangeText={(t) => { setDoDateToDraft(t); setDoDateError(null); }}
-                placeholder="DD/MM/YYYY"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              />
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowFromPicker(false);
+                  setShowToPicker((v) => !v);
+                  setDoDateError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(doDateToDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showToPicker && (
+                <DateTimePicker
+                  value={doDateToDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowToPicker(false);
+                    if (selected) {
+                      setDoDateToDraft(startOfDay(selected));
+                      setDoDateError(null);
+                    }
+                  }}
+                />
+              )}
             </View>
           </View>
           {doDateError && (
@@ -1462,24 +1520,16 @@ export default function LatestPurchasesScreen() {
           <TouchableOpacity
             style={styles.modalDoneBtn}
             onPress={() => {
-              const fromStr = doDateFromDraft.trim();
-              const toStr = doDateToDraft.trim();
-              const from = fromStr ? parseDDMMYYYY(fromStr) : null;
-              const to = toStr ? parseDDMMYYYY(toStr) : null;
-              if (fromStr && !from) {
-                setDoDateError("From date must be DD/MM/YYYY.");
-                return;
-              }
-              if (toStr && !to) {
-                setDoDateError("To date must be DD/MM/YYYY.");
-                return;
-              }
-              if (from && to && from.getTime() > to.getTime()) {
+              const from = startOfDay(doDateFromDraft);
+              const to = startOfDay(doDateToDraft);
+              if (from.getTime() > to.getTime()) {
                 setDoDateError("From date can't be after To date.");
                 return;
               }
               setDoDateFrom(from);
               setDoDateTo(to);
+              setShowFromPicker(false);
+              setShowToPicker(false);
               setDoDateError(null);
               setShowDoDateModal(false);
             }}
@@ -2193,6 +2243,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  dateRangeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text,
   },
   dateRangeError: {
     fontSize: 12,
