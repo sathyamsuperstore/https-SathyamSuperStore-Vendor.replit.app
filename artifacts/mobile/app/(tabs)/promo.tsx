@@ -1254,6 +1254,7 @@ export default function PromoScreen() {
                   label="Multiple MRP"
                   active={onlyMultiMrp}
                   toggleOnly
+                  variant="highlight"
                   onPress={() => setOnlyMultiMrp((v) => !v)}
                   onClear={() => setOnlyMultiMrp(false)}
                 />
@@ -1795,11 +1796,16 @@ type FilterBarProps = {
   // attention-grabbing treatment so a promoted quick-action toggle
   // (e.g. "Missing Promo") stands out from the neutral
   // dropdown-style filter chips around it.
-  variant?: "default" | "alert";
+  variant?: "default" | "alert" | "highlight";
 };
 function FilterBar({ icon, label, active, onPress, onClear, toggleOnly, variant = "default" }: FilterBarProps) {
   const isAlert = variant === "alert";
-  const inactiveIconColor = isAlert ? Colors.warning : Colors.textSecondary;
+  const isHighlight = variant === "highlight";
+  const inactiveIconColor = isAlert
+    ? Colors.warning
+    : isHighlight
+      ? Colors.textInverse
+      : Colors.textSecondary;
   const activeIconColor = Colors.textInverse;
   const activeClearColor = Colors.textInverse;
   return (
@@ -1807,21 +1813,33 @@ function FilterBar({ icon, label, active, onPress, onClear, toggleOnly, variant 
       style={[
         styles.filterBar,
         isAlert && styles.filterBarAlert,
-        active && (isAlert ? styles.filterBarAlertActive : styles.filterBarActive),
+        isHighlight && styles.filterBarHighlight,
+        active &&
+          (isAlert
+            ? styles.filterBarAlertActive
+            : isHighlight
+              ? styles.filterBarHighlightActive
+              : styles.filterBarActive),
       ]}
       onPress={onPress}
       activeOpacity={0.75}
     >
       <Feather
         name={icon}
-        size={isAlert ? 15 : 14}
+        size={isAlert || isHighlight ? 15 : 14}
         color={active ? activeIconColor : inactiveIconColor}
       />
       <Text
         style={[
           styles.filterBarText,
           isAlert && styles.filterBarAlertText,
-          active && (isAlert ? styles.filterBarAlertTextActive : styles.filterBarTextActive),
+          isHighlight && styles.filterBarHighlightText,
+          active &&
+            (isAlert
+              ? styles.filterBarAlertTextActive
+              : isHighlight
+                ? styles.filterBarHighlightTextActive
+                : styles.filterBarTextActive),
         ]}
         numberOfLines={1}
       >
@@ -2415,6 +2433,19 @@ const styles = StyleSheet.create({
   },
   filterBarAlertText: { color: Colors.warning, fontWeight: "700" },
   filterBarAlertTextActive: { color: Colors.textInverse, fontWeight: "700" },
+  // "Highlight" variant — vivid magenta/pink so the chip stands out
+  // from the neutral filter row at a glance. Used for "Multiple MRP".
+  filterBarHighlight: {
+    backgroundColor: "#DB2777",
+    borderColor: "#BE185D",
+    borderWidth: 1.5,
+  },
+  filterBarHighlightActive: {
+    backgroundColor: "#9D174D",
+    borderColor: "#9D174D",
+  },
+  filterBarHighlightText: { color: Colors.textInverse, fontWeight: "700" },
+  filterBarHighlightTextActive: { color: Colors.textInverse, fontWeight: "700" },
 
   // Bottom-sheet modal shared by all three filters
   modalBackdrop: {
