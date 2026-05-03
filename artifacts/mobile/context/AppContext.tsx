@@ -33,6 +33,11 @@ export interface Supplier {
   // on PDF exports (not the Excel export). Optional so existing suppliers
   // already in AsyncStorage hydrate cleanly without a migration step.
   generalNotes?: string;
+  // Up to 3 reference photos (invoice, shelf, packaging…) attached to the
+  // supplier. Stored as `data:image/...;base64,...` strings so the PDF
+  // exporter can embed them inline without a file fetch. Optional so
+  // existing suppliers hydrate cleanly without a migration step.
+  photos?: string[];
   createdAt: string;
 }
 
@@ -137,6 +142,7 @@ interface AppContextType {
   addSupplier: (supplier: Omit<Supplier, "id" | "createdAt">) => Promise<void>;
   updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
   setSupplierGeneralNotes: (id: string, generalNotes: string) => Promise<void>;
+  setSupplierPhotos: (id: string, photos: string[]) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => Promise<void>;
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => Promise<void>;
@@ -298,6 +304,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     ordersRef.current = orders;
   }, [orders]);
+  // Same pattern for suppliers: the targeted setters (notes, photos) are
+  // saved from different screens and can fire close together. Reading the
+  // latest array from a ref at commit time prevents one update from
+  // overwriting the other when the closures haven't re-rendered yet.
+  const suppliersRef = useRef<Supplier[]>([]);
+  useEffect(() => {
+    suppliersRef.current = suppliers;
+  }, [suppliers]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
@@ -506,7 +520,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // shape, and so any caller writing notes touches only this one field.
   async function setSupplierGeneralNotes(id: string, generalNotes: string) {
     await saveSuppliers(
-      suppliers.map((s) => (s.id === id ? { ...s, generalNotes } : s))
+      suppliersRef.current.map((s) => (s.id === id ? { ...s, generalNotes } : s))
+    );
+  }
+
+  // Targeted setter for the supplier-level photos array. Same shape as
+  // setSupplierGeneralNotes so callers don't need the full Supplier
+  // object. Capped at 3 entries; extras are dropped silently. Reads from
+  // suppliersRef so a concurrent notes save can't be clobbered by a stale
+  // closure of `suppliers`.
+  async function setSupplierPhotos(id: string, photos: string[]) {
+    const capped = photos.slice(0, 3);
+    await saveSuppliers(
+      suppliersRef.current.map((s) => (s.id === id ? { ...s, photos: capped } : s))
     );
   }
 
@@ -658,6 +684,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addSupplier,
         updateSupplier,
         setSupplierGeneralNotes,
+        setSupplierPhotos,
         deleteSupplier,
         addOrder,
         addOrdersBatch,

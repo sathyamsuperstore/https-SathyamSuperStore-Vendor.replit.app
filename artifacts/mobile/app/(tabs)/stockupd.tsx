@@ -23,6 +23,7 @@ import * as Print from "expo-print";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { Colors } from "@/constants/colors";
 import { useApp, OrderStatus, Order, OrderItem, PromoEntry, Supplier, showStorageErrorAlert } from "@/context/AppContext";
+import { SupplierPhotosBox } from "@/components/SupplierPhotosBox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -66,6 +67,7 @@ function StockUpdCard({
   promoMap,
   onSave,
   onSaveSupplierNotes,
+  onSaveSupplierPhotos,
 }: {
   order: Order;
   vendorCode?: string;
@@ -80,6 +82,7 @@ function StockUpdCard({
   promoMap: Record<string, PromoEntry[]>;
   onSave: (id: string, items: OrderItem[]) => Promise<boolean>;
   onSaveSupplierNotes: (id: string, notes: string) => Promise<void>;
+  onSaveSupplierPhotos: (id: string, photos: string[]) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({});
@@ -427,6 +430,14 @@ function StockUpdCard({
             </View>
           )}
 
+          {supplier && (
+            <SupplierPhotosBox
+              supplier={supplier}
+              photos={supplier.photos ?? []}
+              onChange={(next) => onSaveSupplierPhotos(supplier.id, next)}
+            />
+          )}
+
           <TouchableOpacity
             style={[cardSt.saveBtn, !dirty && cardSt.saveBtnDisabled]}
             onPress={handleSave}
@@ -639,7 +650,7 @@ const cardSt = StyleSheet.create({
 });
 
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers, updateOrder, setSupplierGeneralNotes, mrpEntries, promoEntries } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder, setSupplierGeneralNotes, setSupplierPhotos, mrpEntries, promoEntries } = useApp();
   const mrpMap = useMemo(() => {
     const m: Record<string, number[]> = {};
     for (const e of mrpEntries) {
@@ -995,6 +1006,29 @@ export default function StockUpdScreen() {
       const supplierName = [...suppliersWithData].sort().join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
 
+      // Collect supplier photos from every supplier represented in the
+      // export (deduped). Empty when no photos — keeps the footer
+      // pixel-identical to the pre-photos layout.
+      const exportSupplierIds = new Set<string>();
+      for (const o of filtered) exportSupplierIds.add(o.supplierId);
+      const exportPhotos: string[] = [];
+      for (const sid of exportSupplierIds) {
+        const s = suppliers.find((x) => x.id === sid);
+        for (const p of s?.photos ?? []) {
+          if (!exportPhotos.includes(p)) exportPhotos.push(p);
+        }
+      }
+      // Only inline strings that look like a real base64 image data URI.
+      // Anything else is dropped so a malformed entry can't break or
+      // inject into the print HTML.
+      const PHOTO_URI_RE = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+      const safePhotos = exportPhotos.filter((p) => PHOTO_URI_RE.test(p));
+      const photosHtml = safePhotos.length > 0
+        ? `<div class="photos">${safePhotos
+            .map((src) => `<img src="${src}" class="photo"/>`)
+            .join("")}</div>`
+        : "";
+
       const escapeHtml = (s: string) =>
         s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       const thCells = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
@@ -1024,6 +1058,8 @@ export default function StockUpdScreen() {
   td { text-align: left; }
   td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
+  .photos { margin-top: 10px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
+  .photo { width: 32%; max-height: 70mm; object-fit: contain; border: 1px solid #ccc; }
   .clearfix::after { content: ""; display: block; clear: both; }
 </style>
 </head>
@@ -1046,6 +1082,7 @@ export default function StockUpdScreen() {
   <thead><tr>${thCells}</tr></thead>
   <tbody>${tdRows}</tbody>
 </table>
+${photosHtml}
 <div class="footer">
   <div>Supplier : ${escapeHtml(supplierName)}</div>
   <div>Order Date : ${exportDate}</div>
@@ -1419,7 +1456,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} supplier={suppliers.find((s) => s.id === item.supplierId)} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} onSaveSupplierNotes={setSupplierGeneralNotes} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} supplier={suppliers.find((s) => s.id === item.supplierId)} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} onSaveSupplierNotes={setSupplierGeneralNotes} onSaveSupplierPhotos={setSupplierPhotos} />
         )}
         contentContainerStyle={[
           styles.list,

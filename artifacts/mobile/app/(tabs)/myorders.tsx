@@ -23,6 +23,7 @@ import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, Order, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
+import { SupplierPhotosBox } from "@/components/SupplierPhotosBox";
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; text: string; label: string }> = {
   pending:   { bg: "#FEF3C7", text: "#92400E", label: "Pending" },
@@ -174,7 +175,7 @@ function LoginForm({ topPt }: { topPt: number }) {
 }
 
 function OrdersView({ topPt }: { topPt: number }) {
-  const { currentUser, logout, orders, suppliers, setSupplierGeneralNotes } = useApp();
+  const { currentUser, logout, orders, suppliers, setSupplierGeneralNotes, setSupplierPhotos } = useApp();
   const insets = useSafeAreaInsets();
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -520,6 +521,21 @@ function OrdersView({ topPt }: { topPt: number }) {
         ? `<div class="footer-notes">${escapeHtml(footerNotesRaw).replace(/\r?\n/g, "<br/>")}</div>`
         : "";
 
+      // Supplier photos block: rendered between the footer notes and the
+      // supplier name + order date lines. Empty string when none, so the
+      // existing layout stays pixel-identical for suppliers without photos.
+      const footerPhotos = footerSupplier?.photos ?? [];
+      // Only inline strings that look like a real base64 image data URI.
+      // Anything else is dropped so a malformed entry can't break or
+      // inject into the print HTML.
+      const PHOTO_URI_RE = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+      const safeFooterPhotos = footerPhotos.filter((p) => PHOTO_URI_RE.test(p));
+      const footerPhotosHtml = safeFooterPhotos.length > 0
+        ? `<div class="photos">${safeFooterPhotos
+            .map((src) => `<img src="${src}" class="photo"/>`)
+            .join("")}</div>`
+        : "";
+
       const thCells = cols.map((c) => `<th>${c}</th>`).join("");
       const tdRows = rows.map((row, i) => {
         const bg = i % 2 === 0 ? "#ffffff" : "#f7f8fa";
@@ -548,6 +564,8 @@ function OrdersView({ topPt }: { topPt: number }) {
   td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
   .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
+  .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
+  .photo { width: 32%; max-height: 70mm; object-fit: contain; border: 1px solid #ccc; }
   .clearfix::after { content: ""; display: block; clear: both; }
 </style>
 </head>
@@ -572,6 +590,7 @@ function OrdersView({ topPt }: { topPt: number }) {
 </table>
 <div class="footer">
   ${footerNotesHtml}
+  ${footerPhotosHtml}
   <div>Supplier : ${supplierName}</div>
   <div>Order Date : ${exportDate}</div>
 </div>
@@ -813,6 +832,11 @@ function OrdersView({ topPt }: { topPt: number }) {
               </Text>
             </TouchableOpacity>
           </View>
+          <SupplierPhotosBox
+            supplier={notesSupplier}
+            photos={notesSupplier.photos ?? []}
+            onChange={(next) => setSupplierPhotos(notesSupplier.id, next)}
+          />
         </View>
       )}
 
