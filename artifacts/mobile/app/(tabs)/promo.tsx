@@ -1101,6 +1101,102 @@ export default function PromoScreen() {
     }
   }
 
+  // Build an .xlsx of every batch row for any Item No that has at
+  // least one user-entered "New Qty" value. Unlike `handleExportNewQty`
+  // (which exports only the rows whose New Qty was set and respects
+  // the on-screen filters), this dump pulls straight from
+  // `promoEntries` so every batch of every touched Item No is
+  // included, regardless of search / vendor / brand / category /
+  // Missing Promo / Multiple MRP filters. All PROMO_FIELDS columns
+  // plus the New Qty column are written.
+  const hasTouchedItemsToExport = useMemo(() => {
+    if (Object.keys(promoNewQty).length === 0) return false;
+    for (const key of Object.keys(promoNewQty)) {
+      if (promoNewQty[key] !== undefined) return true;
+    }
+    return false;
+  }, [promoNewQty]);
+  async function handleExportTouchedItemBatches() {
+    if (!hasTouchedItemsToExport) return;
+    try {
+      setExporting(true);
+      // Collect every itemNo that has at least one batch with a
+      // user-entered New Qty value.
+      const touchedItemNos = new Set<string>();
+      for (const key of Object.keys(promoNewQty)) {
+        if (promoNewQty[key] === undefined) continue;
+        const itemNo = key.split("|")[0];
+        if (itemNo) touchedItemNos.add(itemNo);
+      }
+      if (touchedItemNos.size === 0) {
+        Alert.alert("Nothing to export", "No items with a New Qty value yet.");
+        return;
+      }
+      const headers = [...PROMO_FIELDS, NEW_QTY_FIELD];
+      const data: (string | number)[][] = [headers];
+      for (const row of promoEntries) {
+        const itemNo = String(row["Item No"] ?? "");
+        if (!touchedItemNos.has(itemNo)) continue;
+        const batchNoStr = String(row["BatchNo"] ?? "");
+        const qtyKey = `${itemNo}|${batchNoStr}`;
+        const qty = promoNewQty[qtyKey];
+        const out: (string | number)[] = headers.map((h) => {
+          if (h === NEW_QTY_FIELD) return qty ?? "";
+          const v = row[h];
+          if (v === undefined || v === null) return "";
+          return v;
+        });
+        data.push(out);
+      }
+      if (data.length <= 1) {
+        Alert.alert(
+          "Nothing to export",
+          "Couldn't find any batches for the items with New Qty values."
+        );
+        return;
+      }
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = headers.map((h) =>
+        h === "Item Description" ? { wch: 32 } : h === NEW_QTY_FIELD ? { wch: 10 } : { wch: 14 }
+      );
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "PromoTouchedItems");
+      const _d = new Date();
+      const _pad = (n: number) => String(n).padStart(2, "0");
+      const _ts = `${_pad(_d.getDate())}${_pad(_d.getMonth() + 1)}${_d.getFullYear()} ${_pad(_d.getHours())}${_pad(_d.getMinutes())}`;
+      const fileName = `Sathyam Promo Touched Items - ${_ts}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export Promo Touched Items",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function handleClear() {
     if (promoEntries.length === 0) return;
     const msg = `Remove all ${promoEntries.length} promo entries? This cannot be undone.`;
@@ -1202,6 +1298,27 @@ export default function PromoScreen() {
                 )}
                 <Text style={styles.exportBtnText}>
                   {exporting ? "Exporting…" : "Export New Qty"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {/* Export every batch of every Item No that has at least
+                one user-entered New Qty value, with the full set of
+                Promo columns. Filters are intentionally ignored so the
+                workbook always covers every batch of each touched
+                item. */}
+            {hasTouchedItemsToExport && (
+              <TouchableOpacity
+                style={[styles.exportBtn, styles.exportBtnAccent]}
+                onPress={handleExportTouchedItemBatches}
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <ActivityIndicator size="small" color={Colors.accent} />
+                ) : (
+                  <Feather name="package" size={16} color={Colors.accent} />
+                )}
+                <Text style={[styles.exportBtnText, styles.exportBtnAccentText]}>
+                  {exporting ? "Exporting…" : "Export All Batches"}
                 </Text>
               </TouchableOpacity>
             )}
@@ -2135,6 +2252,14 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + "30",
   },
   exportBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  // Accent (green) variant of the export pill used for the
+  // "Export All Batches" action so the two export buttons are
+  // visually distinct at a glance.
+  exportBtnAccent: {
+    backgroundColor: Colors.accentLight,
+    borderColor: Colors.accent + "40",
+  },
+  exportBtnAccentText: { color: Colors.accent },
   progressWrap: { gap: 6 },
   progressLabelRow: {
     flexDirection: "row",
