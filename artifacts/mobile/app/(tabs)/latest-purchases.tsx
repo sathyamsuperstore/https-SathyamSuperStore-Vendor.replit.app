@@ -134,7 +134,7 @@ const COL_WIDTHS: Record<string, number> = {
   DODate: 110,
   CreatedDate: 120,
   "Item No": 90,
-  "Item Description": 240,
+  "Item Description": 192,
   "Purchase Qty": 100,
   "Free Qty": 80,
   NetCost: 90,
