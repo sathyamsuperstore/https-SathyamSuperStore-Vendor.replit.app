@@ -74,6 +74,25 @@ function formatDDMMYYYY(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+// Inverse of formatDDMMYYYY — accepts "DD/MM/YYYY" (or DD-MM-YYYY,
+// DD/MM/YY) and returns a Date at local midnight, or null if the
+// string isn't a valid date. Used by the Promo CR Date range filter
+// to compare row dates against user-typed bounds.
+function parseDDMMYYYY(s: string): Date | null {
+  const m = s.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const mon = parseInt(m[2], 10);
+  let yr = parseInt(m[3], 10);
+  if (yr < 100) yr += 2000;
+  const d = new Date(yr, mon - 1, day);
+  if (isNaN(d.getTime())) return null;
+  if (d.getDate() !== day || d.getMonth() !== mon - 1 || d.getFullYear() !== yr) {
+    return null;
+  }
+  return d;
+}
+
 // Coerce a raw Excel date cell into a stable "DD/MM/YYYY" display
 // string. Same logic used by the Latest Purchases tab — anything we
 // can't parse falls through to its original string so we never
@@ -260,6 +279,17 @@ export default function PromoScreen() {
   // amber "from MRP tab" row). Lets the user jump straight to items
   // that need their promo data filled in.
   const [missingPromo, setMissingPromo] = useState(false);
+  // Inclusive date range filter for the "Promo CR Date" column. Both
+  // bounds are optional — only-from / only-to / both-set all narrow
+  // the table; cleared = show all rows. Drafts hold the in-progress
+  // text in the modal so partial input like "1/" doesn't immediately
+  // discard whatever the user typed.
+  const [promoCrFrom, setPromoCrFrom] = useState<Date | null>(null);
+  const [promoCrTo, setPromoCrTo] = useState<Date | null>(null);
+  const [showPromoCrModal, setShowPromoCrModal] = useState(false);
+  const [promoCrFromDraft, setPromoCrFromDraft] = useState("");
+  const [promoCrToDraft, setPromoCrToDraft] = useState("");
+  const [promoCrError, setPromoCrError] = useState<string | null>(null);
   // When on, the "New Qty" cell becomes an inline decimal TextInput so
   // the user can type a quantity per row. Off by default so the table
   // stays scrollable / tap-safe.
@@ -462,11 +492,37 @@ export default function PromoScreen() {
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
     const q = search.trim().toLowerCase();
+    // Normalise the Promo CR Date bounds to local-midnight timestamps
+    // once so the per-row check is a cheap numeric comparison. Both
+    // bounds are inclusive: a row dated exactly on `from` or `to`
+    // passes the filter.
+    const fromTs = promoCrFrom
+      ? new Date(
+          promoCrFrom.getFullYear(),
+          promoCrFrom.getMonth(),
+          promoCrFrom.getDate()
+        ).getTime()
+      : null;
+    const toTs = promoCrTo
+      ? new Date(
+          promoCrTo.getFullYear(),
+          promoCrTo.getMonth(),
+          promoCrTo.getDate()
+        ).getTime()
+      : null;
     let base = promoEntries.filter((r) => {
       if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
       if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
       if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
       if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
+      if (fromTs !== null || toTs !== null) {
+        const raw = r["Promo CR Date"];
+        const parsed = typeof raw === "string" ? parseDDMMYYYY(raw) : null;
+        if (!parsed) return false;
+        const ts = parsed.getTime();
+        if (fromTs !== null && ts < fromTs) return false;
+        if (toTs !== null && ts > toTs) return false;
+      }
       return true;
     });
 
@@ -1218,6 +1274,29 @@ export default function PromoScreen() {
               onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
               onClear={() => setActiveCategories([])}
             />
+            {/* Promo CR Date range filter. Active label shows the
+                currently-applied bounds (open-ended on either side
+                when only one bound is set) so the user can see the
+                range without opening the modal. */}
+            <FilterBar
+              icon="calendar"
+              label={
+                promoCrFrom || promoCrTo
+                  ? `${promoCrFrom ? formatDDMMYYYY(promoCrFrom) : "Any"} → ${promoCrTo ? formatDDMMYYYY(promoCrTo) : "Any"}`
+                  : "All Promo CR Dates"
+              }
+              active={!!(promoCrFrom || promoCrTo)}
+              onPress={() => {
+                setPromoCrFromDraft(promoCrFrom ? formatDDMMYYYY(promoCrFrom) : "");
+                setPromoCrToDraft(promoCrTo ? formatDDMMYYYY(promoCrTo) : "");
+                setPromoCrError(null);
+                setShowPromoCrModal(true);
+              }}
+              onClear={() => {
+                setPromoCrFrom(null);
+                setPromoCrTo(null);
+              }}
+            />
 
             <View style={styles.searchWrap}>
               <Feather name="search" size={15} color={Colors.textMuted} />
@@ -1517,6 +1596,98 @@ export default function PromoScreen() {
         onClose={() => setShowBrandModal(false)}
         bottomInset={insets.bottom}
       />
+
+      {/* Promo CR Date range filter modal. Two free-text DD/MM/YYYY
+          inputs (no native date-picker dependency). Both bounds are
+          optional — leaving either blank means "no lower / upper
+          limit". Apply only commits when both inputs parse cleanly
+          (or are empty); otherwise we surface a small inline error
+          and keep the modal open. */}
+      <Modal
+        visible={showPromoCrModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPromoCrModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowPromoCrModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Promo CR Date</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setPromoCrFromDraft("");
+                setPromoCrToDraft("");
+                setPromoCrError(null);
+              }}
+            >
+              <Text style={styles.modalClear}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.dateRangeWrap}>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>From</Text>
+              <TextInput
+                style={styles.dateRangeInput}
+                value={promoCrFromDraft}
+                onChangeText={(t) => { setPromoCrFromDraft(t); setPromoCrError(null); }}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+              />
+            </View>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>To</Text>
+              <TextInput
+                style={styles.dateRangeInput}
+                value={promoCrToDraft}
+                onChangeText={(t) => { setPromoCrToDraft(t); setPromoCrError(null); }}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+              />
+            </View>
+          </View>
+          {promoCrError && (
+            <Text style={styles.dateRangeError}>{promoCrError}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              const fromStr = promoCrFromDraft.trim();
+              const toStr = promoCrToDraft.trim();
+              const from = fromStr ? parseDDMMYYYY(fromStr) : null;
+              const to = toStr ? parseDDMMYYYY(toStr) : null;
+              if (fromStr && !from) {
+                setPromoCrError("From date must be DD/MM/YYYY.");
+                return;
+              }
+              if (toStr && !to) {
+                setPromoCrError("To date must be DD/MM/YYYY.");
+                return;
+              }
+              if (from && to && from.getTime() > to.getTime()) {
+                setPromoCrError("From date can't be after To date.");
+                return;
+              }
+              setPromoCrFrom(from);
+              setPromoCrTo(to);
+              setPromoCrError(null);
+              setShowPromoCrModal(false);
+            }}
+          >
+            <Text style={styles.modalDoneBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Category filter modal */}
       <FilterModal
@@ -2244,4 +2415,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalDoneBtnText: { fontSize: 15, fontWeight: "700", color: Colors.textInverse },
+  // Promo CR Date range modal — two side-by-side DD/MM/YYYY inputs.
+  dateRangeWrap: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  dateRangeField: { flex: 1 },
+  dateRangeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  dateRangeInput: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeError: {
+    fontSize: 12,
+    color: Colors.danger,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
+  },
 });
