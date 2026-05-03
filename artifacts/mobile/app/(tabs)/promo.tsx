@@ -1216,7 +1216,7 @@ export default function PromoScreen() {
                                           // disabled.
                                           const batchNoStr = String(row["BatchNo"] ?? "");
                                           const qtyKey = `${item.itemNo}|${batchNoStr}`;
-                                          const editable = !isFromMrpTab && modifyMode;
+                                          const editable = modifyMode;
                                           const persisted = promoNewQty[qtyKey];
                                           const draft = newQtyDrafts[qtyKey];
                                           if (editable) {
