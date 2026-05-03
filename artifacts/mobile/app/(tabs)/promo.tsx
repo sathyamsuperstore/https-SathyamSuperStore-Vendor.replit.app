@@ -146,27 +146,28 @@ function coerceDate(v: unknown): string {
 // Description, Brand, Category); narrow columns for short numerics and
 // dates. Falls back to 90 for anything not listed.
 const COL_WIDTHS: Record<string, number> = {
-  PromotionToDate: 120,
-  Category: 130,
-  "Item No": 90,
-  Brand: 140,
-  NoofBatches: 90,
-  "Item Description": 240,
-  SP: 80,
-  SoldQty: 90,
-  PromotionPrice: 110,
-  "Promo CR Date": 120,
-  "Latest MRP": 100,
-  MRP: 80,
-  BatchNo: 110,
-  VendorCode: 110,
-  VendorName: 180,
-  "OH Qty": 80,
-  Cost: 80,
+  PromotionToDate: 86,
+  Category: 96,
+  "Item No": 78,
+  Brand: 120,
+  NoofBatches: 64,
+  "Item Description": 220,
+  SP: 56,
+  SoldQty: 64,
+  PromotionPrice: 72,
+  "New Qty": 64,
+  "Promo CR Date": 86,
+  "Latest MRP": 76,
+  MRP: 56,
+  BatchNo: 88,
+  VendorCode: 88,
+  VendorName: 150,
+  "OH Qty": 58,
+  Cost: 56,
 };
 
 function colWidth(field: string): number {
-  return COL_WIDTHS[field] ?? 90;
+  return COL_WIDTHS[field] ?? 70;
 }
 
 // Fields shown in each item card, organized into three stacked lines.
@@ -2287,19 +2288,19 @@ const styles = StyleSheet.create({
   },
   priceListHead: {
     flexDirection: "row",
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingTop: 6,
     paddingBottom: 3,
     backgroundColor: Colors.background,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    gap: 4,
+    gap: 2,
   },
   priceListRow: {
     flexDirection: "row",
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingVertical: 6,
-    gap: 4,
+    gap: 2,
     backgroundColor: Colors.surface,
   },
   priceListRowAlt: {
@@ -2332,10 +2333,10 @@ const styles = StyleSheet.create({
   priceCellFixed: {
     marginBottom: 0,
     fontSize: 11,
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
   },
   priceListScrollContent: {
-    paddingRight: 8,
+    paddingRight: 4,
   },
   // Inline editor used for the "New Qty" cell when Modify mode is on.
   // Sized to match the surrounding price cells so the row layout
