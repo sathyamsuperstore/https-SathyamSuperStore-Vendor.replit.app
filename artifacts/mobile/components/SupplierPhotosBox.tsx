@@ -13,6 +13,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Colors } from "@/constants/colors";
 import { Supplier, showStorageErrorAlert } from "@/context/AppContext";
 
@@ -65,13 +66,28 @@ export function SupplierPhotosBox({
   }
 
   async function appendAsset(asset: ImagePicker.ImagePickerAsset) {
-    // expo-image-picker returns base64 only when explicitly asked; we then
-    // wrap it in a data URI so it survives an AsyncStorage round-trip and
-    // can be inlined directly into the export PDF html.
-    const b64 = asset.base64;
+    // Resize down to a sane upper bound (~1280px on the longer edge) and
+    // re-compress to JPEG before encoding to base64. AsyncStorage and the
+    // PDF html embed both grow linearly with the encoded payload, so a
+    // raw 12MP camera shot would otherwise bloat persistence and make the
+    // export print slow.
+    const longerEdge = Math.max(asset.width ?? 0, asset.height ?? 0);
+    const ratio = longerEdge > 1280 ? 1280 / longerEdge : 1;
+    const resizeActions = ratio < 1
+      ? [{ resize: { width: Math.round((asset.width ?? 0) * ratio) } }]
+      : [];
+    const manipulated = await ImageManipulator.manipulateAsync(
+      asset.uri,
+      resizeActions,
+      {
+        compress: 0.6,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      }
+    );
+    const b64 = manipulated.base64 ?? asset.base64;
     if (!b64) return;
-    const mime = asset.mimeType ?? "image/jpeg";
-    const dataUri = `data:${mime};base64,${b64}`;
+    const dataUri = `data:image/jpeg;base64,${b64}`;
     const next = [...photos, dataUri].slice(0, MAX_PHOTOS);
     try {
       await onChange(next);

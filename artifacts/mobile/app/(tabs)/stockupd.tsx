@@ -1006,23 +1006,21 @@ export default function StockUpdScreen() {
       const supplierName = [...suppliersWithData].sort().join(", ");
       const exportDate = new Date().toLocaleDateString("en-IN");
 
-      // Collect supplier photos from every supplier represented in the
-      // export (deduped). Empty when no photos — keeps the footer
-      // pixel-identical to the pre-photos layout.
+      // Photos belong to a single supplier, so they only render when the
+      // export is scoped to one supplier (mirrors how the My Orders PDF
+      // resolves footerSupplier). Multi-supplier exports skip the photos
+      // block entirely rather than mixing attachments from different
+      // suppliers under one shared footer.
       const exportSupplierIds = new Set<string>();
       for (const o of filtered) exportSupplierIds.add(o.supplierId);
-      const exportPhotos: string[] = [];
-      for (const sid of exportSupplierIds) {
-        const s = suppliers.find((x) => x.id === sid);
-        for (const p of s?.photos ?? []) {
-          if (!exportPhotos.includes(p)) exportPhotos.push(p);
-        }
-      }
+      const exportSupplier = exportSupplierIds.size === 1
+        ? suppliers.find((s) => s.id === [...exportSupplierIds][0])
+        : undefined;
       // Only inline strings that look like a real base64 image data URI.
       // Anything else is dropped so a malformed entry can't break or
       // inject into the print HTML.
       const PHOTO_URI_RE = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
-      const safePhotos = exportPhotos.filter((p) => PHOTO_URI_RE.test(p));
+      const safePhotos = (exportSupplier?.photos ?? []).filter((p) => PHOTO_URI_RE.test(p));
       const photosHtml = safePhotos.length > 0
         ? `<div class="photos">${safePhotos
             .map((src) => `<img src="${src}" class="photo"/>`)
@@ -1058,7 +1056,7 @@ export default function StockUpdScreen() {
   td { text-align: left; }
   td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
-  .photos { margin-top: 10px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
+  .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
   .photo { width: 32%; max-height: 70mm; object-fit: contain; border: 1px solid #ccc; }
   .clearfix::after { content: ""; display: block; clear: both; }
 </style>
@@ -1082,8 +1080,8 @@ export default function StockUpdScreen() {
   <thead><tr>${thCells}</tr></thead>
   <tbody>${tdRows}</tbody>
 </table>
-${photosHtml}
 <div class="footer">
+  ${photosHtml}
   <div>Supplier : ${escapeHtml(supplierName)}</div>
   <div>Order Date : ${exportDate}</div>
 </div>
