@@ -232,6 +232,10 @@ export default function MrpScreen() {
         setStatusMsg(null);
         setErrors([]);
         setSearch("");
+        // Mirrors the post-import flow: once the MRP table is cleared,
+        // jump to Latest Purchases so the user lands on the next screen
+        // they normally work with after wiping the batch.
+        router.push("/(tabs)/latest-purchases");
       } catch {
         showStorageErrorAlert();
       }
