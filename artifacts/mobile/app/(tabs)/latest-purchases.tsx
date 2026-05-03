@@ -350,43 +350,57 @@ export default function LatestPurchasesScreen() {
     });
   }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories]);
 
-  // Group filtered rows by Vendor Name → Brand for the table render.
-  // Vendor name comes from the suppliers lookup (same resolver used by
-  // the synthetic column); Brand is read straight off the row with a
-  // "(No Brand)" fallback so blanks stay visible. Sorting is
-  // case-insensitive, locale-aware on both levels.
+  // Group filtered rows by Vendor Name → Brand → Category for the
+  // table render. Vendor name comes from the suppliers lookup (same
+  // resolver used by the synthetic column); Brand and Category are
+  // read straight off the row with "(No Brand)" / "(No Category)"
+  // fallbacks so blanks stay visible. Sorting is case-insensitive,
+  // locale-aware at every level.
   const grouped = useMemo(() => {
-    const byVendor = new Map<string, Map<string, typeof filtered>>();
+    const byVendor = new Map<
+      string,
+      Map<string, Map<string, typeof filtered>>
+    >();
     for (const r of filtered) {
       const vendor = vendorNameFor(r["VendorCode"]);
       const brand = String(r["Brand"] ?? "").trim() || "(No Brand)";
+      const category = String(r["Category"] ?? "").trim() || "(No Category)";
       let bm = byVendor.get(vendor);
       if (!bm) {
         bm = new Map();
         byVendor.set(vendor, bm);
       }
-      let arr = bm.get(brand);
+      let cm = bm.get(brand);
+      if (!cm) {
+        cm = new Map();
+        bm.set(brand, cm);
+      }
+      let arr = cm.get(category);
       if (!arr) {
         arr = [];
-        bm.set(brand, arr);
+        cm.set(category, arr);
       }
       arr.push(r);
     }
-    const vendors = Array.from(byVendor.keys()).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    );
-    return vendors.map((vendor) => {
-      const bm = byVendor.get(vendor)!;
-      const brands = Array.from(bm.keys()).sort((a, b) =>
+    const sortKeys = (m: Map<string, unknown>) =>
+      Array.from(m.keys()).sort((a, b) =>
         a.localeCompare(b, undefined, { sensitivity: "base" })
       );
-      let count = 0;
-      const brandGroups = brands.map((brand) => {
-        const rows = bm.get(brand)!;
-        count += rows.length;
-        return { brand, rows };
+    return sortKeys(byVendor).map((vendor) => {
+      const bm = byVendor.get(vendor)!;
+      let vendorCount = 0;
+      const brandGroups = sortKeys(bm).map((brand) => {
+        const cm = bm.get(brand)!;
+        let brandCount = 0;
+        const categoryGroups = sortKeys(cm).map((category) => {
+          const rows = cm.get(category)!;
+          brandCount += rows.length;
+          return { category, rows };
+        });
+        vendorCount += brandCount;
+        return { brand, count: brandCount, categories: categoryGroups };
       });
-      return { vendor, count, brands: brandGroups };
+      return { vendor, count: vendorCount, brands: brandGroups };
     });
   }, [filtered, vendorNameByCode]);
 
@@ -1098,10 +1112,11 @@ export default function LatestPurchasesScreen() {
                       )}
                     </View>
                   ) : (
-                    // Two-level grouping: outer = Vendor Name (from
-                    // the suppliers lookup), inner = Brand. Group
-                    // headers span the full table width so they line
-                    // up correctly when the user scrolls horizontally.
+                    // Three-level grouping: outer = Vendor Name (from
+                    // the suppliers lookup), middle = Brand, inner =
+                    // Category. Group headers span the full table
+                    // width so they line up correctly when the user
+                    // scrolls horizontally.
                     grouped.map((g) => (
                       <View key={`v|${g.vendor}`}>
                         <View style={[styles.groupVendorHeader, { width: tableWidth }]}>
@@ -1121,10 +1136,21 @@ export default function LatestPurchasesScreen() {
                                 {bg.brand}
                               </Text>
                               <Text style={styles.groupBrandCount}>
-                                {bg.rows.length}
+                                {bg.count}
                               </Text>
                             </View>
-                            {bg.rows.map((row, i) => (
+                            {bg.categories.map((cg) => (
+                              <View key={`v|${g.vendor}|b|${bg.brand}|c|${cg.category}`}>
+                                <View style={[styles.groupCategoryHeader, { width: tableWidth }]}>
+                                  <Feather name="folder" size={10} color={Colors.textMuted} />
+                                  <Text style={styles.groupCategoryText} numberOfLines={1}>
+                                    {cg.category}
+                                  </Text>
+                                  <Text style={styles.groupCategoryCount}>
+                                    {cg.rows.length}
+                                  </Text>
+                                </View>
+                                {cg.rows.map((row, i) => (
                               <View
                                 key={`${row["GidNo"] ?? ""}-${row["SortNo"] ?? ""}-${i}`}
                                 style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
@@ -1159,6 +1185,8 @@ export default function LatestPurchasesScreen() {
                                     </Text>
                                   );
                                 })}
+                              </View>
+                            ))}
                               </View>
                             ))}
                           </View>
@@ -1743,6 +1771,31 @@ const styles = StyleSheet.create({
   },
   groupBrandCount: {
     fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textMuted,
+  },
+  // Category sub-sub-header: thinnest band, deeper indent so the
+  // three-level hierarchy (vendor → brand → category) reads visually.
+  groupCategoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingLeft: 28,
+    paddingRight: 18,
+    paddingVertical: 4,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  groupCategoryText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textMuted,
+    fontStyle: "italic",
+  },
+  groupCategoryCount: {
+    fontSize: 10,
     fontWeight: "600",
     color: Colors.textMuted,
   },
