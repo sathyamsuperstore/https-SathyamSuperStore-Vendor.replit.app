@@ -845,6 +845,10 @@ export default function PromoScreen() {
         setActiveBrands([]);
         setActiveCategories([]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Mirrors the post-import flow on the other batch tabs: once the
+        // Promo table is wiped, jump to MRP so the user lands on the next
+        // screen they normally work with after clearing.
+        router.push("/(tabs)/mrp");
       } catch {
         showStorageErrorAlert("Couldn't Clear");
       }
