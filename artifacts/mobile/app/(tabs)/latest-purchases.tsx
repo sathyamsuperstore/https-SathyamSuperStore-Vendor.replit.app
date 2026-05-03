@@ -349,6 +349,58 @@ export default function LatestPurchasesScreen() {
     });
   }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories]);
 
+  // Group filtered rows by Vendor Name → Brand for the table render.
+  // Vendor name comes from the suppliers lookup (same resolver used by
+  // the synthetic column); Brand is read straight off the row with a
+  // "(No Brand)" fallback so blanks stay visible. Sorting is
+  // case-insensitive, locale-aware on both levels.
+  const grouped = useMemo(() => {
+    const byVendor = new Map<string, Map<string, typeof filtered>>();
+    for (const r of filtered) {
+      const vendor = vendorNameFor(r["VendorCode"]);
+      const brand = String(r["Brand"] ?? "").trim() || "(No Brand)";
+      let bm = byVendor.get(vendor);
+      if (!bm) {
+        bm = new Map();
+        byVendor.set(vendor, bm);
+      }
+      let arr = bm.get(brand);
+      if (!arr) {
+        arr = [];
+        bm.set(brand, arr);
+      }
+      arr.push(r);
+    }
+    const vendors = Array.from(byVendor.keys()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    return vendors.map((vendor) => {
+      const bm = byVendor.get(vendor)!;
+      const brands = Array.from(bm.keys()).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" })
+      );
+      let count = 0;
+      const brandGroups = brands.map((brand) => {
+        const rows = bm.get(brand)!;
+        count += rows.length;
+        return { brand, rows };
+      });
+      return { vendor, count, brands: brandGroups };
+    });
+  }, [filtered, vendorNameByCode]);
+
+  // Total pixel width of one fully-rendered table row. Group headers
+  // need an explicit width so they span the full table inside the
+  // horizontal scroll viewport (otherwise they'd shrink to viewport
+  // width and look detached from the cells when scrolled right).
+  const tableWidth = useMemo(() => {
+    const cols = displayColumns.length;
+    const cellTotal = displayColumns.reduce((sum, f) => sum + colWidth(f), 0);
+    const gaps = Math.max(0, cols - 1) * 8;
+    const padding = 12 * 2;
+    return cellTotal + gaps + padding;
+  }, [displayColumns]);
+
   // Per-option counts for the modals — pre-applies the *other* filter +
   // search so the numbers reflect what the user would actually see.
   const vendorCountFor = (code: string): number => {
@@ -1045,41 +1097,71 @@ export default function LatestPurchasesScreen() {
                       )}
                     </View>
                   ) : (
-                    filtered.map((row, i) => (
-                      <View
-                        key={`${row["GidNo"] ?? ""}-${row["SortNo"] ?? ""}-${i}`}
-                        style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
-                      >
-                        {displayColumns.map((f) => {
-                          const numeric = NUMERIC_FIELDS.has(f);
-                          // The synthetic vendor-name column reads from
-                          // the suppliers lookup, not from the row.
-                          const isVendorName = f === VENDOR_NAME_COL;
-                          const cellText = isVendorName
-                            ? vendorNameFor(row["VendorCode"])
-                            : formatCell(f, row[f]);
-                          const isUnlisted = isVendorName && cellText === "Unlisted";
-                          return (
-                            <Text
-                              key={f}
-                              style={[
-                                styles.td,
-                                {
-                                  width: colWidth(f),
-                                  textAlign: numeric ? "right" : "left",
-                                  fontWeight: numeric ? "600" : "400",
-                                },
-                                // Mute unlisted vendors so a populated
-                                // store doesn't visually drown the
-                                // legitimate matches.
-                                isUnlisted && { color: Colors.textMuted, fontStyle: "italic" },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {cellText}
-                            </Text>
-                          );
-                        })}
+                    // Two-level grouping: outer = Vendor Name (from
+                    // the suppliers lookup), inner = Brand. Group
+                    // headers span the full table width so they line
+                    // up correctly when the user scrolls horizontally.
+                    grouped.map((g) => (
+                      <View key={`v|${g.vendor}`}>
+                        <View style={[styles.groupVendorHeader, { width: tableWidth }]}>
+                          <Feather name="users" size={13} color={Colors.primary} />
+                          <Text style={styles.groupVendorText} numberOfLines={1}>
+                            {g.vendor}
+                          </Text>
+                          <Text style={styles.groupVendorCount}>
+                            {g.count} row{g.count === 1 ? "" : "s"}
+                          </Text>
+                        </View>
+                        {g.brands.map((bg) => (
+                          <View key={`v|${g.vendor}|b|${bg.brand}`}>
+                            <View style={[styles.groupBrandHeader, { width: tableWidth }]}>
+                              <Feather name="tag" size={11} color={Colors.textMuted} />
+                              <Text style={styles.groupBrandText} numberOfLines={1}>
+                                {bg.brand}
+                              </Text>
+                              <Text style={styles.groupBrandCount}>
+                                {bg.rows.length}
+                              </Text>
+                            </View>
+                            {bg.rows.map((row, i) => (
+                              <View
+                                key={`${row["GidNo"] ?? ""}-${row["SortNo"] ?? ""}-${i}`}
+                                style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
+                              >
+                                {displayColumns.map((f) => {
+                                  const numeric = NUMERIC_FIELDS.has(f);
+                                  // The synthetic vendor-name column reads from
+                                  // the suppliers lookup, not from the row.
+                                  const isVendorName = f === VENDOR_NAME_COL;
+                                  const cellText = isVendorName
+                                    ? vendorNameFor(row["VendorCode"])
+                                    : formatCell(f, row[f]);
+                                  const isUnlisted = isVendorName && cellText === "Unlisted";
+                                  return (
+                                    <Text
+                                      key={f}
+                                      style={[
+                                        styles.td,
+                                        {
+                                          width: colWidth(f),
+                                          textAlign: numeric ? "right" : "left",
+                                          fontWeight: numeric ? "600" : "400",
+                                        },
+                                        // Mute unlisted vendors so a populated
+                                        // store doesn't visually drown the
+                                        // legitimate matches.
+                                        isUnlisted && { color: Colors.textMuted, fontStyle: "italic" },
+                                      ]}
+                                      numberOfLines={1}
+                                    >
+                                      {cellText}
+                                    </Text>
+                                  );
+                                })}
+                              </View>
+                            ))}
+                          </View>
+                        ))}
                       </View>
                     ))
                   )}
@@ -1615,6 +1697,54 @@ const styles = StyleSheet.create({
   },
   rowAlt: { backgroundColor: Colors.background },
   td: { fontSize: 12, color: Colors.text },
+  // Vendor-Name group header: bold, primary-tinted band that introduces
+  // a vendor's block of rows.
+  groupVendorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.primaryMuted,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  groupVendorText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800",
+    color: Colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  groupVendorCount: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  // Brand sub-header: lighter band nested visually under the vendor.
+  groupBrandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    backgroundColor: Colors.surfaceSecondary,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  groupBrandText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+  },
+  groupBrandCount: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textMuted,
+  },
   noRows: { padding: 24, alignItems: "center", gap: 6 },
   noRowsText: { fontSize: 13, color: Colors.textMuted },
   emptyHint: {
