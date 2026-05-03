@@ -1149,6 +1149,12 @@ export default function PromoScreen() {
       }
       const headers = [...PROMO_FIELDS, NEW_QTY_FIELD];
       const data: (string | number)[][] = [headers];
+      // First pass: walk the raw promo rows and emit one output row
+      // per matching real promo row. Track the existing MRPs per
+      // touched Item No so we can append synthetic rows for any
+      // MRP-tab MRPs that have no matching Promo row (these are the
+      // amber-tinted "from MRP tab" rows shown on the cards).
+      const realRowsByItem = new Map<string, PromoEntry[]>();
       for (const row of promoEntries) {
         const rowItemNoRaw = String(row["Item No"] ?? "");
         const rowItemNoTrim = rowItemNoRaw.trim();
@@ -1168,6 +1174,58 @@ export default function PromoScreen() {
           return v;
         });
         data.push(out);
+        let bucket = realRowsByItem.get(rowItemNoTrim);
+        if (!bucket) {
+          bucket = [];
+          realRowsByItem.set(rowItemNoTrim, bucket);
+        }
+        bucket.push(row);
+      }
+      // Second pass: for each touched Item No, inject the same
+      // synthetic "from MRP tab" rows the on-screen card builds, so
+      // the export contains the synthetic MRP variants and any New
+      // Qty values typed against them. Mirrors the synthetic-row
+      // logic in `grouped`.
+      for (const itemNoTrim of touchedItemNos) {
+        const realRows = realRowsByItem.get(itemNoTrim) ?? [];
+        const existingMrps = new Set<string>();
+        for (const r of realRows) {
+          const v = r["MRP"];
+          const n =
+            typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
+          if (!isNaN(n)) existingMrps.add(String(n));
+        }
+        const head = realRows[0];
+        const mrpListFromTab = mrpByItem.get(itemNoTrim.toLowerCase()) ?? [];
+        for (const m of mrpListFromTab) {
+          if (existingMrps.has(String(m))) continue;
+          // Re-derive the same deterministic synthetic BatchNo the
+          // grouped path uses so the qty key matches what was saved
+          // when the user typed New Qty against this synthetic row.
+          const synthBatchRaw = `${String(m)}00`;
+          const synthBatchNo =
+            synthBatchRaw.length < 6
+              ? synthBatchRaw.padStart(6, "0")
+              : synthBatchRaw;
+          const qtyKey = `${itemNoTrim}|${synthBatchNo}`;
+          const qty = promoNewQty[qtyKey];
+          const synthRow: PromoEntry = {
+            "Item No": String(head?.["Item No"] ?? itemNoTrim),
+            Brand: String(head?.["Brand"] ?? ""),
+            Category: String(head?.["Category"] ?? ""),
+            VendorName: String(head?.["VendorName"] ?? ""),
+            "Item Description": String(head?.["Item Description"] ?? ""),
+            MRP: m,
+            BatchNo: synthBatchNo,
+          };
+          const out: (string | number)[] = headers.map((h) => {
+            if (h === NEW_QTY_FIELD) return qty ?? "";
+            const v = synthRow[h];
+            if (v === undefined || v === null) return "";
+            return v;
+          });
+          data.push(out);
+        }
       }
       if (data.length <= 1) {
         Alert.alert(
