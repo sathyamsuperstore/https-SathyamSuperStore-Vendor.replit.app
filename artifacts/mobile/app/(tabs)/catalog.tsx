@@ -11,14 +11,14 @@ export default function CatalogHubScreen() {
       views={[
         { key: "promo", label: "Promo", render: () => <PromoScreen /> },
         {
-          key: "brand",
-          label: "Brand Review",
-          render: () => <BrandReviewScreen />,
-        },
-        {
           key: "purchases",
           label: "Latest Purchases",
           render: () => <LatestPurchasesScreen />,
+        },
+        {
+          key: "brand",
+          label: "Brand Review",
+          render: () => <BrandReviewScreen />,
         },
       ]}
     />
