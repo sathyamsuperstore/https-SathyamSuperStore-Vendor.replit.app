@@ -195,7 +195,12 @@ function formatCell(field: string, value: string | number | undefined): string {
 
 export default function PromoScreen() {
   const router = useRouter();
-  const { promoEntries, mrpEntries, savePromoBatch, clearPromoBatch } = useApp();
+  const { promoEntries, mrpEntries, savePromoBatch, clearPromoBatch, currentUser } = useApp();
+  // Cost (wholesale / purchase price per unit) is sensitive margin info,
+  // so it's only shown to admin-privileged users. Vendors / Managers /
+  // Staff see the same card layout with the Cost cell removed.
+  const isAdmin = currentUser?.userType === "Admin";
+  const cardLine3 = isAdmin ? CARD_LINE_3 : CARD_LINE_3.filter((f) => f !== "Cost");
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(false);
@@ -1116,7 +1121,7 @@ export default function PromoScreen() {
                               <View style={styles.priceList}>
                                 {/* One header row of small labels above the stacked variants */}
                                 <View style={styles.priceListHead}>
-                                  {CARD_LINE_3.map((f) => (
+                                  {cardLine3.map((f) => (
                                     <Text
                                       key={`hd:${f}`}
                                       style={[styles.fieldLabel, styles.priceCell]}
@@ -1143,7 +1148,7 @@ export default function PromoScreen() {
                                         isFromMrpTab && styles.priceListRowFromMrpTab,
                                       ]}
                                     >
-                                      {CARD_LINE_3.map((f) => (
+                                      {cardLine3.map((f) => (
                                         <Text
                                           key={f}
                                           style={[
