@@ -1029,6 +1029,15 @@ export default function StockUpdScreen() {
 
       const escapeHtml = (s: string) =>
         s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+      // Supplier-level notes block in the footer. Mirrors My Orders so the
+      // photos appear immediately below the notes block (and above the
+      // supplier/date lines). Empty string when the supplier has no notes
+      // so the layout stays unchanged for suppliers without notes/photos.
+      const footerNotesRaw = (exportSupplier?.generalNotes ?? "").trim();
+      const footerNotesHtml = footerNotesRaw
+        ? `<div class="footer-notes">${escapeHtml(footerNotesRaw).replace(/\r?\n/g, "<br/>")}</div>`
+        : "";
       const thCells = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
       const tdRows = rows.map((row, i) => {
         const bg = i % 2 === 0 ? "#ffffff" : "#f7f8fa";
@@ -1056,6 +1065,7 @@ export default function StockUpdScreen() {
   td { text-align: left; }
   td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
+  .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
   .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
   .photo { width: 32%; max-height: 70mm; object-fit: contain; border: 1px solid #ccc; }
   .clearfix::after { content: ""; display: block; clear: both; }
@@ -1081,6 +1091,7 @@ export default function StockUpdScreen() {
   <tbody>${tdRows}</tbody>
 </table>
 <div class="footer">
+  ${footerNotesHtml}
   ${photosHtml}
   <div>Supplier : ${escapeHtml(supplierName)}</div>
   <div>Order Date : ${exportDate}</div>
