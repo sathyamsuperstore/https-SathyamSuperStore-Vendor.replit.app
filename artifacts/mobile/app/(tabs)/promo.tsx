@@ -18,6 +18,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
+import * as Sharing from "expo-sharing";
 import { Colors } from "@/constants/colors";
 import {
   useApp,
@@ -253,6 +254,9 @@ export default function PromoScreen() {
   // typing. Lets us accept partial values like "12." that aren't yet a
   // valid number, and only commit on blur.
   const [newQtyDrafts, setNewQtyDrafts] = useState<Record<string, string>>({});
+  // Spinner shown on the export button while the workbook is being
+  // built and shared. Mirrors the MRP tab's `downloading` flag.
+  const [exporting, setExporting] = useState(false);
 
   // When another tab deep-links into Promo with `?q=<itemNo>` (e.g.
   // tapping an Item No on the Stock Update tab), seed the search box
@@ -872,6 +876,102 @@ export default function PromoScreen() {
     }
   }
 
+  // True iff at least one currently-visible row (i.e. a row in the
+  // filtered + grouped set, including synthetic "from MRP tab" rows)
+  // has a user-entered "New Qty" value. Drives the visibility of the
+  // export button so we never show a button that would produce an
+  // empty workbook.
+  const hasNewQtyToExport = useMemo(() => {
+    for (const brand of grouped) {
+      for (const vendor of brand.vendors) {
+        for (const item of vendor.items) {
+          for (const row of item.rows) {
+            const batchNoStr = String(row["BatchNo"] ?? "");
+            const qtyKey = `${item.itemNo}|${batchNoStr}`;
+            if (promoNewQty[qtyKey] !== undefined) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }, [grouped, promoNewQty]);
+
+  // Build an .xlsx of every visible row that has a "New Qty" value
+  // typed in. Honours the active filters (search + vendor / brand /
+  // category + Missing Promo + Multiple MRP) so the export matches the
+  // on-screen view, but does NOT touch any of the filter button states
+  // — they're left exactly as the user set them.
+  async function handleExportNewQty() {
+    if (!hasNewQtyToExport) return;
+    try {
+      setExporting(true);
+      const headers = [...PROMO_FIELDS, NEW_QTY_FIELD];
+      const data: (string | number)[][] = [headers];
+      for (const brand of grouped) {
+        for (const vendor of brand.vendors) {
+          for (const item of vendor.items) {
+            for (const row of item.rows) {
+              const batchNoStr = String(row["BatchNo"] ?? "");
+              const qtyKey = `${item.itemNo}|${batchNoStr}`;
+              const qty = promoNewQty[qtyKey];
+              if (qty === undefined) continue;
+              const out: (string | number)[] = headers.map((h) => {
+                if (h === NEW_QTY_FIELD) return qty;
+                const v = row[h];
+                if (v === undefined || v === null) return "";
+                return v;
+              });
+              data.push(out);
+            }
+          }
+        }
+      }
+      if (data.length <= 1) {
+        Alert.alert("Nothing to export", "No rows with a New Qty match the current filters.");
+        return;
+      }
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = headers.map((h) =>
+        h === "Item Description" ? { wch: 32 } : h === NEW_QTY_FIELD ? { wch: 10 } : { wch: 14 }
+      );
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "PromoNewQty");
+      const _d = new Date();
+      const _pad = (n: number) => String(n).padStart(2, "0");
+      const _ts = `${_pad(_d.getDate())}${_pad(_d.getMonth() + 1)}${_d.getFullYear()} ${_pad(_d.getHours())}${_pad(_d.getMinutes())}`;
+      const fileName = `Sathyam Promo NewQty - ${_ts}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export Promo New Qty",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function handleClear() {
     if (promoEntries.length === 0) return;
     const msg = `Remove all ${promoEntries.length} promo entries? This cannot be undone.`;
@@ -953,6 +1053,27 @@ export default function PromoScreen() {
               >
                 <Feather name="trash-2" size={16} color={Colors.danger} />
                 <Text style={styles.deleteBtnText}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {/* Export only the rows whose user-entered "New Qty" value is
+                set. Honours the currently active filters (search,
+                vendor / brand / category, Missing Promo, Multiple MRP)
+                so the workbook matches what's on screen. The filter
+                button states themselves are untouched by the export. */}
+            {hasNewQtyToExport && (
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={handleExportNewQty}
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Feather name="download" size={16} color={Colors.primary} />
+                )}
+                <Text style={styles.exportBtnText}>
+                  {exporting ? "Exporting…" : "Export New Qty"}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1641,6 +1762,20 @@ const styles = StyleSheet.create({
     borderColor: Colors.danger + "30",
   },
   deleteBtnText: { fontSize: 13, fontWeight: "700", color: Colors.danger },
+  // "Export New Qty" pill — same shape as the Import pill but uses
+  // the primary palette so it visually pairs with the download icon.
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  exportBtnText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
   progressWrap: { gap: 6 },
   progressLabelRow: {
     flexDirection: "row",
