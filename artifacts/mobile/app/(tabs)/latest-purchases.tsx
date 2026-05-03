@@ -619,6 +619,10 @@ export default function LatestPurchasesScreen() {
         setStatusMsg(null);
         setErrors([]);
         setSearch("");
+        // Mirrors the post-import flow: once the Latest Purchases table
+        // is cleared, jump to Promo so the user lands on the next screen
+        // they normally work with after wiping the batch.
+        router.push("/(tabs)/promo");
       } catch {
         showStorageErrorAlert();
       }
