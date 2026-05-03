@@ -615,6 +615,18 @@ export default function PromoScreen() {
           const synthetic: PromoEntry[] = [];
           for (const m of mrpListFromTab) {
             if (existingMrps.has(String(m))) continue;
+            // Synthetic rows have no real BatchNo (they were injected
+            // from the MRP tab where there's no Promo row). Generate a
+            // deterministic placeholder by concatenating the MRP value
+            // with "00" and left-padding with zeros to a 6-char string,
+            // e.g. MRP 125 -> "012500". Stored as text so it survives
+            // round-trips without losing leading zeros, and so the
+            // editable "New Qty" cell has a stable per-row key.
+            const synthBatchRaw = `${String(m)}00`;
+            const synthBatchNo =
+              synthBatchRaw.length < 6
+                ? synthBatchRaw.padStart(6, "0")
+                : synthBatchRaw;
             synthetic.push({
               "Item No": String(head["Item No"] ?? itemNo),
               Brand: String(head["Brand"] ?? ""),
@@ -622,6 +634,7 @@ export default function PromoScreen() {
               VendorName: String(head["VendorName"] ?? ""),
               "Item Description": String(head["Item Description"] ?? ""),
               MRP: m,
+              BatchNo: synthBatchNo,
               // Marker (non-PROMO_FIELDS key) used by the row renderer
               // to apply a subtle highlight so the user can see this
               // row was injected from the MRP tab and has no promo
