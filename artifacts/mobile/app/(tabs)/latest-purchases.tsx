@@ -152,6 +152,16 @@ function colWidth(field: string): number {
   return COL_WIDTHS[field] ?? 90;
 }
 
+// Display-only header overrides. The underlying field key (used by
+// row data, import/export, sort, search) stays as-is; only the
+// rendered column header changes.
+const COL_HEADER_LABELS: Record<string, string> = {
+  "Purchase Qty": "P Qty",
+};
+function colLabel(field: string): string {
+  return COL_HEADER_LABELS[field] ?? field;
+}
+
 // Synthetic column rendered between VendorCode and the rest. Not part
 // of LATEST_PURCHASES_FIELDS — that constant is the import/export
 // schema and must stay in sync with the source spreadsheet.
@@ -1221,7 +1231,7 @@ export default function LatestPurchasesScreen() {
                       ]}
                       numberOfLines={1}
                     >
-                      {f}
+                      {colLabel(f)}
                     </Text>
                   );
                 })}
