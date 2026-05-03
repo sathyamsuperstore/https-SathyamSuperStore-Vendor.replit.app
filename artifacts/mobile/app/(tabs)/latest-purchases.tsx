@@ -54,6 +54,25 @@ function formatDDMMYYYY(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+// Inverse of formatDDMMYYYY — accepts "DD/MM/YYYY" (or DD-MM-YYYY,
+// DD/MM/YY) and returns a Date at local midnight, or null if the
+// string isn't a valid calendar date. Used by the DODate range filter
+// to compare row dates against user-typed bounds.
+function parseDDMMYYYY(s: string): Date | null {
+  const m = s.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const mon = parseInt(m[2], 10);
+  let yr = parseInt(m[3], 10);
+  if (yr < 100) yr += 2000;
+  const d = new Date(yr, mon - 1, day);
+  if (isNaN(d.getTime())) return null;
+  if (d.getDate() !== day || d.getMonth() !== mon - 1 || d.getFullYear() !== yr) {
+    return null;
+  }
+  return d;
+}
+
 // Coerce a raw Excel date cell into a stable "DD/MM/YYYY" display string.
 // Accepts: JS Date (cellDates:true path), Excel serial number (Lotus
 // 1-2-3 epoch via the canonical 25569 offset), or strings already formatted
@@ -249,6 +268,17 @@ export default function LatestPurchasesScreen() {
   const [activeVendorCodes, setActiveVendorCodes] = useState<string[]>([]);
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [showVendorModal, setShowVendorModal] = useState(false);
+  // Inclusive date-range filter for the DODate column. Both bounds
+  // are optional — only-from / only-to / both-set all narrow the
+  // table; cleared = show all rows. Drafts hold the in-progress text
+  // in the modal so partial input like "1/" doesn't immediately
+  // discard whatever the user typed.
+  const [doDateFrom, setDoDateFrom] = useState<Date | null>(null);
+  const [doDateTo, setDoDateTo] = useState<Date | null>(null);
+  const [showDoDateModal, setShowDoDateModal] = useState(false);
+  const [doDateFromDraft, setDoDateFromDraft] = useState("");
+  const [doDateToDraft, setDoDateToDraft] = useState("");
+  const [doDateError, setDoDateError] = useState<string | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [vendorOptionSearch, setVendorOptionSearch] = useState("");
   const [categoryOptionSearch, setCategoryOptionSearch] = useState("");
@@ -330,6 +360,15 @@ export default function LatestPurchasesScreen() {
     const q = search.trim().toLowerCase();
     const vendorSet = activeVendorCodes.length > 0 ? new Set(activeVendorCodes) : null;
     const catSet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    // Normalise the DODate bounds to local-midnight timestamps once
+    // so the per-row check is a cheap numeric comparison. Both bounds
+    // are inclusive: a row dated exactly on `from` or `to` passes.
+    const fromTs = doDateFrom
+      ? new Date(doDateFrom.getFullYear(), doDateFrom.getMonth(), doDateFrom.getDate()).getTime()
+      : null;
+    const toTs = doDateTo
+      ? new Date(doDateTo.getFullYear(), doDateTo.getMonth(), doDateTo.getDate()).getTime()
+      : null;
     return latestPurchases.filter((r) => {
       if (vendorSet) {
         const v = String(r["VendorCode"] ?? "").trim();
@@ -338,6 +377,14 @@ export default function LatestPurchasesScreen() {
       if (catSet) {
         const c = String(r["Category"] ?? "").trim();
         if (!catSet.has(c)) return false;
+      }
+      if (fromTs !== null || toTs !== null) {
+        const raw = r["DODate"];
+        const parsed = typeof raw === "string" ? parseDDMMYYYY(raw) : null;
+        if (!parsed) return false;
+        const ts = parsed.getTime();
+        if (fromTs !== null && ts < fromTs) return false;
+        if (toTs !== null && ts > toTs) return false;
       }
       if (!q) return true;
       if (SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) {
@@ -348,7 +395,7 @@ export default function LatestPurchasesScreen() {
       // on the purchase row itself.
       return vendorNameFor(r["VendorCode"]).toLowerCase().includes(q);
     });
-  }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories]);
+  }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories, doDateFrom, doDateTo]);
 
   // Group filtered rows by Vendor Name → Brand → Category for the
   // table render. Vendor name comes from the suppliers lookup (same
@@ -1031,6 +1078,59 @@ export default function LatestPurchasesScreen() {
                     <Feather name="chevron-down" size={13} color={Colors.textMuted} />
                   )}
                 </TouchableOpacity>
+
+                {/* DODate range filter chip. Active label shows the
+                    currently-applied bounds (open-ended on either side
+                    when only one bound is set) so the user can see the
+                    range without opening the modal. */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    (doDateFrom || doDateTo) && styles.filterChipActive,
+                  ]}
+                  onPress={() => {
+                    setDoDateFromDraft(doDateFrom ? formatDDMMYYYY(doDateFrom) : "");
+                    setDoDateToDraft(doDateTo ? formatDDMMYYYY(doDateTo) : "");
+                    setDoDateError(null);
+                    setShowDoDateModal(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Feather
+                    name="calendar"
+                    size={13}
+                    color={
+                      doDateFrom || doDateTo
+                        ? Colors.textInverse
+                        : Colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      (doDateFrom || doDateTo) && styles.filterChipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {doDateFrom || doDateTo
+                      ? `${doDateFrom ? formatDDMMYYYY(doDateFrom) : "Any"} → ${doDateTo ? formatDDMMYYYY(doDateTo) : "Any"}`
+                      : "All DODates"}
+                  </Text>
+                  {doDateFrom || doDateTo ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setDoDateFrom(null);
+                        setDoDateTo(null);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x-circle" size={14} color={Colors.textInverse} />
+                    </TouchableOpacity>
+                  ) : (
+                    <Feather name="chevron-down" size={13} color={Colors.textMuted} />
+                  )}
+                </TouchableOpacity>
               </View>
             </>
           )}
@@ -1224,6 +1324,98 @@ export default function LatestPurchasesScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* DODate range filter modal. Two free-text DD/MM/YYYY inputs
+          (no native date-picker dependency). Both bounds are
+          optional — leaving either blank means "no lower / upper
+          limit". Apply only commits when both inputs parse cleanly
+          (or are empty); otherwise we surface a small inline error
+          and keep the modal open. */}
+      <Modal
+        visible={showDoDateModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDoDateModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowDoDateModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>DODate</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setDoDateFromDraft("");
+                setDoDateToDraft("");
+                setDoDateError(null);
+              }}
+            >
+              <Text style={styles.modalClear}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.dateRangeWrap}>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>From</Text>
+              <TextInput
+                style={styles.dateRangeInput}
+                value={doDateFromDraft}
+                onChangeText={(t) => { setDoDateFromDraft(t); setDoDateError(null); }}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+              />
+            </View>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>To</Text>
+              <TextInput
+                style={styles.dateRangeInput}
+                value={doDateToDraft}
+                onChangeText={(t) => { setDoDateToDraft(t); setDoDateError(null); }}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+              />
+            </View>
+          </View>
+          {doDateError && (
+            <Text style={styles.dateRangeError}>{doDateError}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              const fromStr = doDateFromDraft.trim();
+              const toStr = doDateToDraft.trim();
+              const from = fromStr ? parseDDMMYYYY(fromStr) : null;
+              const to = toStr ? parseDDMMYYYY(toStr) : null;
+              if (fromStr && !from) {
+                setDoDateError("From date must be DD/MM/YYYY.");
+                return;
+              }
+              if (toStr && !to) {
+                setDoDateError("To date must be DD/MM/YYYY.");
+                return;
+              }
+              if (from && to && from.getTime() > to.getTime()) {
+                setDoDateError("From date can't be after To date.");
+                return;
+              }
+              setDoDateFrom(from);
+              setDoDateTo(to);
+              setDoDateError(null);
+              setShowDoDateModal(false);
+            }}
+          >
+            <Text style={styles.modalDoneBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Vendor filter modal */}
       <Modal
@@ -1902,6 +2094,40 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+  },
+  // DODate range modal — two side-by-side DD/MM/YYYY inputs.
+  dateRangeWrap: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  dateRangeField: { flex: 1 },
+  dateRangeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  dateRangeInput: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeError: {
+    fontSize: 12,
+    color: Colors.danger,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
   },
   modalDoneBtnText: {
     fontSize: 15,
