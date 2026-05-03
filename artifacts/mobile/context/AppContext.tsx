@@ -253,6 +253,10 @@ export const PROMO_FIELDS = [
   // like 12.50 round-trip correctly through Excel and JSON. Optional —
   // existing imports without this column hydrate with the cell blank.
   "Cost",
+  // Promo CR Date — date the promo was created upstream. Optional;
+  // imported from the Excel header "Promo CR Date". Stored as a
+  // "DD/MM/YYYY" string by the Promo importer.
+  "Promo CR Date",
 ] as const;
 
 // Same flexible row shape as Latest Purchases — numbers stay numbers,

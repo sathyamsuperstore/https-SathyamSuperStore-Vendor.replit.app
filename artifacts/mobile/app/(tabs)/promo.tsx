@@ -50,7 +50,11 @@ const NUMERIC_FIELDS = new Set<string>([
 // raw serial numbers (e.g. 45123 for 2023-07-12), or already-formatted
 // strings — none of which render usefully if we just String()-stringify
 // them. Normalised to "DD/MM/YYYY".
-const DATE_FIELDS = new Set<string>(["PromotionToDate", "Promo Create Date"]);
+const DATE_FIELDS = new Set<string>([
+  "PromotionToDate",
+  "Promo Create Date",
+  "Promo CR Date",
+]);
 
 // Columns that NoofBatches-style values should display as integers, even
 // though they're stored as numbers (it's an integer field per the
@@ -127,6 +131,7 @@ const COL_WIDTHS: Record<string, number> = {
   SoldQty: 90,
   PromotionPrice: 110,
   "Promo Create Date": 130,
+  "Promo CR Date": 120,
   "Latest MRP": 100,
   MRP: 80,
   BatchNo: 110,
