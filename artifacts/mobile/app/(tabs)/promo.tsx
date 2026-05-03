@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Keyboard,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -309,6 +310,53 @@ export default function PromoScreen() {
   // typing. Lets us accept partial values like "12." that aren't yet a
   // valid number, and only commit on blur.
   const [newQtyDrafts, setNewQtyDrafts] = useState<Record<string, string>>({});
+  // Spinner on the explicit "Save" chip while we flush every pending
+  // New Qty draft into AsyncStorage via setPromoNewQtyValue. Drafts
+  // already auto-save on blur, but the chip gives users an obvious,
+  // discoverable way to commit changes without having to tap outside
+  // the input first.
+  const [savingNewQty, setSavingNewQty] = useState(false);
+  async function flushNewQtyDrafts() {
+    Keyboard.dismiss();
+    const entries = Object.entries(newQtyDrafts);
+    if (entries.length === 0) {
+      setStatusMsg("All New Qty changes already saved.");
+      setTimeout(() => setStatusMsg(null), 2500);
+      return;
+    }
+    setSavingNewQty(true);
+    let saved = 0;
+    let cleared = 0;
+    let invalid = 0;
+    try {
+      for (const [key, raw] of entries) {
+        const trimmed = raw.trim();
+        if (trimmed === "") {
+          if (promoNewQty[key] !== undefined) {
+            await setPromoNewQtyValue(key, undefined);
+            cleared += 1;
+          }
+          continue;
+        }
+        const num = Number(trimmed);
+        if (!Number.isFinite(num) || num < 0) {
+          invalid += 1;
+          continue;
+        }
+        await setPromoNewQtyValue(key, num);
+        saved += 1;
+      }
+      setNewQtyDrafts({});
+      const parts: string[] = [];
+      if (saved > 0) parts.push(`${saved} saved`);
+      if (cleared > 0) parts.push(`${cleared} cleared`);
+      if (invalid > 0) parts.push(`${invalid} skipped (invalid)`);
+      setStatusMsg(`New Qty: ${parts.join(", ") || "no changes"}.`);
+      setTimeout(() => setStatusMsg(null), 3000);
+    } finally {
+      setSavingNewQty(false);
+    }
+  }
   // Spinner shown on the export button while the workbook is being
   // built and shared. Mirrors the MRP tab's `downloading` flag.
   const [exporting, setExporting] = useState(false);
@@ -1255,6 +1303,33 @@ export default function PromoScreen() {
                   onClear={() => setOnlyMultiMrp(false)}
                 />
               </View>
+              {/* Explicit "Save" chip surfaced only while Modify mode
+                  is on. Drafts auto-save on blur, but a visible Save
+                  affordance makes the flow discoverable for users who
+                  expect a button. */}
+              {modifyMode && (
+                <View style={styles.filterCol}>
+                  <TouchableOpacity
+                    style={[styles.filterBar, styles.filterBarSave]}
+                    onPress={() => { void flushNewQtyDrafts(); }}
+                    activeOpacity={0.75}
+                    disabled={savingNewQty}
+                  >
+                    {savingNewQty ? (
+                      <ActivityIndicator size="small" color={Colors.textInverse} />
+                    ) : (
+                      <Feather name="save" size={15} color={Colors.textInverse} />
+                    )}
+                    <Text style={[styles.filterBarText, styles.filterBarSaveText]} numberOfLines={1}>
+                      {savingNewQty
+                        ? "Saving…"
+                        : Object.keys(newQtyDrafts).length > 0
+                          ? `Save (${Object.keys(newQtyDrafts).length})`
+                          : "Save"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <View style={styles.filterCol}>
                 <FilterBar
                   icon="users"
@@ -2442,6 +2517,15 @@ const styles = StyleSheet.create({
   },
   filterBarHighlightText: { color: Colors.textInverse, fontWeight: "700" },
   filterBarHighlightTextActive: { color: Colors.textInverse, fontWeight: "700" },
+  // Solid green "Save" chip used inside the filter grid while Modify
+  // mode is on so users have an obvious commit affordance instead of
+  // relying on the input's auto-save-on-blur behaviour.
+  filterBarSave: {
+    backgroundColor: Colors.success,
+    borderColor: Colors.success,
+    borderWidth: 1.5,
+  },
+  filterBarSaveText: { color: Colors.textInverse, fontWeight: "700" },
 
   // Bottom-sheet modal shared by all three filters
   modalBackdrop: {
