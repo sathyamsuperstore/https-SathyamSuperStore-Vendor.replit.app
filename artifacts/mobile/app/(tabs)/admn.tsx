@@ -147,6 +147,29 @@ export default function AdmnHubScreen() {
   // regardless of label length.
   const rows: DangerButton[][] = [buttons.slice(0, 3), buttons.slice(3, 6)];
 
+  // Excel Import shortcuts. Each button opens the exact same importer the
+  // user would normally reach from its own tab — Suppliers / Users /
+  // Place Order have dedicated /import routes, while Promo / MRP /
+  // Latest Purchases run their importer inline on the tab itself, so we
+  // route to the tab and the user taps "Choose Excel File" there.
+  type ImportButton = { key: string; label: string; route: string };
+  const importButtons: ImportButton[] = [
+    { key: "suppliers", label: "Suppliers", route: "/supplier/import" },
+    { key: "users", label: "Users", route: "/user/import" },
+    { key: "promo", label: "Promo", route: "/(tabs)/promo" },
+    { key: "mrp", label: "MRP", route: "/(tabs)/mrp" },
+    {
+      key: "latest-purchases",
+      label: "Latest Purchases",
+      route: "/(tabs)/latest-purchases",
+    },
+    { key: "orders", label: "Place Order", route: "/order/import" },
+  ];
+  const importRows: ImportButton[][] = [
+    importButtons.slice(0, 3),
+    importButtons.slice(3, 6),
+  ];
+
   return (
     <ScrollView
       style={styles.container}
@@ -228,6 +251,38 @@ export default function AdmnHubScreen() {
           ))}
         </View>
       </View>
+
+      <View style={[styles.section, { marginTop: 16 }]}>
+        <Text style={styles.sectionTitle}>Excel Import</Text>
+        <Text style={styles.sectionSub}>
+          Open the importer for each table. Importing replaces or merges
+          existing rows depending on the table — review the prompts on the
+          target screen before confirming.
+        </Text>
+
+        <View style={styles.grid}>
+          {importRows.map((row, ri) => (
+            <View key={ri} style={styles.gridRow}>
+              {row.map((b) => (
+                <TouchableOpacity
+                  key={b.key}
+                  style={styles.importBtn}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    router.push(b.route as any);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="upload" size={16} color={Colors.primary} />
+                  <Text style={styles.importBtnText} numberOfLines={1}>
+                    {b.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -292,4 +347,23 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   dangerBtnTextDisabled: { color: Colors.textMuted },
+  importBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.primary + "12",
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  importBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.primary,
+    flexShrink: 1,
+  },
 });
