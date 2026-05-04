@@ -165,6 +165,11 @@ interface AppContextType {
   addUsersBatch: (
     items: Omit<AppUser, "id" | "createdAt">[]
   ) => Promise<{ added: number; skipped: string[] }>;
+  // Bulk wipes used by the Admn hub. Each clears the whole table for
+  // the corresponding entity, mirroring the write-first pattern used
+  // by `clearAllOrders` / `clearMrpBatch` / `clearLatestPurchases`.
+  clearAllSuppliers: () => Promise<void>;
+  clearAllAppUsers: () => Promise<void>;
   mrpEntries: MrpEntry[];
   saveMrpBatch: (entries: MrpEntry[]) => Promise<void>;
   clearMrpBatch: () => Promise<void>;
@@ -698,6 +703,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveOrders([]);
   }
 
+  async function clearAllSuppliers() {
+    await saveSuppliers([]);
+  }
+
+  async function clearAllAppUsers() {
+    await saveAppUsers([]);
+  }
+
   async function updateOrderStatus(id: string, status: OrderStatus) {
     await saveOrders(
       orders.map((o) =>
@@ -733,6 +746,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addSuppliersBatch,
         deleteSuppliersBatch,
         addUsersBatch,
+        clearAllSuppliers,
+        clearAllAppUsers,
         mrpEntries,
         saveMrpBatch,
         clearMrpBatch,
