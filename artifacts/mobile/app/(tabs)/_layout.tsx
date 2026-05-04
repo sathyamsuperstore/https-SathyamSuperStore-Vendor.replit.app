@@ -7,6 +7,19 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 import { Colors } from "@/constants/colors";
+import { useApp, type UserType } from "@/context/AppContext";
+
+// The "Admn" hub is only available to non-Vendor users. We compute
+// visibility from the logged-in user's role and use it to (a) skip the
+// NativeTabs trigger entirely, and (b) hide the classic Tabs.Screen
+// from the bar via `href: null`. The route still exists so the
+// in-screen redirect guard in admn.tsx can fire if a Vendor reaches it
+// directly via deep link.
+function isAdminRole(userType: UserType | undefined): boolean {
+  return (
+    userType === "Admin" || userType === "Manager" || userType === "Staff"
+  );
+}
 
 /**
  * Tab bar shows 5 hubs:
@@ -23,7 +36,7 @@ import { Colors } from "@/constants/colors";
  * through the hubs with a `?view=` query param.
  */
 
-function NativeTabLayout() {
+function NativeTabLayout({ adminVisible }: { adminVisible: boolean }) {
   // Native tabs (iOS Liquid Glass) only render the triggers we list
   // here, so the original sub-screen routes are automatically
   // excluded from the bar.
@@ -66,11 +79,19 @@ function NativeTabLayout() {
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
         <Label>Directory</Label>
       </NativeTabs.Trigger>
+      {adminVisible && (
+        <NativeTabs.Trigger name="admn">
+          <Icon
+            sf={{ default: "lock.shield", selected: "lock.shield.fill" }}
+          />
+          <Label>Admn</Label>
+        </NativeTabs.Trigger>
+      )}
     </NativeTabs>
   );
 }
 
-function ClassicTabLayout() {
+function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
@@ -163,6 +184,26 @@ function ClassicTabLayout() {
             ),
         }}
       />
+      <Tabs.Screen
+        name="admn"
+        options={
+          adminVisible
+            ? {
+                title: "Admn",
+                tabBarIcon: ({ color }) =>
+                  isIOS ? (
+                    <SymbolView
+                      name="lock.shield"
+                      tintColor={color}
+                      size={24}
+                    />
+                  ) : (
+                    <Feather name="shield" size={22} color={color} />
+                  ),
+              }
+            : { href: null }
+        }
+      />
 
       {/* === Hidden sub-screen routes (still navigable via `router.push`,
           but excluded from the bottom bar). They are embedded inside
@@ -181,10 +222,12 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { currentUser } = useApp();
+  const adminVisible = isAdminRole(currentUser?.userType);
   if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
+    return <NativeTabLayout adminVisible={adminVisible} />;
   }
-  return <ClassicTabLayout />;
+  return <ClassicTabLayout adminVisible={adminVisible} />;
 }
 
 const styles = StyleSheet.create({});
