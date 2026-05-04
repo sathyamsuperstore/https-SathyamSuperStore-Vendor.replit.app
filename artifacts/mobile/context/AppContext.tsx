@@ -179,6 +179,9 @@ interface AppContextType {
   promoEntries: PromoEntry[];
   savePromoBatch: (entries: PromoEntry[]) => Promise<void>;
   clearPromoBatch: () => Promise<void>;
+  lastSupplyDates: LastSupplyDateEntry[];
+  saveLastSupplyDateBatch: (entries: LastSupplyDateEntry[]) => Promise<void>;
+  clearLastSupplyDates: () => Promise<void>;
   // User-entered "New Qty" overrides per Promo row. Map key is
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
   promoNewQty: Record<string, number>;
@@ -268,6 +271,15 @@ export const PROMO_FIELDS = [
 // raw string from the cell.
 export type PromoEntry = Record<string, string | number>;
 
+// One row in the Last Supply Date table. The date is stored as a
+// "DD/MM/YYYY" string (normalised at import time) so it is safe to
+// sort and display without further parsing.
+export interface LastSupplyDateEntry {
+  vendorName: string;
+  vendorCode: string;
+  latestInvoiceDate: string;
+}
+
 const AppContext = createContext<AppContextType | null>(null);
 
 const SUPPLIERS_KEY = "@suppliers";
@@ -276,6 +288,7 @@ const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
 const LATEST_PURCHASES_KEY = "@latestPurchases";
 const PROMO_KEY = "@promoBatch";
+const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
 // Promo workbook (which replaces every row) doesn't blow away the
@@ -335,6 +348,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
   const [promoEntries, setPromoEntries] = useState<PromoEntry[]>([]);
   const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
+  const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -343,7 +357,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoNewQtyData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoNewQtyData, lastSupplyDateData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -352,6 +366,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(LATEST_PURCHASES_KEY),
         AsyncStorage.getItem(PROMO_KEY),
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
+        AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -362,6 +377,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? JSON.parse(latestPurchasesData)
         : [];
       const loadedPromo: PromoEntry[] = promoData ? JSON.parse(promoData) : [];
+      const loadedLastSupplyDates: LastSupplyDateEntry[] = lastSupplyDateData
+        ? JSON.parse(lastSupplyDateData)
+        : [];
 
       setSuppliers(loadedSuppliers);
       setOrders(loadedOrders);
@@ -369,6 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMrpEntries(loadedMrp);
       setLatestPurchases(loadedLatestPurchases);
       setPromoEntries(loadedPromo);
+      setLastSupplyDates(loadedLastSupplyDates);
       const loadedPromoNewQty: Record<string, number> = promoNewQtyData
         ? JSON.parse(promoNewQtyData)
         : {};
@@ -428,6 +447,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.multiRemove([PROMO_KEY, PROMO_NEW_QTY_KEY]);
     setPromoEntries([]);
     setPromoNewQty({});
+  }
+
+  async function saveLastSupplyDateBatch(entries: LastSupplyDateEntry[]) {
+    await AsyncStorage.setItem(LAST_SUPPLY_DATE_KEY, JSON.stringify(entries));
+    setLastSupplyDates(entries);
+  }
+
+  async function clearLastSupplyDates() {
+    await AsyncStorage.removeItem(LAST_SUPPLY_DATE_KEY);
+    setLastSupplyDates([]);
   }
 
   // Single-row write for the "New Qty" overrides map. Mirrors the
@@ -757,6 +786,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         promoEntries,
         savePromoBatch,
         clearPromoBatch,
+        lastSupplyDates,
+        saveLastSupplyDateBatch,
+        clearLastSupplyDates,
         promoNewQty,
         setPromoNewQtyValue,
         hydrated,
