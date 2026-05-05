@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -38,6 +39,48 @@ const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
 
 function calcTotal(items: OrderItem[]): number {
   return items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Date helpers (mirrors latest-purchases.tsx) — used by the LastPurchRange
+// filter that matches each order's supplier vendor code against the
+// LastSupplyDate table and keeps only orders whose Latest Invoice Date
+// falls inside the selected from/to range.
+// ---------------------------------------------------------------------------
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function formatDDMMYYYY(d: Date): string {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+// Inverse of formatDDMMYYYY — accepts DD/MM/YYYY, DD-MM-YYYY (incl.
+// 2-digit years) and ISO YYYY-MM-DD. Returns null if the string isn't
+// a valid calendar date so the LastPurchRange filter can simply skip
+// rows whose stored date is unparseable rather than throwing.
+function parseDateStr(s: string): Date | null {
+  const t = s.trim();
+  if (!t) return null;
+  const m1 = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m1) {
+    const day = parseInt(m1[1], 10);
+    const mon = parseInt(m1[2], 10);
+    let yr = parseInt(m1[3], 10);
+    if (yr < 100) yr += 2000;
+    const d = new Date(yr, mon - 1, day);
+    if (!isNaN(d.getTime()) && d.getDate() === day && d.getMonth() === mon - 1) {
+      return d;
+    }
+  }
+  const m2 = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m2) {
+    const d = new Date(parseInt(m2[1], 10), parseInt(m2[2], 10) - 1, parseInt(m2[3], 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // Format a numeric promo cell. Numbers render as integer when whole,
@@ -650,7 +693,7 @@ const cardSt = StyleSheet.create({
 });
 
 export default function StockUpdScreen() {
-  const { orders, clearAllOrders, suppliers, updateOrder, setSupplierGeneralNotes, setSupplierPhotos, mrpEntries, promoEntries } = useApp();
+  const { orders, clearAllOrders, suppliers, updateOrder, setSupplierGeneralNotes, setSupplierPhotos, mrpEntries, promoEntries, lastSupplyDates } = useApp();
   const mrpMap = useMemo(() => {
     const m: Record<string, number[]> = {};
     for (const e of mrpEntries) {
@@ -692,6 +735,17 @@ export default function StockUpdScreen() {
   const [negStockOnly, setNegStockOnly] = useState(false);
   const [multipleMrpOnly, setMultipleMrpOnly] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  // LastPurchRange filter — when active, an order is kept only if its
+  // supplier's vendor code appears in the LastSupplyDate table AND
+  // that table's Latest Invoice Date falls inside [from, to] inclusive.
+  const [lastPurchFrom, setLastPurchFrom] = useState<Date | null>(null);
+  const [lastPurchTo, setLastPurchTo] = useState<Date | null>(null);
+  const [showLastPurchModal, setShowLastPurchModal] = useState(false);
+  const [lastPurchFromDraft, setLastPurchFromDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [lastPurchToDraft, setLastPurchToDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [showLastPurchFromPicker, setShowLastPurchFromPicker] = useState(false);
+  const [showLastPurchToPicker, setShowLastPurchToPicker] = useState(false);
+  const [lastPurchError, setLastPurchError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
@@ -699,6 +753,36 @@ export default function StockUpdScreen() {
     if (activeFilter === "all") return orders;
     return orders.filter((o) => o.status === activeFilter);
   }, [orders, activeFilter]);
+
+  // vendorCode (uppercase) → parsed Latest Invoice Date. Built once per
+  // import so the LastPurchRange filter can do O(1) lookups per order.
+  // Entries with missing or unparseable dates are skipped — those vendors
+  // simply never match the date range filter.
+  const lastSupplyMap = useMemo(() => {
+    const m = new Map<string, Date>();
+    for (const e of lastSupplyDates) {
+      const code = e.vendorCode.trim().toUpperCase();
+      if (!code) continue;
+      const d = parseDateStr(e.latestInvoiceDate);
+      if (d) m.set(code, startOfDay(d));
+    }
+    return m;
+  }, [lastSupplyDates]);
+
+  // Quick lookup: order id → supplier vendorCode (uppercase). Lets us
+  // apply the LastPurchRange filter without rescanning the suppliers
+  // array on every order during the main filter pass.
+  const orderVendorCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of orders) {
+      const sup = suppliers.find((s) => s.id === o.supplierId);
+      const code = (sup?.vendorCode ?? "").trim().toUpperCase();
+      if (code) m.set(o.id, code);
+    }
+    return m;
+  }, [orders, suppliers]);
+
+  const lastPurchActive = lastPurchFrom != null && lastPurchTo != null;
 
   const vendorScopedOrders = useMemo(() => {
     if (activeVendors.length === 0) return statusFiltered;
@@ -819,10 +903,22 @@ export default function StockUpdScreen() {
         });
       });
     }
+    if (lastPurchActive) {
+      const fromMs = lastPurchFrom!.getTime();
+      const toMs = lastPurchTo!.getTime();
+      result = result.filter((o) => {
+        const code = orderVendorCode.get(o.id);
+        if (!code) return false;
+        const d = lastSupplyMap.get(code);
+        if (!d) return false;
+        const t = d.getTime();
+        return t >= fromMs && t <= toMs;
+      });
+    }
     return [...result].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap]);
+  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, lastPurchActive, lastPurchFrom, lastPurchTo, orderVendorCode, lastSupplyMap]);
 
   function toggleVendor(name: string) {
     setActiveVendors((prev) =>
@@ -1415,10 +1511,10 @@ export default function StockUpdScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* MultipleMRP filter row */}
+      {/* MultipleMRP + LastPurchRange filter row */}
       <View style={styles.toggleRow}>
         <TouchableOpacity
-          style={[styles.negStockToggle, { flex: 1 }, multipleMrpOnly && styles.negStockToggleActive]}
+          style={[styles.negStockToggle, styles.toggleHalf, multipleMrpOnly && styles.negStockToggleActive]}
           onPress={() => setMultipleMrpOnly((v) => !v)}
           activeOpacity={0.75}
         >
@@ -1433,6 +1529,45 @@ export default function StockUpdScreen() {
           {multipleMrpOnly && (
             <TouchableOpacity
               onPress={(e) => { e.stopPropagation?.(); setMultipleMrpOnly(false); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.negStockToggle, styles.toggleHalf, lastPurchActive && styles.negStockToggleActive]}
+          onPress={() => {
+            // Seed the calendar drafts from the currently committed
+            // bounds when reopening, so the picker remembers what the
+            // user last applied.
+            setLastPurchFromDraft(lastPurchFrom ?? startOfDay(new Date()));
+            setLastPurchToDraft(lastPurchTo ?? startOfDay(new Date()));
+            setShowLastPurchFromPicker(false);
+            setShowLastPurchToPicker(false);
+            setLastPurchError(null);
+            setShowLastPurchModal(true);
+          }}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="calendar"
+            size={14}
+            color={lastPurchActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text style={[styles.negStockToggleText, lastPurchActive && styles.negStockToggleTextActive]} numberOfLines={1}>
+            {lastPurchActive
+              ? `${formatDDMMYYYY(lastPurchFrom!)} → ${formatDDMMYYYY(lastPurchTo!)}`
+              : "LastPurchRange"}
+          </Text>
+          {lastPurchActive && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                setLastPurchFrom(null);
+                setLastPurchTo(null);
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Feather name="x-circle" size={15} color={Colors.textInverse} />
@@ -1837,6 +1972,138 @@ export default function StockUpdScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* LastPurchRange filter modal — calendar-based From/To range picker
+          that filters orders by their supplier's Latest Invoice Date
+          (looked up by vendor code in the LastSupplyDate table). */}
+      <Modal
+        visible={showLastPurchModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLastPurchModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowLastPurchModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>LastPurchRange</Text>
+            <TouchableOpacity
+              onPress={() => {
+                const today = startOfDay(new Date());
+                setLastPurchFromDraft(today);
+                setLastPurchToDraft(today);
+                setLastPurchFrom(null);
+                setLastPurchTo(null);
+                setShowLastPurchFromPicker(false);
+                setShowLastPurchToPicker(false);
+                setLastPurchError(null);
+              }}
+            >
+              <Text style={styles.modalClear}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+
+          {lastSupplyDates.length === 0 && (
+            <View style={styles.lastPurchHint}>
+              <Feather name="info" size={14} color={Colors.textMuted} />
+              <Text style={styles.lastPurchHintText}>
+                The LastSupplyDate table is empty. Import it from the
+                Directory hub first, otherwise this filter will hide every
+                order.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.dateRangeWrap}>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>From</Text>
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowLastPurchToPicker(false);
+                  setShowLastPurchFromPicker((v) => !v);
+                  setLastPurchError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(lastPurchFromDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showLastPurchFromPicker && (
+                <DateTimePicker
+                  value={lastPurchFromDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowLastPurchFromPicker(false);
+                    if (selected) {
+                      setLastPurchFromDraft(startOfDay(selected));
+                      setLastPurchError(null);
+                    }
+                  }}
+                />
+              )}
+            </View>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>To</Text>
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowLastPurchFromPicker(false);
+                  setShowLastPurchToPicker((v) => !v);
+                  setLastPurchError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(lastPurchToDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showLastPurchToPicker && (
+                <DateTimePicker
+                  value={lastPurchToDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowLastPurchToPicker(false);
+                    if (selected) {
+                      setLastPurchToDraft(startOfDay(selected));
+                      setLastPurchError(null);
+                    }
+                  }}
+                />
+              )}
+            </View>
+          </View>
+          {lastPurchError && (
+            <Text style={styles.dateRangeError}>{lastPurchError}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              const from = startOfDay(lastPurchFromDraft);
+              const to = startOfDay(lastPurchToDraft);
+              if (from.getTime() > to.getTime()) {
+                setLastPurchError("From date can't be after To date.");
+                return;
+              }
+              setLastPurchFrom(from);
+              setLastPurchTo(to);
+              setShowLastPurchFromPicker(false);
+              setShowLastPurchToPicker(false);
+              setLastPurchError(null);
+              setShowLastPurchModal(false);
+            }}
+          >
+            <Text style={styles.modalDoneBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2107,5 +2374,62 @@ const styles = StyleSheet.create({
   },
   negStockToggleTextActive: {
     color: Colors.textInverse,
+  },
+  // LastPurchRange modal — calendar-based From/To range picker.
+  dateRangeWrap: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  dateRangeField: { flex: 1 },
+  dateRangeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  dateRangeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  dateRangeError: {
+    fontSize: 12,
+    color: Colors.danger,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  lastPurchHint: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    marginHorizontal: 20,
+    marginBottom: 10,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  lastPurchHintText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
   },
 });
