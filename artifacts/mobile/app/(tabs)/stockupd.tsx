@@ -731,6 +731,9 @@ export default function StockUpdScreen() {
   const [activeVendors, setActiveVendors] = useState<string[]>([]);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [activeBeats, setActiveBeats] = useState<string[]>([]);
+  const [showBeatModal, setShowBeatModal] = useState(false);
+  const [beatSearch, setBeatSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [negStockOnly, setNegStockOnly] = useState(false);
   const [multipleMrpOnly, setMultipleMrpOnly] = useState(false);
@@ -840,6 +843,25 @@ export default function StockUpdScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [statusFiltered]);
 
+  // Beats list — scoped to vendor-filtered orders so picking a vendor
+  // narrows the visible beats to only those routes that actually carry
+  // that vendor's orders. Orders without a `beat` field are skipped.
+  const allBeats = useMemo(() => {
+    const set = new Set<string>();
+    vendorScopedOrders.forEach((o) => {
+      const b = (o.beat ?? "").trim();
+      if (b) set.add(b);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [vendorScopedOrders]);
+
+  useEffect(() => {
+    if (activeBeats.length === 0) return;
+    const allowed = new Set(allBeats);
+    const next = activeBeats.filter((b) => allowed.has(b));
+    if (next.length !== activeBeats.length) setActiveBeats(next);
+  }, [allBeats, activeBeats]);
+
   const filtered = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     let result = statusFiltered.filter((o) => {
@@ -915,10 +937,17 @@ export default function StockUpdScreen() {
         return t >= fromMs && t <= toMs;
       });
     }
+    if (activeBeats.length > 0) {
+      const beatSet = new Set(activeBeats);
+      result = result.filter((o) => {
+        const b = (o.beat ?? "").trim();
+        return b !== "" && beatSet.has(b);
+      });
+    }
     return [...result].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, lastPurchActive, lastPurchFrom, lastPurchTo, orderVendorCode, lastSupplyMap]);
+  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, lastPurchActive, lastPurchFrom, lastPurchTo, orderVendorCode, lastSupplyMap, activeBeats]);
 
   function toggleVendor(name: string) {
     setActiveVendors((prev) =>
@@ -946,6 +975,16 @@ export default function StockUpdScreen() {
     setActiveCategories((prev) =>
       prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
     );
+  }
+
+  function toggleBeat(beat: string) {
+    setActiveBeats((prev) =>
+      prev.includes(beat) ? prev.filter((b) => b !== beat) : [...prev, beat]
+    );
+  }
+
+  function beatOrderCount(beat: string): number {
+    return vendorScopedOrders.filter((o) => (o.beat ?? "").trim() === beat).length;
   }
 
   function categoryOrderCount(category: string): number {
@@ -1311,6 +1350,12 @@ export default function StockUpdScreen() {
     : activeVendors.length === 1
     ? activeVendors[0]
     : `${activeVendors.length} Vendors`;
+  const beatActive = activeBeats.length > 0;
+  const beatBarLabel = activeBeats.length === 0
+    ? "All Beats"
+    : activeBeats.length === 1
+    ? activeBeats[0]
+    : `${activeBeats.length} Beats`;
 
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
@@ -1388,7 +1433,7 @@ export default function StockUpdScreen() {
             <TouchableOpacity
               key={f.key}
               style={[styles.filter, isActive && styles.filterActive]}
-              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); setActiveCategories([]); }}
+              onPress={() => { setActiveFilter(f.key); setActiveBrands([]); setActiveCategories([]); setActiveBeats([]); }}
             >
               <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
                 {f.label}
@@ -1403,92 +1448,123 @@ export default function StockUpdScreen() {
         })}
       </ScrollView>
 
-      {/* Vendor filter row */}
-      <TouchableOpacity
-        style={[styles.brandBar, vendorActive && styles.brandBarActive]}
-        onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="users"
-          size={14}
-          color={vendorActive ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text
-          style={[styles.brandBarText, vendorActive && styles.brandBarTextActive]}
-          numberOfLines={1}
+      {/* Vendor + Brand row (2-col grid) */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.brandBar, styles.brandBarHalf, vendorActive && styles.brandBarActive]}
+          onPress={() => { setVendorSearch(""); setShowVendorModal(true); }}
+          activeOpacity={0.75}
         >
-          {vendorBarLabel}
-        </Text>
-        {vendorActive ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveVendors([]); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          <Feather
+            name="users"
+            size={14}
+            color={vendorActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, vendorActive && styles.brandBarTextActive]}
+            numberOfLines={1}
           >
-            <Feather name="x-circle" size={15} color={Colors.textInverse} />
-          </TouchableOpacity>
-        ) : (
-          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
-        )}
-      </TouchableOpacity>
+            {vendorBarLabel}
+          </Text>
+          {vendorActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveVendors([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
 
-      {/* Brand filter row */}
-      <TouchableOpacity
-        style={[styles.brandBar, brandActive && styles.brandBarActive]}
-        onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="tag"
-          size={14}
-          color={brandActive ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text
-          style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
-          numberOfLines={1}
+        <TouchableOpacity
+          style={[styles.brandBar, styles.brandBarHalf, brandActive && styles.brandBarActive]}
+          onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
+          activeOpacity={0.75}
         >
-          {brandBarLabel}
-        </Text>
-        {brandActive ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          <Feather
+            name="tag"
+            size={14}
+            color={brandActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, brandActive && styles.brandBarTextActive]}
+            numberOfLines={1}
           >
-            <Feather name="x-circle" size={15} color={Colors.textInverse} />
-          </TouchableOpacity>
-        ) : (
-          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
-        )}
-      </TouchableOpacity>
+            {brandBarLabel}
+          </Text>
+          {brandActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+      </View>
 
-      {/* Category filter row */}
-      <TouchableOpacity
-        style={[styles.brandBar, categoryActive && styles.brandBarActive]}
-        onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
-        activeOpacity={0.75}
-      >
-        <Feather
-          name="folder"
-          size={14}
-          color={categoryActive ? Colors.textInverse : Colors.textSecondary}
-        />
-        <Text
-          style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]}
-          numberOfLines={1}
+      {/* Category + Beat row (2-col grid) */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.brandBar, styles.brandBarHalf, categoryActive && styles.brandBarActive]}
+          onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+          activeOpacity={0.75}
         >
-          {categoryBarLabel}
-        </Text>
-        {categoryActive ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          <Feather
+            name="folder"
+            size={14}
+            color={categoryActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]}
+            numberOfLines={1}
           >
-            <Feather name="x-circle" size={15} color={Colors.textInverse} />
-          </TouchableOpacity>
-        ) : (
-          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
-        )}
-      </TouchableOpacity>
+            {categoryBarLabel}
+          </Text>
+          {categoryActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.brandBar, styles.brandBarHalf, beatActive && styles.brandBarActive]}
+          onPress={() => { setBeatSearch(""); setShowBeatModal(true); }}
+          activeOpacity={0.75}
+        >
+          <Feather
+            name="map-pin"
+            size={14}
+            color={beatActive ? Colors.textInverse : Colors.textSecondary}
+          />
+          <Text
+            style={[styles.brandBarText, beatActive && styles.brandBarTextActive]}
+            numberOfLines={1}
+          >
+            {beatBarLabel}
+          </Text>
+          {beatActive ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); setActiveBeats([]); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x-circle" size={15} color={Colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Toggles row: Neg. Stock Only + Show Notes side by side */}
       <View style={styles.toggleRow}>
@@ -1993,6 +2069,123 @@ export default function StockUpdScreen() {
         </View>
       </Modal>
 
+      {/* Beat filter modal — multi-select picker scoped to the beats
+          present on currently visible (status + vendor scoped) orders. */}
+      <Modal
+        visible={showBeatModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBeatModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowBeatModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter by Beat</Text>
+            {beatActive && (
+              <TouchableOpacity onPress={() => setActiveBeats([])}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allBeats.length > 0 && (
+            <View style={styles.brandSearchWrap}>
+              <Feather name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.brandSearchInput}
+                value={beatSearch}
+                onChangeText={setBeatSearch}
+                placeholder="Search beats…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {beatSearch.length > 0 && Platform.OS !== "ios" && (
+                <TouchableOpacity onPress={() => setBeatSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="x" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {allBeats.length === 0 ? (
+            <View style={styles.noBrands}>
+              <Feather name="map-pin" size={32} color={Colors.textMuted} />
+              <Text style={styles.noBrandsTitle}>No Beats Yet</Text>
+              <Text style={styles.noBrandsSub}>
+                Import orders with a Beat column to filter by beat.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.brandList} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const q = beatSearch.trim().toLowerCase();
+                const visibleBeats = q ? allBeats.filter((b) => b.toLowerCase().includes(q)) : allBeats;
+                return (
+                  <>
+                    {!q && (
+                      <TouchableOpacity
+                        style={[styles.brandRow, activeBeats.length === 0 && styles.brandRowActive]}
+                        onPress={() => setActiveBeats([])}
+                      >
+                        <Text style={[styles.brandName, activeBeats.length === 0 && styles.brandNameActive]}>
+                          All Beats
+                        </Text>
+                        <Text style={styles.brandCount}>{vendorScopedOrders.length} orders</Text>
+                        {activeBeats.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
+                      </TouchableOpacity>
+                    )}
+                    {visibleBeats.length === 0 ? (
+                      <View style={styles.noBrands}>
+                        <Feather name="search" size={28} color={Colors.textMuted} />
+                        <Text style={styles.noBrandsTitle}>No match</Text>
+                        <Text style={styles.noBrandsSub}>No beats found for "{beatSearch}"</Text>
+                      </View>
+                    ) : (
+                      visibleBeats.map((beat) => {
+                        const isSelected = activeBeats.includes(beat);
+                        const count = beatOrderCount(beat);
+                        return (
+                          <TouchableOpacity
+                            key={beat}
+                            style={[styles.brandRow, isSelected && styles.brandRowActive]}
+                            onPress={() => toggleBeat(beat)}
+                          >
+                            <Feather
+                              name={isSelected ? "check-square" : "square"}
+                              size={17}
+                              color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.brandName, isSelected && styles.brandNameActive]}>
+                              {beat}
+                            </Text>
+                            <Text style={styles.brandCount}>{count} order{count !== 1 ? "s" : ""}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => setShowBeatModal(false)}
+          >
+            <Text style={styles.modalDoneBtnText}>
+              {activeBeats.length === 0 ? "Close" : `Apply (${activeBeats.length} selected)`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       {/* LastPurchRange filter modal — calendar-based From/To range picker
           that filters orders by their supplier's Latest Invoice Date
           (looked up by vendor code in the LastSupplyDate table). */}
@@ -2245,6 +2438,13 @@ const styles = StyleSheet.create({
   },
   brandBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   brandBarTextActive: { color: Colors.textInverse },
+  // Half-width variant so brandBar buttons can sit two-per-row inside
+  // a `toggleRow` container instead of stacking full-width.
+  brandBarHalf: {
+    flex: 1,
+    marginHorizontal: 0,
+    marginBottom: 0,
+  },
   itemSearchBar: {
     flexDirection: "row",
     alignItems: "center",
