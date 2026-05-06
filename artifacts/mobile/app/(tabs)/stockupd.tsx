@@ -1198,22 +1198,42 @@ export default function StockUpdScreen() {
       if (Platform.OS === "web") {
         await Print.printAsync({ html });
       } else {
-        const now = new Date();
-        const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
+        // expo-print's `fileName` option is ignored — it always writes
+        // to a temp file with an auto-generated name like "~123.pdf".
+        // To make the Share sheet show our chosen name, we generate the
+        // PDF, then copy it to a fresh path in cacheDirectory using the
+        // "Sathyam Super Store DDMMYYYY HHMM.pdf" convention, and share
+        // that copy instead.
         const _d2 = new Date();
         const _pad2 = (n: number) => String(n).padStart(2, "0");
         const _ts2 = `${_pad2(_d2.getDate())}${_pad2(_d2.getMonth() + 1)}${_d2.getFullYear()} ${_pad2(_d2.getHours())}${_pad2(_d2.getMinutes())}`;
-        const pdfFileName = `Sathyam Super Store ${_ts2}`;
-        const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
+        const pdfFileName = `Sathyam Super Store ${_ts2}.pdf`;
+        const { uri: tmpUri } = await Print.printToFileAsync({ html });
+        let shareUri = tmpUri;
+        const cacheDir = FileSystem.cacheDirectory;
+        if (cacheDir) {
+          const targetUri = cacheDir + encodeURIComponent(pdfFileName);
+          try {
+            // Remove any leftover file from a previous export with the
+            // same minute-precision timestamp so copyAsync doesn't fail.
+            await FileSystem.deleteAsync(targetUri, { idempotent: true });
+            await FileSystem.copyAsync({ from: tmpUri, to: targetUri });
+            shareUri = targetUri;
+          } catch {
+            // If the rename fails for any reason, fall back to sharing
+            // the original temp file rather than blocking the export.
+            shareUri = tmpUri;
+          }
+        }
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
-          await Sharing.shareAsync(uri, {
+          await Sharing.shareAsync(shareUri, {
             mimeType: "application/pdf",
             dialogTitle: "Export PDF",
             UTI: "com.adobe.pdf",
           });
         } else {
-          Alert.alert("PDF saved", `File saved to: ${uri}`);
+          Alert.alert("PDF saved", `File saved to: ${shareUri}`);
         }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
