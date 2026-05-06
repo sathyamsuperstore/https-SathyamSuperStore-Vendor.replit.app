@@ -1203,7 +1203,7 @@ export default function StockUpdScreen() {
         const _d2 = new Date();
         const _pad2 = (n: number) => String(n).padStart(2, "0");
         const _ts2 = `${_pad2(_d2.getDate())}${_pad2(_d2.getMonth() + 1)}${_d2.getFullYear()} ${_pad2(_d2.getHours())}${_pad2(_d2.getMinutes())}`;
-        const pdfFileName = `Sathyam Super Store - ${_ts2}`;
+        const pdfFileName = `Sathyam Super Store ${_ts2}`;
         const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
