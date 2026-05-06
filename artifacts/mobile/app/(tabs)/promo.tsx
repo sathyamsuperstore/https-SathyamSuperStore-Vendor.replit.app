@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   Modal,
   Keyboard,
+  FlatList,
+  type ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -798,6 +800,62 @@ export default function PromoScreen() {
     return out;
   }, [filtered, mrpByItem]);
 
+  // Flatten the brand → vendor → item tree into a single linear row
+  // list so the whole list can be virtualised by FlatList. With ~1100
+  // items each rendering a card with a nested horizontal ScrollView,
+  // a non-virtualised .map() blocks the UI thread for >10s on Android
+  // (Input dispatching ANR). FlatList only mounts the rows currently
+  // on screen (windowSize × initialNumToRender), keeping the first
+  // paint and every subsequent filter / scroll interaction snappy.
+  type PromoFlatRow =
+    | { type: "brand"; key: string; brand: string; itemCount: number }
+    | {
+        type: "vendor";
+        key: string;
+        brand: string;
+        vendorName: string;
+        itemCount: number;
+      }
+    | {
+        type: "item";
+        key: string;
+        brand: string;
+        vendorName: string;
+        item: { itemNo: string; rows: PromoEntry[] };
+        alt: boolean;
+      };
+  const flatRows = useMemo<PromoFlatRow[]>(() => {
+    const rows: PromoFlatRow[] = [];
+    for (const group of grouped) {
+      rows.push({
+        type: "brand",
+        key: `b:${group.brand}`,
+        brand: group.brand,
+        itemCount: group.itemCount,
+      });
+      for (const vendor of group.vendors) {
+        rows.push({
+          type: "vendor",
+          key: `v:${group.brand}|${vendor.vendorName}`,
+          brand: group.brand,
+          vendorName: vendor.vendorName,
+          itemCount: vendor.itemCount,
+        });
+        vendor.items.forEach((item, i) => {
+          rows.push({
+            type: "item",
+            key: `i:${group.brand}|${vendor.vendorName}|${item.itemNo}`,
+            brand: group.brand,
+            vendorName: vendor.vendorName,
+            item,
+            alt: i % 2 === 1,
+          });
+        });
+      }
+    }
+    return rows;
+  }, [grouped]);
+
   function yieldToUI(): Promise<void> {
     return new Promise((r) => setTimeout(r, 0));
   }
@@ -1313,14 +1371,196 @@ export default function PromoScreen() {
         <Text style={styles.title}>Promo</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.body,
-          { paddingBottom: insets.bottom + 100 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.card}>
+      {(() => {
+        const renderRow: ListRenderItem<PromoFlatRow> = ({ item: row }) => {
+          if (row.type === "brand") {
+            return (
+              <View style={styles.brandGroupHeader}>
+                <Feather name="tag" size={13} color={Colors.primary} />
+                <Text style={styles.brandGroupHeaderText} numberOfLines={1}>
+                  {row.brand}
+                </Text>
+                <Text style={styles.brandGroupHeaderCount}>
+                  {row.itemCount} item{row.itemCount !== 1 ? "s" : ""}
+                </Text>
+              </View>
+            );
+          }
+          if (row.type === "vendor") {
+            return (
+              <View style={styles.vendorGroupHeader}>
+                <Feather name="briefcase" size={11} color={Colors.textMuted} />
+                <Text style={styles.vendorGroupHeaderText} numberOfLines={1}>
+                  {row.vendorName}
+                </Text>
+                <Text style={styles.vendorGroupHeaderCount}>
+                  {row.itemCount}
+                </Text>
+              </View>
+            );
+          }
+          const item = row.item;
+          const head = item.rows[0];
+          return (
+            <View style={[styles.itemCard, row.alt && styles.itemCardAlt]}>
+              <View style={styles.cardLine1}>
+                <Text style={styles.itemNoText} numberOfLines={1}>
+                  {formatCell(CARD_LINE_1_LEFT, head[CARD_LINE_1_LEFT])}
+                </Text>
+                <Text style={styles.itemDescText} numberOfLines={2}>
+                  {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
+                </Text>
+              </View>
+              <View style={styles.cardLine2}>
+                <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
+                <Text style={styles.fieldValueLg}>
+                  {formatCell(CARD_LINE_2, head[CARD_LINE_2])}
+                </Text>
+              </View>
+              <View style={styles.priceList}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator
+                  contentContainerStyle={styles.priceListScrollContent}
+                >
+                  <View>
+                    <View style={styles.priceListHead}>
+                      {cardLine3.map((f) => (
+                        <Text
+                          key={`hd:${f}`}
+                          style={[
+                            styles.fieldLabel,
+                            styles.priceCellFixed,
+                            { width: colWidth(f) },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {cardLabel(f)}
+                        </Text>
+                      ))}
+                    </View>
+                    {item.rows.map((pr, ri) => {
+                      const isFromMrpTab =
+                        (pr as Record<string, unknown>)["__mrpFromMrpTab"] === 1;
+                      return (
+                        <View
+                          key={`${item.itemNo}-${pr["BatchNo"] ?? ""}-${pr["MRP"] ?? ""}-${ri}${isFromMrpTab ? "-mrptab" : ""}`}
+                          style={[
+                            styles.priceListRow,
+                            ri % 2 === 1 && styles.priceListRowAlt,
+                            isFromMrpTab && styles.priceListRowFromMrpTab,
+                          ]}
+                        >
+                          {cardLine3.map((f) => {
+                            if (f === NEW_QTY_FIELD) {
+                              const batchNoStr = String(pr["BatchNo"] ?? "");
+                              const qtyKey = `${item.itemNo}|${batchNoStr}`;
+                              const editable = modifyMode;
+                              const persisted = promoNewQty[qtyKey];
+                              const draft = newQtyDrafts[qtyKey];
+                              if (editable) {
+                                const value =
+                                  draft !== undefined
+                                    ? draft
+                                    : persisted !== undefined
+                                      ? String(persisted)
+                                      : "";
+                                return (
+                                  <TextInput
+                                    key={f}
+                                    style={[
+                                      styles.priceCellFixed,
+                                      { width: colWidth(f) },
+                                      styles.newQtyInput,
+                                    ]}
+                                    value={value}
+                                    onChangeText={(text) =>
+                                      setNewQtyDrafts((d) => ({
+                                        ...d,
+                                        [qtyKey]: text,
+                                      }))
+                                    }
+                                    onEndEditing={(e) => {
+                                      // Read from the native event, not from
+                                      // the closure-captured `newQtyDrafts` —
+                                      // FlatList row reuse + async setState
+                                      // can leave the closure copy stale and
+                                      // drop the last typed characters.
+                                      const raw = (
+                                        e.nativeEvent.text ?? ""
+                                      ).trim();
+                                      setNewQtyDrafts((d) => {
+                                        const { [qtyKey]: _drop, ...rest } = d;
+                                        return rest;
+                                      });
+                                      if (raw === "") {
+                                        if (persisted !== undefined) {
+                                          void setPromoNewQtyValue(
+                                            qtyKey,
+                                            undefined
+                                          );
+                                        }
+                                        return;
+                                      }
+                                      const num = Number(raw);
+                                      if (!Number.isFinite(num) || num < 0)
+                                        return;
+                                      void setPromoNewQtyValue(qtyKey, num);
+                                    }}
+                                    keyboardType="decimal-pad"
+                                    inputMode="decimal"
+                                    placeholder="0"
+                                    placeholderTextColor={Colors.textMuted}
+                                    selectTextOnFocus
+                                  />
+                                );
+                              }
+                              const display =
+                                persisted !== undefined
+                                  ? formatCell(f, persisted)
+                                  : "";
+                              return (
+                                <Text
+                                  key={f}
+                                  style={[
+                                    styles.fieldValue,
+                                    styles.priceCellFixed,
+                                    { width: colWidth(f) },
+                                    isFromMrpTab && styles.fieldValueFromMrpTab,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {display}
+                                </Text>
+                              );
+                            }
+                            return (
+                              <Text
+                                key={f}
+                                style={[
+                                  styles.fieldValue,
+                                  styles.priceCellFixed,
+                                  { width: colWidth(f) },
+                                  isFromMrpTab && styles.fieldValueFromMrpTab,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {formatCell(f, pr[f])}
+                              </Text>
+                            );
+                          })}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          );
+        };
+        const listHeader = (
+          <>
+            <View style={styles.card}>
           <Text style={styles.cardTitle}>Import Promo</Text>
           <Text style={styles.cardSub}>
             Excel file with the promotion-master layout. Required columns:{" "}
@@ -1629,222 +1869,6 @@ export default function PromoScreen() {
               </Text>
             </View>
 
-            <View style={styles.cardsWrap}>
-              {filtered.length === 0 ? (
-                <View style={styles.noRows}>
-                  <Feather name="search" size={24} color={Colors.textMuted} />
-                  <Text style={styles.noRowsText}>
-                    {search.trim().length > 0
-                      ? `No items match "${search}"`
-                      : "No items"}
-                  </Text>
-                </View>
-              ) : (
-                grouped.map((group) => (
-                  <View key={`brand:${group.brand}`} style={styles.brandBlock}>
-                    <View style={styles.brandGroupHeader}>
-                      <Feather name="tag" size={13} color={Colors.primary} />
-                      <Text style={styles.brandGroupHeaderText} numberOfLines={1}>
-                        {group.brand}
-                      </Text>
-                      <Text style={styles.brandGroupHeaderCount}>
-                        {group.itemCount} item{group.itemCount !== 1 ? "s" : ""}
-                      </Text>
-                    </View>
-                    {group.vendors.map((vendor) => (
-                      <View key={`brand:${group.brand}|vendor:${vendor.vendorName}`}>
-                        <View style={styles.vendorGroupHeader}>
-                          <Feather name="briefcase" size={11} color={Colors.textMuted} />
-                          <Text style={styles.vendorGroupHeaderText} numberOfLines={1}>
-                            {vendor.vendorName}
-                          </Text>
-                          <Text style={styles.vendorGroupHeaderCount}>
-                            {vendor.itemCount}
-                          </Text>
-                        </View>
-                        {vendor.items.map((item, i) => {
-                          // All rows for the same Item No share identity-
-                          // level fields (description / latest MRP); pick
-                          // the first row as the representative for the
-                          // top of the card.
-                          const head = item.rows[0];
-                          return (
-                            <View
-                              key={`${group.brand}-${vendor.vendorName}-${item.itemNo}`}
-                              style={[styles.itemCard, i % 2 === 1 && styles.itemCardAlt]}
-                            >
-                              <View style={styles.cardLine1}>
-                                <Text style={styles.itemNoText} numberOfLines={1}>
-                                  {formatCell(CARD_LINE_1_LEFT, head[CARD_LINE_1_LEFT])}
-                                </Text>
-                                <Text style={styles.itemDescText} numberOfLines={2}>
-                                  {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
-                                </Text>
-                              </View>
-
-                              <View style={styles.cardLine2}>
-                                <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
-                                <Text style={styles.fieldValueLg}>
-                                  {formatCell(CARD_LINE_2, head[CARD_LINE_2])}
-                                </Text>
-                              </View>
-
-                              <View style={styles.priceList}>
-                                {/* The full promo column set is wider than
-                                    a phone screen, so the header + value
-                                    rows scroll together inside one
-                                    horizontal ScrollView. Each cell gets
-                                    a fixed width from colWidth() so the
-                                    header labels stay aligned with their
-                                    values across rows. */}
-                                <ScrollView
-                                  horizontal
-                                  showsHorizontalScrollIndicator
-                                  contentContainerStyle={styles.priceListScrollContent}
-                                >
-                                  <View>
-                                <View style={styles.priceListHead}>
-                                  {cardLine3.map((f) => (
-                                    <Text
-                                      key={`hd:${f}`}
-                                      style={[styles.fieldLabel, styles.priceCellFixed, { width: colWidth(f) }]}
-                                      numberOfLines={1}
-                                    >
-                                      {cardLabel(f)}
-                                    </Text>
-                                  ))}
-                                </View>
-                                {item.rows.map((row, ri) => {
-                                  // Synthetic rows are MRPs that exist in
-                                  // the MRP tab but have no matching Promo
-                                  // row for this Item No. Soft amber tint
-                                  // + italic value text signals to the
-                                  // user "this MRP has no promo data".
-                                  const isFromMrpTab =
-                                    (row as Record<string, unknown>)["__mrpFromMrpTab"] === 1;
-                                  return (
-                                    <View
-                                      key={`${item.itemNo}-${row["BatchNo"] ?? ""}-${row["MRP"] ?? ""}-${ri}${isFromMrpTab ? "-mrptab" : ""}`}
-                                      style={[
-                                        styles.priceListRow,
-                                        ri % 2 === 1 && styles.priceListRowAlt,
-                                        isFromMrpTab && styles.priceListRowFromMrpTab,
-                                      ]}
-                                    >
-                                      {cardLine3.map((f) => {
-                                        if (f === NEW_QTY_FIELD) {
-                                          // The "New Qty" cell is the
-                                          // user-editable column. It has
-                                          // no underlying imported value
-                                          // — we read/write the standalone
-                                          // promoNewQty map keyed by
-                                          // (itemNo, BatchNo). Synthetic
-                                          // "from MRP tab" rows have no
-                                          // BatchNo to key on, so they
-                                          // render the cell as blank /
-                                          // disabled.
-                                          const batchNoStr = String(row["BatchNo"] ?? "");
-                                          const qtyKey = `${item.itemNo}|${batchNoStr}`;
-                                          const editable = modifyMode;
-                                          const persisted = promoNewQty[qtyKey];
-                                          const draft = newQtyDrafts[qtyKey];
-                                          if (editable) {
-                                            const value =
-                                              draft !== undefined
-                                                ? draft
-                                                : persisted !== undefined
-                                                  ? String(persisted)
-                                                  : "";
-                                            return (
-                                              <TextInput
-                                                key={f}
-                                                style={[
-                                                  styles.priceCellFixed,
-                                                  { width: colWidth(f) },
-                                                  styles.newQtyInput,
-                                                ]}
-                                                value={value}
-                                                onChangeText={(text) =>
-                                                  setNewQtyDrafts((d) => ({
-                                                    ...d,
-                                                    [qtyKey]: text,
-                                                  }))
-                                                }
-                                                onEndEditing={() => {
-                                                  const raw = (
-                                                    newQtyDrafts[qtyKey] ?? ""
-                                                  ).trim();
-                                                  setNewQtyDrafts((d) => {
-                                                    const { [qtyKey]: _drop, ...rest } = d;
-                                                    return rest;
-                                                  });
-                                                  if (raw === "") {
-                                                    if (persisted !== undefined) {
-                                                      void setPromoNewQtyValue(qtyKey, undefined);
-                                                    }
-                                                    return;
-                                                  }
-                                                  const num = Number(raw);
-                                                  if (!Number.isFinite(num) || num < 0) return;
-                                                  void setPromoNewQtyValue(qtyKey, num);
-                                                }}
-                                                keyboardType="decimal-pad"
-                                                inputMode="decimal"
-                                                placeholder="0"
-                                                placeholderTextColor={Colors.textMuted}
-                                                selectTextOnFocus
-                                              />
-                                            );
-                                          }
-                                          const display =
-                                            persisted !== undefined
-                                              ? formatCell(f, persisted)
-                                              : "";
-                                          return (
-                                            <Text
-                                              key={f}
-                                              style={[
-                                                styles.fieldValue,
-                                                styles.priceCellFixed,
-                                                { width: colWidth(f) },
-                                                isFromMrpTab && styles.fieldValueFromMrpTab,
-                                              ]}
-                                              numberOfLines={1}
-                                            >
-                                              {display}
-                                            </Text>
-                                          );
-                                        }
-                                        return (
-                                          <Text
-                                            key={f}
-                                            style={[
-                                              styles.fieldValue,
-                                              styles.priceCellFixed,
-                                              { width: colWidth(f) },
-                                              isFromMrpTab && styles.fieldValueFromMrpTab,
-                                            ]}
-                                            numberOfLines={1}
-                                          >
-                                            {formatCell(f, row[f])}
-                                          </Text>
-                                        );
-                                      })}
-                                    </View>
-                                  );
-                                })}
-                                  </View>
-                                </ScrollView>
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    ))}
-                  </View>
-                ))
-              )}
-            </View>
           </>
         )}
 
@@ -1856,7 +1880,40 @@ export default function PromoScreen() {
             </Text>
           </View>
         )}
-      </ScrollView>
+      </>
+    );
+    const listEmpty =
+      promoEntries.length > 0 ? (
+        <View style={styles.noRows}>
+          <Feather name="search" size={24} color={Colors.textMuted} />
+          <Text style={styles.noRowsText}>
+            {search.trim().length > 0
+              ? `No items match "${search}"`
+              : "No items"}
+          </Text>
+        </View>
+      ) : null;
+    return (
+      <FlatList
+        data={flatRows}
+        keyExtractor={(r) => r.key}
+        renderItem={renderRow}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        contentContainerStyle={[
+          styles.body,
+          { paddingBottom: insets.bottom + 100 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={9}
+        updateCellsBatchingPeriod={50}
+        keyboardShouldPersistTaps="handled"
+      />
+    );
+  })()}
 
       {/* Vendor filter modal */}
       <FilterModal
