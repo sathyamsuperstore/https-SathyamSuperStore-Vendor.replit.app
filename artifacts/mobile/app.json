@@ -20,7 +20,11 @@
     "android": {
       "softwareKeyboardLayoutMode": "pan",
       "edgeToEdgeEnabled": false,
-      "package": "com.coimbatoresathyamsuperstorevendorportal.app"
+      "package": "com.coimbatoresathyamsuperstorevendorportal.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
     },
     "web": {
       "favicon": "./assets/images/icon.png"
