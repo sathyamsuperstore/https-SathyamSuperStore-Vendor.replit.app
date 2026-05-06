@@ -37,6 +37,143 @@ const STATUS_FILTERS: { key: OrderStatus | "all"; label: string }[] = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
+// ---------------------------------------------------------------------------
+// Multi-level "Sort by" config (up to 3 levels). Each field declares its
+// data type so the comparator can pick the right ordering (alphabetical for
+// strings, numeric for numbers) and the direction button can show the right
+// labels (A→Z / Z→A vs Low→High / High→Low). `scope` decides whether the
+// criterion sorts the outer order list (vendor cards) or the inner item rows
+// inside each card. The user's example "Vendor → Brand → Category" mixes
+// both: Vendor sorts the cards, Brand+Category sort the items within them.
+// ---------------------------------------------------------------------------
+type SortFieldKey =
+  | "supplierName"
+  | "status"
+  | "orderNumber"
+  | "beat"
+  | "brand"
+  | "category"
+  | "name"
+  | "unit"
+  | "unitPrice"
+  | "quantity"
+  | "newStockQty"
+  | "stock"
+  | "min"
+  | "sortNo";
+type SortFieldDef = {
+  key: SortFieldKey;
+  label: string;
+  type: "string" | "number";
+  scope: "order" | "item";
+};
+const SORT_FIELDS: SortFieldDef[] = [
+  { key: "supplierName", label: "Vendor", type: "string", scope: "order" },
+  { key: "status", label: "Status", type: "string", scope: "order" },
+  { key: "orderNumber", label: "Order #", type: "string", scope: "order" },
+  { key: "beat", label: "Beat", type: "string", scope: "order" },
+  { key: "brand", label: "Brand", type: "string", scope: "item" },
+  { key: "category", label: "Category", type: "string", scope: "item" },
+  { key: "name", label: "Item Desc.", type: "string", scope: "item" },
+  { key: "unit", label: "UOM", type: "string", scope: "item" },
+  { key: "unitPrice", label: "MRP", type: "number", scope: "item" },
+  { key: "quantity", label: "Ord Qty", type: "number", scope: "item" },
+  { key: "newStockQty", label: "New Stock", type: "number", scope: "item" },
+  { key: "stock", label: "Stock", type: "number", scope: "item" },
+  { key: "min", label: "Min", type: "number", scope: "item" },
+  { key: "sortNo", label: "Sort No", type: "number", scope: "item" },
+];
+const SORT_FIELD_BY_KEY: Record<SortFieldKey, SortFieldDef> = SORT_FIELDS.reduce(
+  (acc, f) => {
+    acc[f.key] = f;
+    return acc;
+  },
+  {} as Record<SortFieldKey, SortFieldDef>,
+);
+type SortLevel = { key: SortFieldKey; dir: "asc" | "desc" } | null;
+const EMPTY_SORT_LEVELS: SortLevel[] = [null, null, null];
+
+function getOrderSortValue(o: Order, key: SortFieldKey): string | number | null {
+  switch (key) {
+    case "supplierName":
+      return o.supplierName ?? "";
+    case "status":
+      return o.status ?? "";
+    case "orderNumber":
+      return o.orderNumber ?? "";
+    case "beat":
+      return (o.beat ?? "").trim();
+    default:
+      return null;
+  }
+}
+function getItemSortValue(it: OrderItem, key: SortFieldKey): string | number | null {
+  switch (key) {
+    case "brand":
+      return it.brand ?? "";
+    case "category":
+      return it.category ?? "";
+    case "name":
+      // Sort on the description part (after "ItemNo - "), falling back to
+      // the full name when no separator is present, so visually adjacent
+      // items match what the user reads on the card.
+      return it.name.includes(" - ")
+        ? it.name.split(" - ").slice(1).join(" - ")
+        : it.name;
+    case "unit":
+      return it.unit ?? "";
+    case "unitPrice":
+      return it.unitPrice ?? null;
+    case "quantity":
+      return it.quantity ?? null;
+    case "newStockQty":
+      return it.newStockQty ?? null;
+    case "stock":
+      return it.stock ?? null;
+    case "min":
+      return it.min ?? null;
+    case "sortNo":
+      return it.sortNo ?? null;
+    default:
+      return null;
+  }
+}
+// Compare two raw values according to `type` and `dir`. Empty-string and
+// null values are pushed to the end regardless of direction, so blanks
+// don't interleave with real data.
+function cmpSortVal(
+  a: string | number | null,
+  b: string | number | null,
+  type: "string" | "number",
+  dir: "asc" | "desc",
+): number {
+  const aBlank = a == null || (type === "string" && a === "");
+  const bBlank = b == null || (type === "string" && b === "");
+  if (aBlank && bBlank) return 0;
+  if (aBlank) return 1;
+  if (bBlank) return -1;
+  let r = 0;
+  if (type === "string") {
+    r = String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
+  } else {
+    const an = Number(a);
+    const bn = Number(b);
+    if (isNaN(an) && isNaN(bn)) r = 0;
+    else if (isNaN(an)) r = 1;
+    else if (isNaN(bn)) r = -1;
+    else r = an - bn;
+  }
+  return dir === "desc" ? -r : r;
+}
+function dirLabelFor(type: "string" | "number", dir: "asc" | "desc"): string {
+  if (type === "string") return dir === "asc" ? "A→Z" : "Z→A";
+  return dir === "asc" ? "Low→High" : "High→Low";
+}
+function shortDirLabelFor(type: "string" | "number", dir: "asc" | "desc"): string {
+  if (type === "string") return dir === "asc" ? "A→Z" : "Z→A";
+  return dir === "asc" ? "↑" : "↓";
+}
+
 function calcTotal(items: OrderItem[]): number {
   return items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
 }
@@ -108,6 +245,7 @@ function StockUpdCard({
   multipleMrpOnly,
   mrpMap,
   promoMap,
+  itemSortLevels,
   onSave,
   onSaveSupplierNotes,
   onSaveSupplierPhotos,
@@ -123,6 +261,10 @@ function StockUpdCard({
   multipleMrpOnly: boolean;
   mrpMap: Record<string, number[]>;
   promoMap: Record<string, PromoEntry[]>;
+  // Item-level criteria from the multi-level "Sort by". Empty array
+  // (the default) preserves the legacy brand-then-sortNo ordering so
+  // existing users see no behavior change until they pick a sort.
+  itemSortLevels: { key: SortFieldKey; dir: "asc" | "desc" }[];
   onSave: (id: string, items: OrderItem[]) => Promise<boolean>;
   onSaveSupplierNotes: (id: string, notes: string) => Promise<void>;
   onSaveSupplierPhotos: (id: string, photos: string[]) => Promise<void>;
@@ -203,6 +345,26 @@ function StockUpdCard({
         return itemNo !== "" && mrpMap[itemNo]?.length > 0;
       });
     }
+    // When the user has picked any item-level "Sort by" criteria we
+    // honour those, walking levels in priority order. With no
+    // criteria configured we keep the legacy brand-asc then sortNo-desc
+    // ordering so the look-and-feel is unchanged for users who never
+    // open the Sort modal.
+    if (itemSortLevels.length > 0) {
+      return [...base].sort((a, b) => {
+        for (const c of itemSortLevels) {
+          const def = SORT_FIELD_BY_KEY[c.key];
+          const r = cmpSortVal(
+            getItemSortValue(a, c.key),
+            getItemSortValue(b, c.key),
+            def.type,
+            c.dir,
+          );
+          if (r !== 0) return r;
+        }
+        return 0;
+      });
+    }
     return [...base].sort((a, b) => {
       const ba = (a.brand ?? "").toLowerCase();
       const bb = (b.brand ?? "").toLowerCase();
@@ -213,7 +375,7 @@ function StockUpdCard({
       if (b.sortNo != null) return 1;
       return 0;
     });
-  }, [order.items, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap]);
+  }, [order.items, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, itemSortLevels]);
 
   const dirty =
     Object.keys(qtyEdits).some((k) => qtyEdits[k] !== String(order.items.find((i) => i.id === k)?.quantity ?? "")) ||
@@ -751,6 +913,39 @@ export default function StockUpdScreen() {
   const [lastPurchError, setLastPurchError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  // Multi-level "Sort by" — committed value drives the list, draft is
+  // edited inside the modal and only commits on Apply so users can
+  // back out of changes by tapping the backdrop.
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>(EMPTY_SORT_LEVELS);
+  const [sortLevelsDraft, setSortLevelsDraft] = useState<SortLevel[]>(EMPTY_SORT_LEVELS);
+  const [showSortModal, setShowSortModal] = useState(false);
+  const orderSortLevels = useMemo(
+    () =>
+      sortLevels.filter(
+        (l): l is NonNullable<SortLevel> =>
+          l != null && SORT_FIELD_BY_KEY[l.key].scope === "order",
+      ),
+    [sortLevels],
+  );
+  const itemSortLevels = useMemo(
+    () =>
+      sortLevels.filter(
+        (l): l is NonNullable<SortLevel> =>
+          l != null && SORT_FIELD_BY_KEY[l.key].scope === "item",
+      ),
+    [sortLevels],
+  );
+  const sortActive = orderSortLevels.length > 0 || itemSortLevels.length > 0;
+  const sortBarLabel = useMemo(() => {
+    const active = sortLevels.filter((l): l is NonNullable<SortLevel> => l != null);
+    if (active.length === 0) return "Sort by";
+    return active
+      .map((l) => {
+        const def = SORT_FIELD_BY_KEY[l.key];
+        return `${def.label} ${shortDirLabelFor(def.type, l.dir)}`;
+      })
+      .join("  ›  ");
+  }, [sortLevels]);
 
   const statusFiltered = useMemo(() => {
     if (activeFilter === "all") return orders;
@@ -944,10 +1139,30 @@ export default function StockUpdScreen() {
         return b !== "" && beatSet.has(b);
       });
     }
+    // Apply order-level "Sort by" criteria when configured. Each
+    // criterion is walked in priority order; the first non-zero result
+    // wins. Without any order-level criteria we keep the legacy
+    // alphabetical-by-vendor ordering so the existing default doesn't
+    // change for users who never open the Sort modal.
+    if (orderSortLevels.length > 0) {
+      return [...result].sort((a, b) => {
+        for (const c of orderSortLevels) {
+          const def = SORT_FIELD_BY_KEY[c.key];
+          const r = cmpSortVal(
+            getOrderSortValue(a, c.key),
+            getOrderSortValue(b, c.key),
+            def.type,
+            c.dir,
+          );
+          if (r !== 0) return r;
+        }
+        return 0;
+      });
+    }
     return [...result].sort((a, b) =>
       (a.supplierName ?? "").localeCompare(b.supplierName ?? "", undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, lastPurchActive, lastPurchFrom, lastPurchTo, orderVendorCode, lastSupplyMap, activeBeats]);
+  }, [statusFiltered, activeVendors, activeBrands, activeCategories, itemSearch, negStockOnly, multipleMrpOnly, mrpMap, lastPurchActive, lastPurchFrom, lastPurchTo, orderVendorCode, lastSupplyMap, activeBeats, orderSortLevels]);
 
   function toggleVendor(name: string) {
     setActiveVendors((prev) =>
@@ -1672,6 +1887,44 @@ export default function StockUpdScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Multi-level "Sort by" — opens a modal where the user can pick
+          up to 3 sort criteria (e.g. Vendor → Brand → Category). When
+          inactive the bar reads "Sort by"; when active it shows the
+          full chain so the current order is visible at a glance. */}
+      <TouchableOpacity
+        style={[styles.brandBar, sortActive && styles.brandBarActive]}
+        onPress={() => {
+          setSortLevelsDraft(sortLevels);
+          setShowSortModal(true);
+        }}
+        activeOpacity={0.75}
+      >
+        <Feather
+          name="bar-chart-2"
+          size={14}
+          color={sortActive ? Colors.textInverse : Colors.textSecondary}
+        />
+        <Text
+          style={[styles.brandBarText, sortActive && styles.brandBarTextActive]}
+          numberOfLines={1}
+        >
+          {sortBarLabel}
+        </Text>
+        {sortActive ? (
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation?.();
+              setSortLevels(EMPTY_SORT_LEVELS);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="x-circle" size={15} color={Colors.textInverse} />
+          </TouchableOpacity>
+        ) : (
+          <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+        )}
+      </TouchableOpacity>
+
       {/* Item description search bar */}
       <View style={[styles.itemSearchBar, itemSearch.length > 0 && styles.itemSearchBarActive]}>
         <Feather name="search" size={14} color={itemSearch.length > 0 ? Colors.primary : Colors.textMuted} />
@@ -1696,7 +1949,7 @@ export default function StockUpdScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} supplier={suppliers.find((s) => s.id === item.supplierId)} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} onSave={handleSaveOrder} onSaveSupplierNotes={setSupplierGeneralNotes} onSaveSupplierPhotos={setSupplierPhotos} />
+          <StockUpdCard order={item} vendorCode={suppliers.find((s) => s.id === item.supplierId)?.vendorCode} supplier={suppliers.find((s) => s.id === item.supplierId)} activeBrands={activeBrands} activeCategories={activeCategories} itemSearch={itemSearch} negStockOnly={negStockOnly} showNotes={showNotes} multipleMrpOnly={multipleMrpOnly} mrpMap={mrpMap} promoMap={promoMap} itemSortLevels={itemSortLevels} onSave={handleSaveOrder} onSaveSupplierNotes={setSupplierGeneralNotes} onSaveSupplierPhotos={setSupplierPhotos} />
         )}
         contentContainerStyle={[
           styles.list,
@@ -2317,6 +2570,163 @@ export default function StockUpdScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Multi-level "Sort by" modal — three slots, each can pick any
+          field and a direction. Edits stay in `sortLevelsDraft` and
+          only commit on Apply, matching the LastPurchRange pattern. */}
+      <Modal
+        visible={showSortModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSortModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowSortModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16, maxHeight: "85%" }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Sort by</Text>
+            {sortLevelsDraft.some((l) => l != null) && (
+              <TouchableOpacity onPress={() => setSortLevelsDraft(EMPTY_SORT_LEVELS)}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <ScrollView
+            style={{ paddingHorizontal: 20 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.sortHint}>
+              Pick up to 3 columns. Levels are applied in order — the
+              first level groups the cards (e.g. Vendor), then within
+              each group the next level orders the items, and so on.
+            </Text>
+            {[0, 1, 2].map((idx) => {
+              const lvl = sortLevelsDraft[idx];
+              const def = lvl ? SORT_FIELD_BY_KEY[lvl.key] : null;
+              return (
+                <View key={idx} style={styles.sortLevelBlock}>
+                  <View style={styles.sortLevelHeader}>
+                    <Text style={styles.sortLevelLabel}>
+                      {idx === 0 ? "First by" : idx === 1 ? "Then by" : "Then by"}
+                    </Text>
+                    {lvl && def ? (
+                      <TouchableOpacity
+                        style={styles.sortDirBtn}
+                        onPress={() =>
+                          setSortLevelsDraft((prev) => {
+                            const next = [...prev];
+                            const cur = next[idx];
+                            if (cur)
+                              next[idx] = { ...cur, dir: cur.dir === "asc" ? "desc" : "asc" };
+                            return next;
+                          })
+                        }
+                        activeOpacity={0.75}
+                      >
+                        <Feather
+                          name={lvl.dir === "asc" ? "arrow-up" : "arrow-down"}
+                          size={13}
+                          color={Colors.primary}
+                        />
+                        <Text style={styles.sortDirBtnText}>
+                          {dirLabelFor(def.type, lvl.dir)}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.sortLevelEmpty}>Not set</Text>
+                    )}
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.sortChipsRow}
+                  >
+                    <TouchableOpacity
+                      style={[styles.sortChip, !lvl && styles.sortChipActive]}
+                      onPress={() =>
+                        setSortLevelsDraft((prev) => {
+                          const next = [...prev];
+                          next[idx] = null;
+                          return next;
+                        })
+                      }
+                    >
+                      <Text style={[styles.sortChipText, !lvl && styles.sortChipTextActive]}>
+                        None
+                      </Text>
+                    </TouchableOpacity>
+                    {SORT_FIELDS.map((f) => {
+                      const isActive = lvl?.key === f.key;
+                      // Disable the chip in this row if the same field
+                      // is already used at a different level — prevents
+                      // a no-op duplicate sort like "Vendor → Vendor".
+                      const usedElsewhere = sortLevelsDraft.some(
+                        (l, i) => i !== idx && l?.key === f.key,
+                      );
+                      return (
+                        <TouchableOpacity
+                          key={f.key}
+                          style={[
+                            styles.sortChip,
+                            isActive && styles.sortChipActive,
+                            usedElsewhere && styles.sortChipDisabled,
+                          ]}
+                          disabled={usedElsewhere}
+                          onPress={() =>
+                            setSortLevelsDraft((prev) => {
+                              const next = [...prev];
+                              next[idx] = { key: f.key, dir: "asc" };
+                              return next;
+                            })
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.sortChipText,
+                              isActive && styles.sortChipTextActive,
+                              usedElsewhere && styles.sortChipTextDisabled,
+                            ]}
+                          >
+                            {f.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              // Compact the draft so a Level 1 = None / Level 2 = Brand
+              // case still works as a single-level sort. Keeps the UI
+              // simple without forcing the user to fill earlier slots.
+              const compact = sortLevelsDraft.filter(
+                (l): l is NonNullable<SortLevel> => l != null,
+              );
+              const padded: SortLevel[] = [
+                compact[0] ?? null,
+                compact[1] ?? null,
+                compact[2] ?? null,
+              ];
+              setSortLevels(padded);
+              setSortLevelsDraft(padded);
+              setShowSortModal(false);
+            }}
+          >
+            <Text style={styles.modalDoneBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2651,5 +3061,82 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     lineHeight: 17,
+  },
+  // ----- Multi-level "Sort by" modal -----
+  sortHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  sortLevelBlock: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  sortLevelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sortLevelLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    letterSpacing: 0.3,
+  },
+  sortLevelEmpty: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontStyle: "italic",
+  },
+  sortDirBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  sortDirBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  sortChipsRow: {
+    gap: 8,
+    paddingVertical: 2,
+    paddingRight: 8,
+  },
+  sortChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  sortChipDisabled: {
+    opacity: 0.35,
+  },
+  sortChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  sortChipTextActive: {
+    color: Colors.textInverse,
+  },
+  sortChipTextDisabled: {
+    color: Colors.textMuted,
   },
 });
