@@ -651,6 +651,62 @@ function OrdersView({ topPt }: { topPt: number }) {
     { key: "cancelled", label: "Cancelled" },
   ];
 
+  // Notes + Photos for Supplier block. Rendered at the BOTTOM of the page so
+  // most of the screen is available for reviewing/editing the order list.
+  // Used as the FlatList footer when there are orders, and as a trailing
+  // block underneath the empty-state placeholder when there aren't.
+  const notesAndPhotosBox = notesSupplier ? (
+    <View style={styles.notesBox}>
+      <View style={styles.notesHeader}>
+        <Feather name="message-square" size={13} color={Colors.textSecondary} />
+        <Text style={styles.notesLabel} numberOfLines={1}>
+          Notes for {notesSupplier.name || notesSupplier.vendorCode}
+        </Text>
+        {notesSavedAt != null && (
+          <View style={styles.notesSavedPill}>
+            <Feather name="check" size={11} color="#065F46" />
+            <Text style={styles.notesSavedText}>Saved</Text>
+          </View>
+        )}
+      </View>
+      <TextInput
+        style={styles.notesInput}
+        value={notesDraft}
+        onChangeText={setNotesDraft}
+        placeholder="Add a note for this supplier (shown in the PDF footer)…"
+        placeholderTextColor={Colors.textMuted}
+        multiline
+        textAlignVertical="top"
+        editable={!notesSaving}
+      />
+      <View style={styles.notesActionRow}>
+        <TouchableOpacity
+          style={[
+            styles.notesSaveBtn,
+            (!notesDirty || notesSaving) && styles.notesSaveBtnDisabled,
+          ]}
+          onPress={handleSaveNotes}
+          disabled={!notesDirty || notesSaving}
+          activeOpacity={0.8}
+        >
+          {notesSaving ? (
+            <ActivityIndicator size="small" color={Colors.textInverse} />
+          ) : (
+            <Feather name="save" size={14} color={Colors.textInverse} />
+          )}
+          <Text style={styles.notesSaveText}>
+            {notesSaving ? "Saving…" : "SAVE"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <SupplierPhotosBox
+        supplier={notesSupplier}
+        photos={notesSupplier.photos ?? []}
+        onChange={(next) => setSupplierPhotos(notesSupplier.id, next)}
+      />
+    </View>
+  ) : null;
+
   return (
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
@@ -788,58 +844,6 @@ function OrdersView({ topPt }: { topPt: number }) {
         </TouchableOpacity>
       )}
 
-      {notesSupplier && (
-        <View style={styles.notesBox}>
-          <View style={styles.notesHeader}>
-            <Feather name="message-square" size={13} color={Colors.textSecondary} />
-            <Text style={styles.notesLabel} numberOfLines={1}>
-              Notes for {notesSupplier.name || notesSupplier.vendorCode}
-            </Text>
-            {notesSavedAt != null && (
-              <View style={styles.notesSavedPill}>
-                <Feather name="check" size={11} color="#065F46" />
-                <Text style={styles.notesSavedText}>Saved</Text>
-              </View>
-            )}
-          </View>
-          <TextInput
-            style={styles.notesInput}
-            value={notesDraft}
-            onChangeText={setNotesDraft}
-            placeholder="Add a note for this supplier (shown in the PDF footer)…"
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            textAlignVertical="top"
-            editable={!notesSaving}
-          />
-          <View style={styles.notesActionRow}>
-            <TouchableOpacity
-              style={[
-                styles.notesSaveBtn,
-                (!notesDirty || notesSaving) && styles.notesSaveBtnDisabled,
-              ]}
-              onPress={handleSaveNotes}
-              disabled={!notesDirty || notesSaving}
-              activeOpacity={0.8}
-            >
-              {notesSaving ? (
-                <ActivityIndicator size="small" color={Colors.textInverse} />
-              ) : (
-                <Feather name="save" size={14} color={Colors.textInverse} />
-              )}
-              <Text style={styles.notesSaveText}>
-                {notesSaving ? "Saving…" : "SAVE"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <SupplierPhotosBox
-            supplier={notesSupplier}
-            photos={notesSupplier.photos ?? []}
-            onChange={(next) => setSupplierPhotos(notesSupplier.id, next)}
-          />
-        </View>
-      )}
-
       {!currentUser?.vendorCode ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
@@ -850,25 +854,13 @@ function OrdersView({ topPt }: { topPt: number }) {
             Your account doesn't have a vendor code. Contact your administrator.
           </Text>
         </View>
-      ) : filtered.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <Feather name="inbox" size={36} color={Colors.textMuted} />
-          </View>
-          <Text style={styles.emptyTitle}>
-            {vendorOrders.length === 0 ? "No Orders Yet" : "No Orders Found"}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {vendorOrders.length === 0
-              ? `No orders have been placed for vendor code ${currentUser?.vendorCode}.`
-              : "No orders match the selected filter."}
-          </Text>
-        </View>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(o) => o.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={
+            filtered.length === 0 ? styles.listEmpty : styles.list
+          }
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <VendorOrderCard
@@ -879,6 +871,22 @@ function OrdersView({ topPt }: { topPt: number }) {
               activeCategories={activeCategories}
             />
           )}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <Feather name="inbox" size={36} color={Colors.textMuted} />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {vendorOrders.length === 0 ? "No Orders Yet" : "No Orders Found"}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {vendorOrders.length === 0
+                  ? `No orders have been placed for vendor code ${currentUser?.vendorCode}.`
+                  : "No orders match the selected filter."}
+              </Text>
+            </View>
+          }
+          ListFooterComponent={notesAndPhotosBox}
         />
       )}
 
@@ -1506,6 +1514,7 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   filterChipTextActive: { color: Colors.textInverse },
   list: { padding: 20, gap: 12, paddingBottom: 100 },
+  listEmpty: { flexGrow: 1, padding: 20, paddingBottom: 100 },
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 12 },
   emptyIcon: {
     width: 72, height: 72, borderRadius: 18,
