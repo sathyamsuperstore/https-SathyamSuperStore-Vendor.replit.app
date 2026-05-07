@@ -394,7 +394,7 @@ function OrdersView({ topPt }: { topPt: number }) {
         ["Coimbatore-641029",                                                    ...pad.slice(1)],
         ["98431-44868",                                                          ...pad.slice(1)],
         ["Whatsapp: 97881-44868",                                                ...pad.slice(1)],
-        ["Accounts: 97868-64868",                                                ...pad.slice(1)],
+        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", ...pad.slice(1)],
         ["GST# : 33ADFFS5244N1ZR",                                               ...pad.slice(1)],
         ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      ...pad.slice(1)],
         pad,

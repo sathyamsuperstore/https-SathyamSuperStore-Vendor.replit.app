@@ -273,7 +273,7 @@ export default function OrderDetailScreen() {
         ["Coimbatore-641029",                                                "", "", "", "", "", ""],
         ["98431-44868",                                                      "", "", "", "", "", ""],
         ["Whatsapp: 97881-44868",                                            "", "", "", "", "", ""],
-        ["Accounts: 97868-64868",                                            "", "", "", "", "", ""],
+        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", "", "", "", "", "", ""],
         ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", "", ""],
         ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", "", ""],
         ["", "", "", "", "", "", ""],
