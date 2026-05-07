@@ -1456,12 +1456,12 @@ export default function StockUpdScreen() {
         // to a temp file with an auto-generated name like "~123.pdf".
         // To make the Share sheet show our chosen name, we generate the
         // PDF, then copy it to a fresh path in cacheDirectory using the
-        // "Sathyam Super Store DDMMYYYY HHMM.pdf" convention, and share
+        // "Sathyam Super Store Order DDMMYYYY HHMM.pdf" convention, and share
         // that copy instead.
         const _d2 = new Date();
         const _pad2 = (n: number) => String(n).padStart(2, "0");
         const _ts2 = `${_pad2(_d2.getDate())}${_pad2(_d2.getMonth() + 1)}${_d2.getFullYear()} ${_pad2(_d2.getHours())}${_pad2(_d2.getMinutes())}`;
-        const pdfFileName = `Sathyam Super Store ${_ts2}.pdf`;
+        const pdfFileName = `Sathyam Super Store Order ${_ts2}.pdf`;
         const { uri: tmpUri } = await Print.printToFileAsync({ html });
         let shareUri = tmpUri;
         const cacheDir = FileSystem.cacheDirectory;
