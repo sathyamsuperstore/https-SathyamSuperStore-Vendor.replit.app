@@ -2040,7 +2040,9 @@ export default function PromoScreen({
           <View style={styles.emptyHint}>
             <Feather name="info" size={14} color={Colors.textMuted} />
             <Text style={styles.emptyHintText}>
-              Pick an Excel file to load the Promo table.
+              {isPrev
+                ? "No previous snapshot yet. Import a Promo file or tap \"Snapshot now\" on the live Promo screen."
+                : "Pick an Excel file to load the Promo table."}
             </Text>
           </View>
         )}
