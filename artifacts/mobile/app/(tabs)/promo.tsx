@@ -1751,7 +1751,7 @@ export default function PromoScreen({
             )}
             {/* Compare opens the dedicated diff screen with Added /
                 Removed / Changed sections and Excel + PDF export. */}
-            {hasPrevSnapshot && livePromoEntries.length > 0 && (
+            {hasPrevSnapshot && (
               <TouchableOpacity
                 style={styles.compareBtn}
                 onPress={() => router.push("/promo-compare")}
