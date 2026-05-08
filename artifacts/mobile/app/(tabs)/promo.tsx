@@ -228,6 +228,17 @@ const SEARCH_FIELDS = [
   "VendorName",
 ];
 
+// Human-readable snapshot timestamp for the PromoPrev header banner
+// and the import-confirmation dialog. Format: "06 May 2026 21:14".
+function formatSnapshotTimestamp(ts: number): string {
+  const d = new Date(ts);
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  return `${pad2(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 function formatCell(field: string, value: string | number | undefined): string {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value === "number") {
@@ -239,17 +250,48 @@ function formatCell(field: string, value: string | number | undefined): string {
   return String(value);
 }
 
-export default function PromoScreen() {
+// `mode` lets the same screen power both the live Promo tab and the
+// read-only PromoPrev viewer (chip in the Catalog hub). In "prev" mode
+// the screen reads from `promoPrevEntries` instead of `promoEntries`,
+// hides every mutating affordance (Import / Delete / Modify / Save /
+// Export / Snapshot / Compare), and replaces the "Import Promo" card
+// with a snapshot-timestamp banner.
+export default function PromoScreen({
+  mode = "live",
+}: { mode?: "live" | "prev" } = {}) {
+  const isPrev = mode === "prev";
   const router = useRouter();
   const {
-    promoEntries,
+    promoEntries: livePromoEntries,
+    promoPrevEntries,
+    promoPrevSnapshotAt,
     mrpEntries,
     savePromoBatch,
+    snapshotPromoNow,
     clearPromoBatch,
     currentUser,
     promoNewQty,
     setPromoNewQtyValue,
   } = useApp();
+  // Effective dataset for everything below — filter, group, search,
+  // export, etc. all just see "the promo entries" without caring about
+  // mode.
+  const promoEntries = isPrev ? promoPrevEntries : livePromoEntries;
+  // Set of "Item No|BatchNo" keys present in the previous snapshot.
+  // Used by the live-mode card renderer to flag fresh items with a
+  // NEW badge. Empty in prev mode (the badge would always show, which
+  // is meaningless when you're looking at the snapshot itself).
+  const prevKeys = useMemo(() => {
+    if (isPrev) return new Set<string>();
+    const s = new Set<string>();
+    for (const r of promoPrevEntries) {
+      const itemNo = String(r["Item No"] ?? "").trim();
+      const batchNo = String(r["BatchNo"] ?? "").trim();
+      s.add(`${itemNo}|${batchNo}`);
+    }
+    return s;
+  }, [promoPrevEntries, isPrev]);
+  const hasPrevSnapshot = promoPrevEntries.length > 0;
   // Cost (wholesale / purchase price per unit) is sensitive margin info,
   // so it's only shown to admin-privileged users. Vendors / Managers /
   // Staff see the same card layout with the Cost cell removed.
@@ -860,6 +902,55 @@ export default function PromoScreen() {
     return new Promise((r) => setTimeout(r, 0));
   }
 
+  // Wraps `pickAndImport` with a confirmation dialog when an existing
+  // Promo dataset is about to be overwritten — the import flow auto-
+  // snapshots the current rows into PromoPrev, replacing whatever
+  // snapshot is already there. Surfacing this explicitly avoids
+  // surprises like silently losing yesterday's snapshot.
+  function confirmAndImport() {
+    if (livePromoEntries.length === 0) {
+      void pickAndImport();
+      return;
+    }
+    const snapTxt = promoPrevSnapshotAt
+      ? `, replacing the snapshot from ${formatSnapshotTimestamp(promoPrevSnapshotAt)}`
+      : "";
+    const msg = `Your current Promo (${livePromoEntries.length} rows) will be saved as PromoPrev${snapTxt}. Continue?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) void pickAndImport();
+      return;
+    }
+    Alert.alert("Snapshot & Import?", msg, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Snapshot & Import", onPress: () => void pickAndImport() },
+    ]);
+  }
+
+  function handleSnapshotNow() {
+    if (livePromoEntries.length === 0) return;
+    const snapTxt = promoPrevSnapshotAt
+      ? ` This replaces the snapshot from ${formatSnapshotTimestamp(promoPrevSnapshotAt)}.`
+      : "";
+    const msg = `Save the current Promo (${livePromoEntries.length} rows) as PromoPrev?${snapTxt}`;
+    const doSnap = async () => {
+      try {
+        await snapshotPromoNow();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStatusMsg(`Snapshot saved (${livePromoEntries.length} rows).`);
+      } catch {
+        showStorageErrorAlert("Couldn't Snapshot");
+      }
+    };
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) void doSnap();
+      return;
+    }
+    Alert.alert("Snapshot Promo?", msg, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Snapshot", onPress: () => void doSnap() },
+    ]);
+  }
+
   async function pickAndImport() {
     try {
       setLoading(true);
@@ -1368,7 +1459,12 @@ export default function PromoScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Promo</Text>
+        <Text style={styles.title}>{isPrev ? "PromoPrev" : "Promo"}</Text>
+        {isPrev && hasPrevSnapshot && promoPrevSnapshotAt && (
+          <Text style={styles.snapshotHeaderText}>
+            Snapshot taken: {formatSnapshotTimestamp(promoPrevSnapshotAt)}
+          </Text>
+        )}
       </View>
 
       {(() => {
@@ -1407,6 +1503,21 @@ export default function PromoScreen() {
                 <Text style={styles.itemNoText} numberOfLines={1}>
                   {formatCell(CARD_LINE_1_LEFT, head[CARD_LINE_1_LEFT])}
                 </Text>
+                {(() => {
+                  // NEW badge — shown in live mode when at least one of
+                  // this item's batches doesn't appear in the previous
+                  // snapshot. Only meaningful once a snapshot exists.
+                  if (isPrev || !hasPrevSnapshot) return null;
+                  const isNew = item.rows.some((pr) => {
+                    const k = `${item.itemNo}|${String(pr["BatchNo"] ?? "").trim()}`;
+                    return !prevKeys.has(k);
+                  });
+                  return isNew ? (
+                    <View style={styles.newBadge}>
+                      <Text style={styles.newBadgeText}>NEW</Text>
+                    </View>
+                  ) : null;
+                })()}
                 <Text style={styles.itemDescText} numberOfLines={2}>
                   {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
                 </Text>
@@ -1455,7 +1566,7 @@ export default function PromoScreen() {
                             if (f === NEW_QTY_FIELD) {
                               const batchNoStr = String(pr["BatchNo"] ?? "");
                               const qtyKey = `${item.itemNo}|${batchNoStr}`;
-                              const editable = modifyMode;
+                              const editable = modifyMode && !isPrev;
                               const persisted = promoNewQty[qtyKey];
                               const draft = newQtyDrafts[qtyKey];
                               if (editable) {
@@ -1560,6 +1671,31 @@ export default function PromoScreen() {
         };
         const listHeader = (
           <>
+            {isPrev && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Previous Snapshot</Text>
+                {hasPrevSnapshot && promoPrevSnapshotAt ? (
+                  <Text style={styles.cardSub}>
+                    Read-only view of the Promo dataset captured on{" "}
+                    <Text style={styles.mono}>
+                      {formatSnapshotTimestamp(promoPrevSnapshotAt)}
+                    </Text>
+                    . Tap{" "}
+                    <Text style={styles.mono}>Compare</Text> on the live
+                    Promo screen to see what's changed since.
+                  </Text>
+                ) : (
+                  <Text style={styles.cardSub}>
+                    No snapshot yet. The first Promo import after this
+                    feature was enabled will create one automatically; you
+                    can also tap{" "}
+                    <Text style={styles.mono}>Snapshot now</Text> on the
+                    live Promo screen.
+                  </Text>
+                )}
+              </View>
+            )}
+            {!isPrev && (
             <View style={styles.card}>
           <Text style={styles.cardTitle}>Import Promo</Text>
           <Text style={styles.cardSub}>
@@ -1574,7 +1710,7 @@ export default function PromoScreen() {
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[styles.pickBtn, loading && { opacity: 0.6 }]}
-              onPress={pickAndImport}
+              onPress={confirmAndImport}
               disabled={loading}
             >
               {loading ? (
@@ -1597,6 +1733,31 @@ export default function PromoScreen() {
               >
                 <Feather name="trash-2" size={16} color={Colors.danger} />
                 <Text style={styles.deleteBtnText}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {/* Manual snapshot — captures the current Promo dataset
+                into the prev bucket without overwriting the live data.
+                Auto-snapshot at import time covers the common path;
+                this button covers the "I made cell-edits and want to
+                pin them as a checkpoint" case. */}
+            {livePromoEntries.length > 0 && (
+              <TouchableOpacity
+                style={styles.snapshotBtn}
+                onPress={handleSnapshotNow}
+              >
+                <Feather name="camera" size={16} color={Colors.primary} />
+                <Text style={styles.snapshotBtnText}>Snapshot now</Text>
+              </TouchableOpacity>
+            )}
+            {/* Compare opens the dedicated diff screen with Added /
+                Removed / Changed sections and Excel + PDF export. */}
+            {hasPrevSnapshot && livePromoEntries.length > 0 && (
+              <TouchableOpacity
+                style={styles.compareBtn}
+                onPress={() => router.push("/promo-compare")}
+              >
+                <Feather name="git-branch" size={16} color={Colors.textInverse} />
+                <Text style={styles.compareBtnText}>Compare</Text>
               </TouchableOpacity>
             )}
             {/* Export only the rows whose user-entered "New Qty" value is
@@ -1662,6 +1823,7 @@ export default function PromoScreen() {
             </View>
           )}
         </View>
+            )}
 
         {errors.length > 0 && (
           <View style={styles.errorBox}>
@@ -1710,6 +1872,7 @@ export default function PromoScreen() {
               {/* Toggles inline editing for the "New Qty" cell. Drops any
                   in-progress drafts when turning off so the next "Modify"
                   session starts from the persisted values. */}
+              {!isPrev && (
               <View style={styles.filterCol}>
                 <FilterBar
                   icon="edit-3"
@@ -1728,6 +1891,7 @@ export default function PromoScreen() {
                   }}
                 />
               </View>
+              )}
               <View style={styles.filterCol}>
                 <FilterBar
                   icon="layers"
@@ -1743,7 +1907,7 @@ export default function PromoScreen() {
                   is on. Drafts auto-save on blur, but a visible Save
                   affordance makes the flow discoverable for users who
                   expect a button. */}
-              {modifyMode && (
+              {modifyMode && !isPrev && (
                 <View style={styles.filterCol}>
                   <TouchableOpacity
                     style={[styles.filterBar, styles.filterBarSave]}
@@ -2725,6 +2889,55 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  snapshotHeaderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  newBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#16A34A",
+    marginLeft: 6,
+  },
+  newBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.6,
+  },
+  snapshotBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surface,
+  },
+  snapshotBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  compareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  compareBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.textInverse,
   },
   filterCol: {
     // ~50% width per chip with the 8-px gap accounted for, so two

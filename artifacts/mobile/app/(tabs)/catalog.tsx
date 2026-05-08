@@ -11,6 +11,11 @@ export default function CatalogHubScreen() {
       views={[
         { key: "promo", label: "Promo", render: () => <PromoScreen /> },
         {
+          key: "promoPrev",
+          label: "PromoPrev",
+          render: () => <PromoScreen mode="prev" />,
+        },
+        {
           key: "purchases",
           label: "Latest Purchases",
           render: () => <LatestPurchasesScreen />,

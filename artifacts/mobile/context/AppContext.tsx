@@ -177,8 +177,22 @@ interface AppContextType {
   saveLatestPurchasesBatch: (entries: LatestPurchaseEntry[]) => Promise<void>;
   clearLatestPurchases: () => Promise<void>;
   promoEntries: PromoEntry[];
+  // Rolling "previous" snapshot of the Promo list, captured automatically
+  // before each savePromoBatch (and on demand via snapshotPromoNow). Used
+  // by the PromoPrev viewer and the Compare diff view to surface what
+  // changed since the last import.
+  promoPrevEntries: PromoEntry[];
+  promoPrevSnapshotAt: number | null;
+  // Persist a fresh batch and auto-snapshot whatever was previously
+  // there into promoPrevEntries (unless the current list is empty —
+  // there's nothing meaningful to snapshot on first import).
   savePromoBatch: (entries: PromoEntry[]) => Promise<void>;
+  // Manual snapshot — copies the current promoEntries into the prev
+  // bucket without replacing live data. No-op if promoEntries is empty.
+  snapshotPromoNow: () => Promise<void>;
   clearPromoBatch: () => Promise<void>;
+  // Wipes only the prev snapshot; leaves live promoEntries alone.
+  clearPromoPrev: () => Promise<void>;
   lastSupplyDates: LastSupplyDateEntry[];
   saveLastSupplyDateBatch: (entries: LastSupplyDateEntry[]) => Promise<void>;
   clearLastSupplyDates: () => Promise<void>;
@@ -288,6 +302,10 @@ const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
 const LATEST_PURCHASES_KEY = "@latestPurchases";
 const PROMO_KEY = "@promoBatch";
+// Stored separately from @promoBatch so a corrupted live import can never
+// poison the previous snapshot — they're independent payloads.
+const PROMO_PREV_KEY = "@promoPrev";
+const PROMO_PREV_AT_KEY = "@promoPrevAt";
 const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
@@ -347,6 +365,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
   const [promoEntries, setPromoEntries] = useState<PromoEntry[]>([]);
+  const [promoPrevEntries, setPromoPrevEntries] = useState<PromoEntry[]>([]);
+  const [promoPrevSnapshotAt, setPromoPrevSnapshotAt] = useState<number | null>(null);
+  // Mirror so snapshotPromoNow / savePromoBatch can read the latest live
+  // entries without depending on a possibly-stale closure (matches the
+  // ordersRef / suppliersRef pattern above).
+  const promoEntriesRef = useRef<PromoEntry[]>([]);
+  useEffect(() => {
+    promoEntriesRef.current = promoEntries;
+  }, [promoEntries]);
   const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -357,7 +384,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoNewQtyData, lastSupplyDateData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -365,6 +392,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(MRP_KEY),
         AsyncStorage.getItem(LATEST_PURCHASES_KEY),
         AsyncStorage.getItem(PROMO_KEY),
+        AsyncStorage.getItem(PROMO_PREV_KEY),
+        AsyncStorage.getItem(PROMO_PREV_AT_KEY),
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
       ]);
@@ -377,6 +406,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? JSON.parse(latestPurchasesData)
         : [];
       const loadedPromo: PromoEntry[] = promoData ? JSON.parse(promoData) : [];
+      const loadedPromoPrev: PromoEntry[] = promoPrevData ? JSON.parse(promoPrevData) : [];
+      const loadedPromoPrevAt: number | null = promoPrevAtData
+        ? Number(promoPrevAtData) || null
+        : null;
       const loadedLastSupplyDates: LastSupplyDateEntry[] = lastSupplyDateData
         ? JSON.parse(lastSupplyDateData)
         : [];
@@ -387,6 +420,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMrpEntries(loadedMrp);
       setLatestPurchases(loadedLatestPurchases);
       setPromoEntries(loadedPromo);
+      setPromoPrevEntries(loadedPromoPrev);
+      setPromoPrevSnapshotAt(loadedPromoPrevAt);
       setLastSupplyDates(loadedLastSupplyDates);
       const loadedPromoNewQty: Record<string, number> = promoNewQtyData
         ? JSON.parse(promoNewQtyData)
@@ -438,15 +473,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Promo helpers mirror the MRP / Latest Purchases write-first pattern:
   // persist to AsyncStorage first so the on-screen state never shows a
   // "save" that wasn't actually written.
+  //
+  // Auto-snapshots whatever's currently in promoEntries into the prev
+  // bucket BEFORE overwriting (skipped on the very first import — there
+  // is nothing meaningful to capture). Snapshot + new entries are
+  // written in lockstep so a failure on either rolls the UI back via
+  // the throw bubbling to the caller.
   async function savePromoBatch(entries: PromoEntry[]) {
-    await AsyncStorage.setItem(PROMO_KEY, JSON.stringify(entries));
+    const current = promoEntriesRef.current;
+    if (current.length > 0) {
+      const now = Date.now();
+      await AsyncStorage.multiSet([
+        [PROMO_PREV_KEY, JSON.stringify(current)],
+        [PROMO_PREV_AT_KEY, String(now)],
+        [PROMO_KEY, JSON.stringify(entries)],
+      ]);
+      setPromoPrevEntries(current);
+      setPromoPrevSnapshotAt(now);
+    } else {
+      await AsyncStorage.setItem(PROMO_KEY, JSON.stringify(entries));
+    }
     setPromoEntries(entries);
+  }
+
+  // Manual snapshot — copies the live promoEntries into the prev
+  // bucket without touching the live data. No-op when nothing's loaded.
+  async function snapshotPromoNow() {
+    const current = promoEntriesRef.current;
+    if (current.length === 0) return;
+    const now = Date.now();
+    await AsyncStorage.multiSet([
+      [PROMO_PREV_KEY, JSON.stringify(current)],
+      [PROMO_PREV_AT_KEY, String(now)],
+    ]);
+    setPromoPrevEntries(current);
+    setPromoPrevSnapshotAt(now);
   }
 
   async function clearPromoBatch() {
     await AsyncStorage.multiRemove([PROMO_KEY, PROMO_NEW_QTY_KEY]);
     setPromoEntries([]);
     setPromoNewQty({});
+  }
+
+  // Wipes only the prev snapshot. Live promoEntries and the New Qty
+  // overrides are untouched.
+  async function clearPromoPrev() {
+    await AsyncStorage.multiRemove([PROMO_PREV_KEY, PROMO_PREV_AT_KEY]);
+    setPromoPrevEntries([]);
+    setPromoPrevSnapshotAt(null);
   }
 
   async function saveLastSupplyDateBatch(entries: LastSupplyDateEntry[]) {
@@ -784,8 +859,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         saveLatestPurchasesBatch,
         clearLatestPurchases,
         promoEntries,
+        promoPrevEntries,
+        promoPrevSnapshotAt,
         savePromoBatch,
+        snapshotPromoNow,
         clearPromoBatch,
+        clearPromoPrev,
         lastSupplyDates,
         saveLastSupplyDateBatch,
         clearLastSupplyDates,
