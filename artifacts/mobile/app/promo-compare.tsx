@@ -22,12 +22,14 @@ import { LOGO_BASE64 } from "@/constants/LogoBase64";
 
 // Fields included in the "Changed" diff. Cost / OH Qty / SoldQty
 // fluctuate constantly and would create noise, so they're left out by
-// design (see task brief).
+// design (see task brief). MRP is intentionally NOT listed here: it is
+// part of the diff key (see promoKey) so an MRP swap surfaces as a
+// paired Added/Removed instead of an in-place edit, which matches the
+// importer's "(Item No, BatchNo, MRP) is the unique row" contract.
 const CHANGED_FIELDS = [
   "PromotionPrice",
   "SP",
   "PromotionToDate",
-  "MRP",
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
