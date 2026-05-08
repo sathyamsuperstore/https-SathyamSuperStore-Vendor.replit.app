@@ -982,31 +982,136 @@ export default function StockUpdScreen() {
 
   const lastPurchActive = lastPurchFrom != null && lastPurchTo != null;
 
-  const vendorScopedOrders = useMemo(() => {
-    if (activeVendors.length === 0) return statusFiltered;
-    return statusFiltered.filter(
-      (o) => o.supplierName != null && activeVendors.includes(o.supplierName)
+  // ---------------------------------------------------------------
+  // Faceted filter scoping
+  //
+  // Each filter dimension (Vendor / Brand / Category / Beat / LastPurch)
+  // narrows the visible orders. Each dimension's own option list is
+  // built from the orders that pass *every other* active filter — so
+  // opening Brand after picking a Vendor only lists brands carried by
+  // that vendor's orders, opening Category after picking a Brand only
+  // lists categories within that brand, etc. Each filter still shows
+  // its own siblings (so the user can switch their selection inside a
+  // dimension without first clearing it).
+  //
+  // `applyOrderFilters` is the single source of truth: pass `skip` to
+  // exclude one (or more) dimensions from the cascade. It always runs
+  // on `statusFiltered` so the status chip remains the outermost
+  // filter.
+  // ---------------------------------------------------------------
+  type FilterDim = "vendor" | "brand" | "category" | "beat" | "lastPurch";
+
+  const applyOrderFilters = useMemo(() => {
+    return (skip: ReadonlySet<FilterDim> = new Set()) => {
+      let r = statusFiltered;
+      if (!skip.has("vendor") && activeVendors.length > 0) {
+        r = r.filter(
+          (o) => o.supplierName != null && activeVendors.includes(o.supplierName)
+        );
+      }
+      if (!skip.has("brand") && activeBrands.length > 0) {
+        r = r.filter((o) =>
+          o.items.some((it) => it.brand != null && activeBrands.includes(it.brand))
+        );
+      }
+      if (!skip.has("category") && activeCategories.length > 0) {
+        r = r.filter((o) =>
+          o.items.some(
+            (it) => it.category != null && activeCategories.includes(it.category)
+          )
+        );
+      }
+      if (!skip.has("beat") && activeBeats.length > 0) {
+        r = r.filter((o) => {
+          const b = (o.beat ?? "").trim();
+          return b !== "" && activeBeats.includes(b);
+        });
+      }
+      if (!skip.has("lastPurch") && lastPurchActive) {
+        const fromMs = lastPurchFrom!.getTime();
+        const toMs = lastPurchTo!.getTime();
+        r = r.filter((o) => {
+          const code = orderVendorCode.get(o.id);
+          if (!code) return false;
+          const d = lastSupplyMap.get(code);
+          if (!d) return false;
+          const t = d.getTime();
+          return t >= fromMs && t <= toMs;
+        });
+      }
+      return r;
+    };
+  }, [
+    statusFiltered,
+    activeVendors,
+    activeBrands,
+    activeCategories,
+    activeBeats,
+    lastPurchActive,
+    lastPurchFrom,
+    lastPurchTo,
+    orderVendorCode,
+    lastSupplyMap,
+  ]);
+
+  // `vendorScopedOrders` is kept for the few callers that specifically
+  // want "everything except a vendor restriction" applied. It now also
+  // respects every other active filter, so it shrinks as more filters
+  // are picked.
+  const vendorScopedOrders = useMemo(
+    () => applyOrderFilters(new Set(["vendor"])),
+    [applyOrderFilters]
+  );
+
+  // Per-dimension order pools used to build option lists and counts.
+  // Each pool excludes only its own dimension so the user can still
+  // swap selections within a dimension without first clearing it.
+  // (`vendorScopedOrders` already covers the "skip vendor" case and is
+  // reused as `ordersForVendorOptions`.)
+  const ordersForBrandOptions = useMemo(
+    () => applyOrderFilters(new Set(["brand"])),
+    [applyOrderFilters]
+  );
+  const ordersForCategoryOptions = useMemo(
+    () => applyOrderFilters(new Set(["category"])),
+    [applyOrderFilters]
+  );
+  const ordersForBeatOptions = useMemo(
+    () => applyOrderFilters(new Set(["beat"])),
+    [applyOrderFilters]
+  );
+
+  const allVendors = useMemo(() => {
+    const set = new Set<string>();
+    vendorScopedOrders.forEach((o) => {
+      if (o.supplierName) set.add(o.supplierName);
+    });
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-  }, [statusFiltered, activeVendors]);
+  }, [vendorScopedOrders]);
 
   const allBrands = useMemo(() => {
     const set = new Set<string>();
-    vendorScopedOrders.forEach((o) =>
+    const catSet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    ordersForBrandOptions.forEach((o) =>
       o.items.forEach((item) => {
-        if (item.brand) set.add(item.brand);
+        if (!item.brand) return;
+        // When categories are selected, only surface brands whose items
+        // also fall under one of those categories — otherwise picking
+        // category first then brand would offer brands that disappear
+        // the moment they're selected.
+        if (catSet && !(item.category != null && catSet.has(item.category))) return;
+        set.add(item.brand);
       })
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [vendorScopedOrders]);
+  }, [ordersForBrandOptions, activeCategories]);
 
-  // Categories list is scoped to whatever brand(s) are currently
-  // selected — picking "Brand A" should only offer the categories that
-  // actually have items under Brand A. With no brand selected, fall
-  // back to every category seen in the vendor-scoped orders.
   const allCategories = useMemo(() => {
     const set = new Set<string>();
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
-    vendorScopedOrders.forEach((o) =>
+    ordersForCategoryOptions.forEach((o) =>
       o.items.forEach((item) => {
         if (!item.category) return;
         if (brandSet && !(item.brand != null && brandSet.has(item.brand))) return;
@@ -1014,8 +1119,24 @@ export default function StockUpdScreen() {
       })
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [vendorScopedOrders, activeBrands]);
+  }, [ordersForCategoryOptions, activeBrands]);
 
+  const allBeats = useMemo(() => {
+    const set = new Set<string>();
+    ordersForBeatOptions.forEach((o) => {
+      const b = (o.beat ?? "").trim();
+      if (b) set.add(b);
+    });
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [ordersForBeatOptions]);
+
+  // Drop selections that no longer exist in the freshly-faceted lists
+  // (e.g. a vendor was deselected and the brand they uniquely supplied
+  // is no longer offered). Without this the active chip would still
+  // show but match nothing, leaving the user with an empty result and
+  // no obvious way to recover.
   useEffect(() => {
     if (activeBrands.length === 0) return;
     const allowed = new Set(allBrands);
@@ -1030,32 +1151,19 @@ export default function StockUpdScreen() {
     if (next.length !== activeCategories.length) setActiveCategories(next);
   }, [allCategories, activeCategories]);
 
-  const allVendors = useMemo(() => {
-    const set = new Set<string>();
-    statusFiltered.forEach((o) => {
-      if (o.supplierName) set.add(o.supplierName);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [statusFiltered]);
-
-  // Beats list — scoped to vendor-filtered orders so picking a vendor
-  // narrows the visible beats to only those routes that actually carry
-  // that vendor's orders. Orders without a `beat` field are skipped.
-  const allBeats = useMemo(() => {
-    const set = new Set<string>();
-    vendorScopedOrders.forEach((o) => {
-      const b = (o.beat ?? "").trim();
-      if (b) set.add(b);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [vendorScopedOrders]);
-
   useEffect(() => {
     if (activeBeats.length === 0) return;
     const allowed = new Set(allBeats);
     const next = activeBeats.filter((b) => allowed.has(b));
     if (next.length !== activeBeats.length) setActiveBeats(next);
   }, [allBeats, activeBeats]);
+
+  useEffect(() => {
+    if (activeVendors.length === 0) return;
+    const allowed = new Set(allVendors);
+    const next = activeVendors.filter((v) => allowed.has(v));
+    if (next.length !== activeVendors.length) setActiveVendors(next);
+  }, [allVendors, activeVendors]);
 
   const filtered = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -1171,7 +1279,9 @@ export default function StockUpdScreen() {
   }
 
   function vendorOrderCount(name: string): number {
-    return statusFiltered.filter((o) => o.supplierName === name).length;
+    // Count within the vendor-options pool so the badge reflects the
+    // narrowing already applied by Brand / Category / Beat / LastPurch.
+    return vendorScopedOrders.filter((o) => o.supplierName === name).length;
   }
 
   function toggleBrand(brand: string) {
@@ -1181,8 +1291,17 @@ export default function StockUpdScreen() {
   }
 
   function brandOrderCount(brand: string): number {
-    return vendorScopedOrders.filter((o) =>
-      o.items.some((item) => item.brand === brand)
+    // Count within the brand-options pool so badges narrow as
+    // Vendor / Category / Beat / LastPurch are applied. When a
+    // category is also active, only count orders whose item carries
+    // both the brand AND one of the selected categories.
+    const catSet = activeCategories.length > 0 ? new Set(activeCategories) : null;
+    return ordersForBrandOptions.filter((o) =>
+      o.items.some(
+        (item) =>
+          item.brand === brand &&
+          (!catSet || (item.category != null && catSet.has(item.category)))
+      )
     ).length;
   }
 
@@ -1199,15 +1318,17 @@ export default function StockUpdScreen() {
   }
 
   function beatOrderCount(beat: string): number {
-    return vendorScopedOrders.filter((o) => (o.beat ?? "").trim() === beat).length;
+    return ordersForBeatOptions.filter((o) => (o.beat ?? "").trim() === beat).length;
   }
 
   function categoryOrderCount(category: string): number {
     // When a brand is selected, count only orders with at least one
     // item that matches BOTH the category and one of the active brands —
-    // matches the brand-scoped category list shown in the picker.
+    // matches the brand-scoped category list shown in the picker. Use
+    // the category-options pool so Vendor / Beat / LastPurch also
+    // narrow the count.
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
-    return vendorScopedOrders.filter((o) =>
+    return ordersForCategoryOptions.filter((o) =>
       o.items.some(
         (item) =>
           item.category === category &&
@@ -2040,7 +2161,7 @@ export default function StockUpdScreen() {
                         <Text style={[styles.brandName, activeBrands.length === 0 && styles.brandNameActive]}>
                           All Brands
                         </Text>
-                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        <Text style={styles.brandCount}>{ordersForBrandOptions.length} orders</Text>
                         {activeBrands.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
@@ -2156,7 +2277,7 @@ export default function StockUpdScreen() {
                         <Text style={[styles.brandName, activeCategories.length === 0 && styles.brandNameActive]}>
                           All Categories
                         </Text>
-                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        <Text style={styles.brandCount}>{ordersForCategoryOptions.length} orders</Text>
                         {activeCategories.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
@@ -2272,7 +2393,7 @@ export default function StockUpdScreen() {
                         <Text style={[styles.brandName, activeVendors.length === 0 && styles.brandNameActive]}>
                           All Vendors
                         </Text>
-                        <Text style={styles.brandCount}>{statusFiltered.length} orders</Text>
+                        <Text style={styles.brandCount}>{vendorScopedOrders.length} orders</Text>
                         {activeVendors.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
@@ -2389,7 +2510,7 @@ export default function StockUpdScreen() {
                         <Text style={[styles.brandName, activeBeats.length === 0 && styles.brandNameActive]}>
                           All Beats
                         </Text>
-                        <Text style={styles.brandCount}>{vendorScopedOrders.length} orders</Text>
+                        <Text style={styles.brandCount}>{ordersForBeatOptions.length} orders</Text>
                         {activeBeats.length === 0 && <Feather name="check" size={16} color={Colors.primary} />}
                       </TouchableOpacity>
                     )}
