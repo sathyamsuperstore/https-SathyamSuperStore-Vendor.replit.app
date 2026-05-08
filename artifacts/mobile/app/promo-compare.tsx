@@ -26,9 +26,12 @@ import { LOGO_BASE64 } from "@/constants/LogoBase64";
 // part of the diff key (see promoKey) so an MRP swap surfaces as a
 // paired Added/Removed instead of an in-place edit, which matches the
 // importer's "(Item No, BatchNo, MRP) is the unique row" contract.
+// SP is also excluded — the user-visible "what's different" question
+// for the Promo tab is about PromotionPrice (and validity), not the
+// regular shelf price, which can drift independently and would create
+// noise in the Changed list.
 const CHANGED_FIELDS = [
   "PromotionPrice",
-  "SP",
   "PromotionToDate",
 ] as const;
 
