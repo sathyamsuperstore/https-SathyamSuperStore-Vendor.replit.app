@@ -23,6 +23,19 @@ export type HubView = {
 type Props = {
   views: HubView[];
   defaultView: string;
+  /**
+   * How the chip row should lay out when there are more chips than fit
+   * on a single line.
+   *
+   * - `"scroll"` (default) keeps the original behaviour: chips render
+   *   in a single horizontally-scrollable row.
+   * - `"wrap"` lays chips out in a flex-wrap container so they flow
+   *   onto a second (or third) row instead. Used by the Directory hub
+   *   where we want all five chips visible at a glance without a
+   *   horizontal swipe. Other hubs should leave this unset to avoid
+   *   regressing their existing single-row layout.
+   */
+  chipLayout?: "scroll" | "wrap";
 };
 
 /**
@@ -47,7 +60,7 @@ type Props = {
  * insets are passed through so each sub-screen's
  * `paddingBottom: insets.bottom + 100` still clears the tab bar.
  */
-export function HubTab({ views, defaultView }: Props) {
+export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ view?: string | string[] }>();
@@ -97,29 +110,54 @@ export function HubTab({ views, defaultView }: Props) {
   return (
     <View style={styles.container}>
       <View style={[styles.chipBar, { paddingTop: chipTop + 6 }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-        >
-          {views.map((v) => {
-            const active = v.key === view;
-            return (
-              <TouchableOpacity
-                key={v.key}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => selectView(v.key)}
-                activeOpacity={0.85}
-              >
-                <Text
-                  style={[styles.chipText, active && styles.chipTextActive]}
+        {chipLayout === "wrap" ? (
+          // Wrap layout: chips flow onto multiple rows. Used when there
+          // are too many chips to fit on a single phone-width row and
+          // we'd rather show them all than force a horizontal swipe.
+          <View style={styles.chipWrap}>
+            {views.map((v) => {
+              const active = v.key === view;
+              return (
+                <TouchableOpacity
+                  key={v.key}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => selectView(v.key)}
+                  activeOpacity={0.85}
                 >
-                  {v.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+                  <Text
+                    style={[styles.chipText, active && styles.chipTextActive]}
+                  >
+                    {v.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            {views.map((v) => {
+              const active = v.key === view;
+              return (
+                <TouchableOpacity
+                  key={v.key}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => selectView(v.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[styles.chipText, active && styles.chipTextActive]}
+                  >
+                    {v.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       <SafeAreaInsetsContext.Provider value={bodyInsets}>
@@ -161,6 +199,18 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: "row",
     gap: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  // Wrap variant: same horizontal padding as the scroll variant, but
+  // chips can flow onto multiple rows. `rowGap` puts a small vertical
+  // gap between wrapped rows so the second row doesn't sit flush
+  // against the first.
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: 8,
+    rowGap: 8,
     paddingHorizontal: 12,
     alignItems: "center",
   },

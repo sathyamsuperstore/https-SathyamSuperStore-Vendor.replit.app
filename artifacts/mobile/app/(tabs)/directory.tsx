@@ -4,11 +4,16 @@ import SuppliersScreen from "./suppliers";
 import UsersScreen from "./users";
 import MrpScreen from "./mrp";
 import LastSupplyDateScreen from "./last-supply-date";
+import LatestPurchasesScreen from "./latest-purchases";
 
 export default function DirectoryHubScreen() {
   return (
     <HubTab
       defaultView="suppliers"
+      // Five chips no longer fit on a single row at typical phone
+      // widths, so wrap onto two rows here. Other hubs keep the
+      // default horizontal scroll.
+      chipLayout="wrap"
       views={[
         {
           key: "suppliers",
@@ -29,6 +34,11 @@ export default function DirectoryHubScreen() {
           key: "last-supply-date",
           label: "LastSupplyDate",
           render: () => <LastSupplyDateScreen />,
+        },
+        {
+          key: "purchases",
+          label: "Latest Purchases",
+          render: () => <LatestPurchasesScreen />,
         },
       ]}
     />

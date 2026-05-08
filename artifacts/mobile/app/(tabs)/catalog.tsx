@@ -2,7 +2,6 @@ import React from "react";
 import { HubTab } from "@/components/HubTab";
 import PromoScreen from "./promo";
 import BrandReviewScreen from "./brand-review";
-import LatestPurchasesScreen from "./latest-purchases";
 
 export default function CatalogHubScreen() {
   return (
@@ -14,11 +13,6 @@ export default function CatalogHubScreen() {
           key: "promoPrev",
           label: "PromoPrev",
           render: () => <PromoScreen mode="prev" />,
-        },
-        {
-          key: "purchases",
-          label: "Latest Purchases",
-          render: () => <LatestPurchasesScreen />,
         },
         {
           key: "brand",
