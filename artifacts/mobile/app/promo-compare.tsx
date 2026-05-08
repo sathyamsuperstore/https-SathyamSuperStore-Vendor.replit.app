@@ -52,11 +52,18 @@ function fmtFileTimestamp(d: Date): string {
   return `${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${d.getFullYear()} ${pad2(d.getHours())}${pad2(d.getMinutes())}`;
 }
 
-// Diff key: "Item No|BatchNo".
+// Diff key: "Item No|BatchNo|MRP". The Promo importer dedupes on this
+// triple (a single batch can legitimately ship at multiple MRPs over
+// time), so the diff has to mirror that or multiple rows sharing the
+// same (Item No, BatchNo) would collapse and silently under-report
+// changes. MRP changes themselves still surface — they just appear as
+// matching add/remove rows instead of an in-place edit, which is the
+// correct semantic for an MRP swap.
 export function promoKey(row: PromoEntry): string {
   const itemNo = String(row["Item No"] ?? "").trim();
   const batchNo = String(row["BatchNo"] ?? "").trim();
-  return `${itemNo}|${batchNo}`;
+  const mrp = String(row["MRP"] ?? "").trim();
+  return `${itemNo}|${batchNo}|${mrp}`;
 }
 
 function fmtVal(v: unknown): string {
@@ -130,8 +137,8 @@ function computeDiff(current: PromoEntry[], prev: PromoEntry[]) {
       const [itemNo, batchNo] = k.split("|");
       changed.push({
         key: k,
-        itemNo,
-        batchNo,
+        itemNo: itemNo ?? "",
+        batchNo: batchNo ?? "",
         description: String(r["Item Description"] ?? ""),
         diffs,
         cur: r,
@@ -461,7 +468,9 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
           <Feather name="clock" size={14} color={Colors.textMuted} />
           <Text style={styles.snapshotText}>
             {hasSnapshot
-              ? `Snapshot from ${fmtTimestamp(promoPrevSnapshotAt!)}`
+              ? promoPrevSnapshotAt
+                ? `Snapshot from ${fmtTimestamp(promoPrevSnapshotAt)}`
+                : "Snapshot from an earlier session"
               : "No previous snapshot yet"}
           </Text>
         </View>
