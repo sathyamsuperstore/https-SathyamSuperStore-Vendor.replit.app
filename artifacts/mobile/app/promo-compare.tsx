@@ -68,12 +68,30 @@ function fmtVal(v: unknown): string {
   return String(v);
 }
 
+// Strict numeric token: optional sign, digits, optional decimal. We use
+// this instead of parseFloat() because parseFloat("01/05/2026") returns
+// 1, which would cause month/year-only PromotionToDate changes to be
+// silently swallowed by the diff. Anything that isn't a clean numeric
+// literal falls through to a normalized string compare.
+const NUMERIC_RE = /^-?\d+(?:\.\d+)?$/;
+
+function asNumeric(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!NUMERIC_RE.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 function valuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  // Loose numeric compare so 12 and "12" don't false-positive as a change.
-  const na = typeof a === "number" ? a : parseFloat(String(a ?? ""));
-  const nb = typeof b === "number" ? b : parseFloat(String(b ?? ""));
-  if (!isNaN(na) && !isNaN(nb)) return na === nb;
+  // Numeric-token compare so 12 and "12.00" don't false-positive as a
+  // change. Date-shaped strings (e.g. "01/05/2026") are NOT considered
+  // numeric — they fall through to the normalized string compare.
+  const na = asNumeric(a);
+  const nb = asNumeric(b);
+  if (na !== null && nb !== null) return na === nb;
   return String(a ?? "").trim() === String(b ?? "").trim();
 }
 
@@ -192,7 +210,7 @@ export default function PromoCompareScreen() {
       } else {
         const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64", cellStyles: true });
         const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" as any });
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: "base64" });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, {
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -307,16 +325,35 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
         await Print.printAsync({ html });
       } else {
         const ts = fmtFileTimestamp(new Date());
-        const fileName = `Sathyam Super Store Promo Changes ${ts}`;
-        const { uri } = await Print.printToFileAsync({ html, fileName } as any);
+        const fileName = `Sathyam Super Store Promo Changes ${ts}.pdf`;
+        // expo-print's FilePrintOptions doesn't expose a `fileName` field,
+        // so we let it write to the auto-named temp file and then move
+        // the result into the cache dir under our preferred name. This
+        // keeps the type-checked Print API surface intact while still
+        // sharing the file with the customer-facing filename.
+        const { uri: tmpUri } = await Print.printToFileAsync({ html });
+        const targetUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        try {
+          // Best-effort cleanup if a previous export with the same
+          // timestamp already exists (rare but possible if the user
+          // hits Export twice within the same minute).
+          await FileSystem.deleteAsync(targetUri, { idempotent: true });
+          await FileSystem.moveAsync({ from: tmpUri, to: targetUri });
+        } catch {
+          // If the move fails for any reason, fall back to sharing the
+          // temp URI directly — the export still works, just with the
+          // OS-generated filename.
+        }
+        const finalUri =
+          (await FileSystem.getInfoAsync(targetUri)).exists ? targetUri : tmpUri;
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, {
+          await Sharing.shareAsync(finalUri, {
             mimeType: "application/pdf",
             dialogTitle: "Export PDF",
             UTI: "com.adobe.pdf",
           });
         } else {
-          Alert.alert("PDF saved", `File saved to: ${uri}`);
+          Alert.alert("PDF saved", `File saved to: ${finalUri}`);
         }
       }
     } catch (e: any) {
