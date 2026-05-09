@@ -170,13 +170,19 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
                 key={v.key}
                 // absoluteFill so the inactive sub-screen stays in the
                 // tree (preserves scroll, search, list state) but is
-                // not visible. display:none also prevents it from
-                // intercepting touches while hidden.
+                // not visible. `display:none` hides it visually and
+                // `pointerEvents:none` (in `style`, not as a prop —
+                // the prop form is deprecated and silently ignored on
+                // RN Web 0.74+, which caused taps to bleed through to
+                // the inactive sibling's list rows underneath) makes
+                // sure no stray touches reach it either.
                 style={[
                   StyleSheet.absoluteFill,
-                  { display: active ? "flex" : "none" },
+                  {
+                    display: active ? "flex" : "none",
+                    pointerEvents: active ? "auto" : "none",
+                  },
                 ]}
-                pointerEvents={active ? "auto" : "none"}
               >
                 {v.render()}
               </View>
