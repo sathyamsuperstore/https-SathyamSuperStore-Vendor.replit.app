@@ -173,6 +173,11 @@ export default function PriceTagPreviewScreen() {
   const [driveSearch, setDriveSearch] = useState("");
   const [driveAttachingId, setDriveAttachingId] = useState<string | null>(null);
 
+  // Add-image action sheet (used on web + Android — iOS uses the
+  // native ActionSheetIOS instead). Tracks which item the chosen
+  // source should attach to.
+  const [addImageOpenForKey, setAddImageOpenForKey] = useState<string | null>(null);
+
   const items = mode === "modify" ? workingItems : priceTagItems;
 
   function enterModify() {
@@ -383,14 +388,23 @@ export default function PriceTagPreviewScreen() {
         }
       );
     } else {
-      Alert.alert("Add Product Image", undefined, [
-        { text: "Take Photo", onPress: () => takePhoto(key) },
-        { text: "Choose from Library", onPress: () => pickFromLibrary(key) },
-        { text: "Browse Google Drive", onPress: () => openDrivePicker(key) },
-        { text: "Google Drive Link", onPress: () => openDriveModal(key) },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      // Web + Android: `Alert.alert` only reliably renders 3 buttons,
+      // so the Drive options were silently dropped. Use a custom
+      // modal action sheet so every source is always visible.
+      setAddImageOpenForKey(key);
     }
+  }
+
+  function chooseAddImageSource(
+    source: "camera" | "library" | "drivePicker" | "driveLink",
+  ) {
+    const key = addImageOpenForKey;
+    if (!key) return;
+    setAddImageOpenForKey(null);
+    if (source === "camera") takePhoto(key);
+    else if (source === "library") pickFromLibrary(key);
+    else if (source === "drivePicker") openDrivePicker(key);
+    else if (source === "driveLink") openDriveModal(key);
   }
   async function removeImage(key: string) {
     try {
@@ -568,6 +582,69 @@ export default function PriceTagPreviewScreen() {
             </Text>
           )}
         </ScrollView>
+
+        {/* Add-image source picker (web + Android). iOS uses the
+            native ActionSheetIOS in `handleAddImage`. */}
+        <Modal
+          visible={addImageOpenForKey !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAddImageOpenForKey(null)}
+        >
+          <TouchableOpacity
+            style={styles.sheetScrim}
+            activeOpacity={1}
+            onPress={() => setAddImageOpenForKey(null)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.sheetCard}>
+              <Text style={styles.sheetTitle}>Add Product Image</Text>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => chooseAddImageSource("camera")}
+              >
+                <Feather name="camera" size={18} color={Colors.primary} />
+                <Text style={styles.sheetRowText}>Take Photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => chooseAddImageSource("library")}
+              >
+                <Feather name="image" size={18} color={Colors.primary} />
+                <Text style={styles.sheetRowText}>Choose from Library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => chooseAddImageSource("drivePicker")}
+              >
+                <Feather name="folder" size={18} color={Colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetRowText}>Browse Google Drive</Text>
+                  <Text style={styles.sheetRowSub}>
+                    Pick from images in your connected Drive
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => chooseAddImageSource("driveLink")}
+              >
+                <Feather name="link" size={18} color={Colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetRowText}>Google Drive Link</Text>
+                  <Text style={styles.sheetRowSub}>
+                    Paste a shared file URL
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetRow, styles.sheetCancelRow]}
+                onPress={() => setAddImageOpenForKey(null)}
+              >
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Drive URL modal */}
         <Modal
@@ -1283,6 +1360,33 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   modalCancelText: { color: Colors.text, fontWeight: "700" },
+  sheetScrim: {
+    flex: 1, backgroundColor: "rgba(15,23,42,0.45)",
+    justifyContent: "flex-end",
+  },
+  sheetCard: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 24,
+  },
+  sheetTitle: {
+    fontSize: 13, fontWeight: "700", color: Colors.textMuted,
+    textTransform: "uppercase", letterSpacing: 0.5,
+    paddingHorizontal: 8, paddingVertical: 12, textAlign: "center",
+  },
+  sheetRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: 14, paddingVertical: 14,
+    borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  sheetRowText: { fontSize: 15, color: Colors.text, fontWeight: "600" },
+  sheetRowSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  sheetCancelRow: {
+    justifyContent: "center", marginTop: 8,
+    borderTopWidth: 0,
+    backgroundColor: Colors.background, borderRadius: 10,
+  },
+  sheetCancelText: { fontSize: 15, color: Colors.danger, fontWeight: "700" },
   modalConfirm: {
     paddingHorizontal: 18, paddingVertical: 10, borderRadius: 8,
     backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center",
