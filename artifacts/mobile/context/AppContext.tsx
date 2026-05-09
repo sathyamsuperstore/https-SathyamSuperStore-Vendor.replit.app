@@ -208,6 +208,10 @@ interface AppContextType {
   removePriceTagItem: (key: string) => Promise<void>;
   setPriceTagImage: (key: string, imageUri: string | null) => Promise<void>;
   clearPriceTagItems: () => Promise<void>;
+  // Visual style applied to every price tag (on-screen + PDF export).
+  // Persisted so the user's last choice sticks across app restarts.
+  priceTagStyle: PriceTagStyle;
+  setPriceTagStyle: (style: PriceTagStyle) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -319,6 +323,11 @@ export interface PriceTagItem {
   addedAt: number;
 }
 
+// Available visual styles for the printed price tag. Kept open as a
+// string union so adding a new layout later only requires touching
+// the renderer + this type.
+export type PriceTagStyle = "A" | "B";
+
 // One row in the Last Supply Date table. The date is stored as a
 // "DD/MM/YYYY" string (normalised at import time) so it is safe to
 // sort and display without further parsing.
@@ -351,6 +360,10 @@ const PROMO_NEW_QTY_KEY = "@promoNewQty";
 // the PriceTag Preview screen and PDF export keep working even if
 // the underlying Promo data is later re-imported or cleared.
 const PRICE_TAG_KEY = "@priceTagItems";
+// Persisted user choice of which price-tag visual style to render
+// (and export to PDF). Two options for now: "A" = Special-Offer card
+// (Protinex-style), "B" = Low-Prices banner (Aashirvaad-style).
+const PRICE_TAG_STYLE_KEY = "@priceTagStyle";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -415,6 +428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [promoEntries]);
   const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
   const [priceTagItems, setPriceTagItems] = useState<PriceTagItem[]>([]);
+  const [priceTagStyle, setPriceTagStyleState] = useState<PriceTagStyle>("A");
   // Mirror so the per-item helpers (image set, remove) can read the
   // latest list without depending on a possibly-stale closure.
   const priceTagItemsRef = useRef<PriceTagItem[]>([]);
@@ -430,7 +444,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -443,6 +457,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
         AsyncStorage.getItem(PRICE_TAG_KEY),
+        AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -479,6 +494,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? JSON.parse(priceTagData)
         : [];
       setPriceTagItems(loadedPriceTagItems);
+
+      // Style is a tiny enum; reject anything that doesn't match the
+      // current valid set so a corrupted/legacy value falls back to the
+      // default instead of bricking the screen.
+      if (priceTagStyleData === "A" || priceTagStyleData === "B") {
+        setPriceTagStyleState(priceTagStyleData);
+      }
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -886,6 +908,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagItems([]);
   }
 
+  async function setPriceTagStyle(style: PriceTagStyle) {
+    await AsyncStorage.setItem(PRICE_TAG_STYLE_KEY, style);
+    setPriceTagStyleState(style);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -962,6 +989,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         removePriceTagItem,
         setPriceTagImage,
         clearPriceTagItems,
+        priceTagStyle,
+        setPriceTagStyle,
         hydrated,
       }}
     >

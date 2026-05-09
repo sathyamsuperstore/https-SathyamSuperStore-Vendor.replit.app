@@ -22,47 +22,81 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useApp, type PriceTagItem } from "@/context/AppContext";
+import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
 import { pickFont, hasTamil } from "@/constants/typography";
 
 // PriceTag Preview screen.
 //
-// Two modes:
-// - "view": read-only grid of tags, with an Export PDF button. Each
-//   tag still allows attaching/replacing a product image (the user
-//   wanted a "second opportunity" to add images).
-// - "modify": shows a Remove (×) button on every tag. Tapping Save
-//   commits the visible list (i.e. drops removed items) and flips back
-//   to view mode.
+// Two visual styles, picked by the user from a chip toggle in the
+// toolbar. The same style drives the on-screen grid AND the exported
+// PDF, so what you see is what prints.
 //
-// All persistence goes through AppContext so a refresh / app restart
-// keeps the user's selection and attached images.
+//   "A"  Special Offer card  — image right, MRP strikethrough, big
+//        OFFER PRICE, dark-red/cream tones (Protinex-style).
+//   "B"  Low Prices banner   — red banner top with "LOW PRICES",
+//        image+price middle, red banner bottom with description
+//        (Aashirvaad-style).
+//
+// Modes:
+//   "view"   — read-only grid, Modify + Export PDF buttons.
+//   "modify" — × on every tag; Save commits removed items, Cancel
+//              rolls back.
+//
+// All persistence (items, attached images, chosen style) flows through
+// AppContext so a refresh / app restart keeps the preview intact.
 
 type Mode = "view" | "modify";
 
-function fmtPrice(v: string | number | undefined): string {
+// Style A's tile-art accent palette (matches the references).
+const RED = "#C8102E";
+const DEEP_RED = "#7A0F19";
+const CREAM = "#F8F2E4";
+const GOLD = "#B8860B";
+
+// ----------- Price helpers -----------
+
+// Round to whole rupees and return as a string (no decimals). The
+// store's printed tags don't use paise, so 506.49 -> "506".
+function fmt0(v: string | number | undefined): string {
   if (v === undefined || v === null || v === "") return "";
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n) || n === 0) return "";
-  return n.toFixed(2);
+  return String(Math.round(n));
+}
+
+function toNum(v: string | number | undefined): number {
+  if (v === undefined || v === null || v === "") return NaN;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 // Decide which price line to print and how to label it.
-//   PromotionPrice present  -> "Promotion Price"
-//   else SP                 -> "Price"
-//   else                    -> blank line (still draws the row)
-function priceFor(item: PriceTagItem): { label: string; value: string } {
-  const p = fmtPrice(item.promotionPrice);
-  if (p) return { label: "Promotion Price", value: p };
-  const sp = fmtPrice(item.sp);
-  if (sp) return { label: "Price", value: sp };
-  return { label: "Price", value: "—" };
+//   PromotionPrice present  -> label "Offer Price"
+//   else SP                 -> label "Price"
+//   else                    -> em-dash placeholder
+function priceFor(item: PriceTagItem): { label: string; value: string; isOffer: boolean } {
+  const p = fmt0(item.promotionPrice);
+  if (p) return { label: "Offer Price", value: p, isOffer: true };
+  const sp = fmt0(item.sp);
+  if (sp) return { label: "Price", value: sp, isOffer: false };
+  return { label: "Price", value: "—", isOffer: false };
 }
 
-// Pull a Google Drive file ID out of a paste — same heuristics as
-// drive-import.tsx but inlined here so we can fetch the public image
-// blob and inline it into the tag without round-tripping Drive's
-// authenticated APIs (this image picker only supports public files).
+// Customer savings = MRP - active price. Returns null when there's
+// no real saving (no MRP, no offer line, or MRP <= offer).
+function offAmount(item: PriceTagItem): string | null {
+  const mrp = toNum(item.mrp);
+  // Only compute "OFF" against the offer price — falling back to SP
+  // would imply every regular item is "discounted" which it isn't.
+  const offer = toNum(item.promotionPrice);
+  if (!Number.isFinite(mrp) || !Number.isFinite(offer)) return null;
+  const off = Math.round(mrp) - Math.round(offer);
+  if (off <= 0) return null;
+  return String(off);
+}
+
+// ----------- Drive helpers -----------
+
 function extractDriveFileId(input: string): string | null {
   const s = input.trim();
   const fileMatch = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
@@ -82,6 +116,10 @@ async function blobToDataUri(blob: Blob): Promise<string> {
   });
 }
 
+// ============================================================
+// Screen
+// ============================================================
+
 export default function PriceTagPreviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -90,36 +128,29 @@ export default function PriceTagPreviewScreen() {
     savePriceTagItems,
     setPriceTagImage,
     clearPriceTagItems,
+    priceTagStyle,
+    setPriceTagStyle,
   } = useApp();
 
   const [mode, setMode] = useState<Mode>("view");
-  // Working copy used in modify mode — mirrors priceTagItems but allows
-  // the user to "remove" without persisting until they tap Save.
   const [workingItems, setWorkingItems] = useState<PriceTagItem[]>(priceTagItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Drive URL paste modal state. Stores which item the URL is being
-  // attached to so the same modal serves every tag.
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
   const [driveUrl, setDriveUrl] = useState("");
   const [driveLoading, setDriveLoading] = useState(false);
 
-  // The list we render. In view mode it's the persisted list; in
-  // modify mode it's the working copy that can shrink as the user
-  // taps remove buttons.
   const items = mode === "modify" ? workingItems : priceTagItems;
 
   function enterModify() {
     setWorkingItems(priceTagItems);
     setMode("modify");
   }
-
   function cancelModify() {
     setWorkingItems(priceTagItems);
     setMode("view");
   }
-
   async function commitModify() {
     try {
       await savePriceTagItems(workingItems);
@@ -129,68 +160,46 @@ export default function PriceTagPreviewScreen() {
       Alert.alert("Couldn't save", e?.message ?? "Storage error");
     }
   }
-
   function removeFromWorking(key: string) {
     setWorkingItems((prev) => prev.filter((i) => i.key !== key));
   }
 
-  // ---------------------------------------------------------------
-  // Image attachment
-  //
-  // Supports three sources in both view and modify modes (the user
-  // wanted a "second opportunity" to add images on the preview).
-  //   - Camera (expo-image-picker)
-  //   - Photo library / file picker (expo-image-picker)
-  //   - Google Drive URL paste (public file -> data URI fetch)
-  //
-  // For all three we resize to ≤1024px on the long edge and re-encode
-  // as JPEG q=0.6 before storing as a data URI. Keeps AsyncStorage and
-  // the eventual PDF export sizes manageable even with full-res photos.
-  // ---------------------------------------------------------------
-  async function ensureLibraryPermission(): Promise<boolean> {
-    const res = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (res.status !== "granted") {
+  // -------- Image attachment (camera / gallery / drive) --------
+  async function ensureLibraryPermission() {
+    const r = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (r.status !== "granted") {
       Alert.alert("Permission needed", "Please allow photo library access.");
       return false;
     }
     return true;
   }
-
-  async function ensureCameraPermission(): Promise<boolean> {
-    const res = await ImagePicker.requestCameraPermissionsAsync();
-    if (res.status !== "granted") {
+  async function ensureCameraPermission() {
+    const r = await ImagePicker.requestCameraPermissionsAsync();
+    if (r.status !== "granted") {
       Alert.alert("Permission needed", "Please allow camera access.");
       return false;
     }
     return true;
   }
-
   async function applyAsset(key: string, asset: ImagePicker.ImagePickerAsset) {
     const longerEdge = Math.max(asset.width ?? 0, asset.height ?? 0);
     const ratio = longerEdge > 1024 ? 1024 / longerEdge : 1;
     const resizeActions = ratio < 1
       ? [{ resize: { width: Math.round((asset.width ?? 0) * ratio) } }]
       : [];
-    const manipulated = await ImageManipulator.manipulateAsync(
-      asset.uri,
-      resizeActions,
-      {
-        compress: 0.6,
-        format: ImageManipulator.SaveFormat.JPEG,
-        base64: true,
-      }
-    );
-    const b64 = manipulated.base64 ?? asset.base64;
+    const m = await ImageManipulator.manipulateAsync(asset.uri, resizeActions, {
+      compress: 0.6,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    });
+    const b64 = m.base64 ?? asset.base64;
     if (!b64) throw new Error("Could not encode image");
     const dataUri = `data:image/jpeg;base64,${b64}`;
     await setPriceTagImage(key, dataUri);
-    // If we're in modify mode, mirror the change into the working copy
-    // so the user sees the image without needing to commit yet.
     setWorkingItems((prev) =>
       prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
     );
   }
-
   async function pickFromLibrary(key: string) {
     if (!(await ensureLibraryPermission())) return;
     setBusyKey(key);
@@ -201,16 +210,13 @@ export default function PriceTagPreviewScreen() {
         quality: 0.6,
         base64: true,
       });
-      if (!result.canceled && result.assets?.[0]) {
-        await applyAsset(key, result.assets[0]);
-      }
+      if (!result.canceled && result.assets?.[0]) await applyAsset(key, result.assets[0]);
     } catch (e: any) {
       Alert.alert("Couldn't add image", e?.message ?? "Unknown error");
     } finally {
       setBusyKey(null);
     }
   }
-
   async function takePhoto(key: string) {
     if (!(await ensureCameraPermission())) return;
     setBusyKey(key);
@@ -220,36 +226,30 @@ export default function PriceTagPreviewScreen() {
         quality: 0.6,
         base64: true,
       });
-      if (!result.canceled && result.assets?.[0]) {
-        await applyAsset(key, result.assets[0]);
-      }
+      if (!result.canceled && result.assets?.[0]) await applyAsset(key, result.assets[0]);
     } catch (e: any) {
       Alert.alert("Couldn't take photo", e?.message ?? "Unknown error");
     } finally {
       setBusyKey(null);
     }
   }
-
   function openDriveModal(key: string) {
     setDriveUrl("");
     setDriveOpenForKey(key);
   }
-
   async function attachDrive() {
     if (!driveOpenForKey) return;
     const id = extractDriveFileId(driveUrl);
     if (!id) {
       Alert.alert(
         "Invalid Drive link",
-        "Paste a Google Drive sharing link or file ID. Make sure the file is shared as 'Anyone with the link'."
+        "Paste a Google Drive sharing link or file ID. The file must be shared as 'Anyone with the link'."
       );
       return;
     }
     const key = driveOpenForKey;
     setDriveLoading(true);
     try {
-      // Public download endpoint — works for files shared with
-      // "Anyone with the link" without an OAuth token.
       const url = `https://drive.google.com/uc?export=download&id=${id}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
@@ -270,7 +270,6 @@ export default function PriceTagPreviewScreen() {
       setDriveLoading(false);
     }
   }
-
   function handleAddImage(key: string) {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -293,7 +292,6 @@ export default function PriceTagPreviewScreen() {
       ]);
     }
   }
-
   async function removeImage(key: string) {
     try {
       await setPriceTagImage(key, null);
@@ -305,136 +303,14 @@ export default function PriceTagPreviewScreen() {
     }
   }
 
-  // ---------------------------------------------------------------
-  // PDF export — renders a 2-column grid of price tags with the same
-  // visual hierarchy the on-screen cards use. Tamil descriptions are
-  // wrapped in a span that loads Noto Sans Tamil from Google Fonts so
-  // the printed PDF renders the script correctly even on systems
-  // without a local Tamil font installed.
-  // ---------------------------------------------------------------
-  function buildPdfHtml(): string {
-    const tagsHtml = priceTagItems
-      .map((it) => {
-        const { label, value } = priceFor(it);
-        const mrp = fmtPrice(it.mrp);
-        const desc = it.description || "";
-        const tamil = hasTamil(desc);
-        const descSpan = tamil
-          ? `<span class="tamil">${escapeHtml(desc)}</span>`
-          : escapeHtml(desc);
-        const img = it.imageUri
-          ? `<div class="img"><img src="${it.imageUri}" /></div>`
-          : `<div class="img empty">No Image</div>`;
-        return `
-          <div class="tag">
-            ${img}
-            <div class="body">
-              <div class="row1">
-                <span class="itemno">#${escapeHtml(it.itemNo || "—")}</span>
-                ${mrp ? `<span class="mrp">MRP&nbsp;₹${escapeHtml(mrp)}</span>` : ""}
-              </div>
-              <div class="desc">${descSpan}</div>
-              <div class="price">
-                <span class="plabel">${escapeHtml(label)}</span>
-                <span class="pval">₹${escapeHtml(value)}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
-
-    return `<!DOCTYPE html>
-<html><head><meta charset="utf-8" />
-<title>Price Tags</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet" />
-<style>
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 14px;
-    color: #0F172A;
-  }
-  h1 {
-    font-size: 14px;
-    color: #64748B;
-    margin: 0 0 12px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .tag {
-    border: 1.5px solid #1A3A5C;
-    border-radius: 8px;
-    padding: 10px;
-    page-break-inside: avoid;
-    display: flex;
-    flex-direction: column;
-    min-height: 220px;
-  }
-  .img {
-    width: 100%;
-    height: 110px;
-    border: 1px dashed #CBD5E1;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    margin-bottom: 8px;
-  }
-  .img img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .img.empty { color: #94A3B8; font-size: 11px; }
-  .body { flex: 1; display: flex; flex-direction: column; }
-  .row1 { display: flex; justify-content: space-between; align-items: center; }
-  .itemno { font-size: 11px; color: #64748B; font-weight: 700; letter-spacing: 0.3px; }
-  .mrp { font-size: 11px; color: #64748B; font-weight: 700; }
-  .desc {
-    font-size: 13px;
-    font-weight: 700;
-    color: #0F172A;
-    margin-top: 4px;
-    line-height: 1.25;
-    flex: 1;
-  }
-  .tamil {
-    font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif;
-    font-weight: 700;
-  }
-  .price {
-    margin-top: 8px;
-    border-top: 1px solid #E2E8F0;
-    padding-top: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-  .plabel { font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase; }
-  .pval { font-size: 22px; color: #1A3A5C; font-weight: 800; }
-  @media print { @page { margin: 10mm; } }
-</style>
-</head><body>
-  <h1>Price Tags · ${priceTagItems.length} item${priceTagItems.length === 1 ? "" : "s"}</h1>
-  <div class="grid">${tagsHtml}</div>
-</body></html>`;
-  }
-
+  // -------- PDF export --------
   async function exportPdf() {
     if (priceTagItems.length === 0) return;
     setExporting(true);
     try {
-      const html = buildPdfHtml();
+      const html = buildPdfHtml(priceTagItems, priceTagStyle);
       const { uri } = await Print.printToFileAsync({ html });
-      if (Platform.OS === "web") {
-        // expo-print on web opens the system print dialog directly,
-        // so we don't need an extra share step.
-        return;
-      }
+      if (Platform.OS === "web") return;
       const can = await Sharing.isAvailableAsync();
       if (can) {
         await Sharing.shareAsync(uri, {
@@ -472,7 +348,7 @@ export default function PriceTagPreviewScreen() {
     );
   }
 
-  // -------------------- Empty state --------------------
+  // -------- Empty state --------
   if (priceTagItems.length === 0 && mode === "view") {
     return (
       <>
@@ -528,9 +404,7 @@ export default function PriceTagPreviewScreen() {
                 ) : (
                   <Feather name="download" size={14} color={Colors.textInverse} />
                 )}
-                <Text style={styles.exportBtnText}>
-                  {exporting ? "Exporting…" : "Export PDF"}
-                </Text>
+                <Text style={styles.exportBtnText}>{exporting ? "Exporting…" : "Export PDF"}</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -546,16 +420,29 @@ export default function PriceTagPreviewScreen() {
           )}
         </View>
 
+        {/* Style picker */}
+        <View style={styles.styleBar}>
+          <Text style={styles.styleBarLabel}>Style</Text>
+          <StyleChip
+            label="A · Special Offer"
+            active={priceTagStyle === "A"}
+            onPress={() => setPriceTagStyle("A")}
+          />
+          <StyleChip
+            label="B · Low Prices"
+            active={priceTagStyle === "B"}
+            onPress={() => setPriceTagStyle("B")}
+          />
+        </View>
+
         <ScrollView
           contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 24 }]}
         >
           {items.map((it) => {
-            const { label, value } = priceFor(it);
-            const mrp = fmtPrice(it.mrp);
             const isBusy = busyKey === it.key;
+            const TagComponent = priceTagStyle === "B" ? StyleBTag : StyleATag;
             return (
-              <View key={it.key} style={styles.tag}>
-                {/* Remove button (modify mode only) */}
+              <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
                   <TouchableOpacity
                     style={styles.removeBtn}
@@ -565,62 +452,12 @@ export default function PriceTagPreviewScreen() {
                     <Feather name="x" size={14} color={Colors.textInverse} />
                   </TouchableOpacity>
                 )}
-
-                {/* Image slot */}
-                <View style={styles.imgSlot}>
-                  {it.imageUri ? (
-                    <>
-                      <Image source={{ uri: it.imageUri }} style={styles.img} resizeMode="contain" />
-                      <View style={styles.imgActions}>
-                        <TouchableOpacity
-                          style={styles.imgActionChip}
-                          onPress={() => handleAddImage(it.key)}
-                        >
-                          <Feather name="refresh-cw" size={11} color={Colors.text} />
-                          <Text style={styles.imgActionText}>Replace</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.imgActionChip, styles.imgActionDanger]}
-                          onPress={() => removeImage(it.key)}
-                        >
-                          <Feather name="trash" size={11} color={Colors.danger} />
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.imgEmpty}
-                      onPress={() => handleAddImage(it.key)}
-                      activeOpacity={0.85}
-                    >
-                      {isBusy ? (
-                        <ActivityIndicator size="small" color={Colors.primary} />
-                      ) : (
-                        <>
-                          <Feather name="image" size={20} color={Colors.textMuted} />
-                          <Text style={styles.imgEmptyText}>Add Image</Text>
-                          <Text style={styles.imgEmptySub}>Camera · Gallery · Drive</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Body */}
-                <View style={styles.row1}>
-                  <Text style={styles.itemNo}>#{it.itemNo || "—"}</Text>
-                  {mrp ? <Text style={styles.mrp}>MRP ₹{mrp}</Text> : <View />}
-                </View>
-                <Text
-                  style={[styles.desc, { fontFamily: pickFont(it.description, "bold") }]}
-                  numberOfLines={3}
-                >
-                  {it.description || "(no description)"}
-                </Text>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>{label}</Text>
-                  <Text style={styles.priceValue}>₹{value}</Text>
-                </View>
+                <TagComponent
+                  item={it}
+                  busy={isBusy}
+                  onAddImage={() => handleAddImage(it.key)}
+                  onRemoveImage={() => removeImage(it.key)}
+                />
               </View>
             );
           })}
@@ -682,6 +519,449 @@ export default function PriceTagPreviewScreen() {
   );
 }
 
+// ============================================================
+// Style A — Special Offer card (Protinex-inspired)
+// ============================================================
+//
+// Cream background with deep-red MRP strikethrough and a big OFFER
+// PRICE in dark gold/red. Image sits on the right inside a maroon
+// panel. Item No demoted to a tiny line at the bottom-left footer.
+
+function StyleATag({
+  item, busy, onAddImage, onRemoveImage,
+}: {
+  item: PriceTagItem;
+  busy: boolean;
+  onAddImage: () => void;
+  onRemoveImage: () => void;
+}) {
+  const { label, value, isOffer } = priceFor(item);
+  const mrp = fmt0(item.mrp);
+  const off = offAmount(item);
+
+  return (
+    <View style={a.card}>
+      {/* SPECIAL OFFER badge (only when there's a real offer) */}
+      {isOffer && (
+        <View style={a.badge}>
+          <Text style={a.badgeText}>SPECIAL{"\n"}OFFER</Text>
+        </View>
+      )}
+
+      <View style={a.row}>
+        {/* Left: text */}
+        <View style={a.left}>
+          <Text
+            style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
+            numberOfLines={3}
+          >
+            {item.description || "(no description)"}
+          </Text>
+
+          {mrp && (
+            <View style={a.mrpRow}>
+              <Text style={a.rupeeSm}>₹</Text>
+              <Text style={a.mrpVal}>{mrp}</Text>
+              <Text style={a.mrpLabel}>MRP</Text>
+              <View style={a.strike} />
+            </View>
+          )}
+
+          <View style={a.priceBlock}>
+            <View style={a.priceRow}>
+              <Text style={a.rupeeBig}>₹</Text>
+              <Text style={a.priceVal}>{value}</Text>
+            </View>
+            <Text style={a.priceLabel}>{label.toUpperCase()}</Text>
+            {off && <Text style={a.offText}>SAVE ₹{off}</Text>}
+          </View>
+        </View>
+
+        {/* Right: image panel */}
+        <View style={a.right}>
+          <ImageSlot
+            item={item}
+            busy={busy}
+            onAddImage={onAddImage}
+            onRemoveImage={onRemoveImage}
+            tone="dark"
+          />
+          <Text style={a.brandFooter}>Sathyam</Text>
+        </View>
+      </View>
+
+      <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+    </View>
+  );
+}
+
+// ============================================================
+// Style B — Low Prices banner (Aashirvaad-inspired)
+// ============================================================
+//
+// Red banner top with "LOW PRICES", image+price middle row, red
+// banner bottom with the (Tamil-aware) description. ₹XX OFF appears
+// directly below the big price. Item No tucked in tiny under the
+// banner.
+
+function StyleBTag({
+  item, busy, onAddImage, onRemoveImage,
+}: {
+  item: PriceTagItem;
+  busy: boolean;
+  onAddImage: () => void;
+  onRemoveImage: () => void;
+}) {
+  const { value } = priceFor(item);
+  const off = offAmount(item);
+
+  return (
+    <View style={b.card}>
+      <View style={b.topBanner}>
+        <Text style={b.bannerText}>LOW PRICES</Text>
+      </View>
+
+      <View style={b.middle}>
+        <View style={b.imgWrap}>
+          <ImageSlot
+            item={item}
+            busy={busy}
+            onAddImage={onAddImage}
+            onRemoveImage={onRemoveImage}
+            tone="light"
+          />
+        </View>
+        <View style={b.priceCol}>
+          <View style={b.priceRow}>
+            <Text style={b.rupee}>₹</Text>
+            <Text style={b.priceVal}>{value}</Text>
+          </View>
+          {off ? (
+            <Text style={b.offText}>₹{off} OFF</Text>
+          ) : (
+            <Text style={b.offTextMuted}>OFFER PRICE</Text>
+          )}
+        </View>
+      </View>
+
+      <View style={b.bottomBanner}>
+        <Text
+          style={[b.descBanner, { fontFamily: pickFont(item.description, "bold") }]}
+          numberOfLines={2}
+        >
+          {item.description || "(no description)"}
+        </Text>
+      </View>
+
+      <Text style={b.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+    </View>
+  );
+}
+
+// ----------- Image slot (shared between styles) -----------
+
+function ImageSlot({
+  item, busy, onAddImage, onRemoveImage, tone,
+}: {
+  item: PriceTagItem;
+  busy: boolean;
+  onAddImage: () => void;
+  onRemoveImage: () => void;
+  tone: "dark" | "light";
+}) {
+  const slotStyle = tone === "dark" ? imgs.slotDark : imgs.slotLight;
+  const emptyTextColor = tone === "dark" ? "#F4D9DC" : Colors.textSecondary;
+  const emptySubColor = tone === "dark" ? "#E5B7BC" : Colors.textMuted;
+
+  if (item.imageUri) {
+    return (
+      <View style={[imgs.slot, slotStyle]}>
+        <Image source={{ uri: item.imageUri }} style={imgs.img} resizeMode="contain" />
+        <View style={imgs.actions}>
+          <TouchableOpacity style={imgs.actionChip} onPress={onAddImage}>
+            <Feather name="refresh-cw" size={11} color={Colors.text} />
+            <Text style={imgs.actionText}>Replace</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={imgs.actionChip} onPress={onRemoveImage}>
+            <Feather name="trash" size={11} color={Colors.danger} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      style={[imgs.slot, slotStyle, imgs.empty]}
+      onPress={onAddImage}
+      activeOpacity={0.85}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={tone === "dark" ? "#FFF" : Colors.primary} />
+      ) : (
+        <>
+          <Feather name="image" size={20} color={emptyTextColor} />
+          <Text style={[imgs.emptyText, { color: emptyTextColor }]}>Add Image</Text>
+          <Text style={[imgs.emptySub, { color: emptySubColor }]}>Camera · Gallery · Drive</Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function StyleChip({
+  label, active, onPress,
+}: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={[styles.styleChip, active && styles.styleChipActive]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <Text style={[styles.styleChipText, active && styles.styleChipTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ============================================================
+// PDF builder — emits style-specific HTML so the printed page
+// matches whatever the user is previewing on screen.
+// ============================================================
+
+function buildPdfHtml(items: PriceTagItem[], style: PriceTagStyle): string {
+  const tagsHtml = items
+    .map((it) => (style === "B" ? renderTagBHtml(it) : renderTagAHtml(it)))
+    .join("");
+
+  const styleCss = style === "B" ? PDF_CSS_B : PDF_CSS_A;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8" />
+<title>Price Tags</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 12px; color: #0F172A;
+  }
+  h1 {
+    font-size: 12px; color: #64748B; margin: 0 0 10px;
+    font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tamil { font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif; }
+  @media print { @page { margin: 8mm; } }
+  ${styleCss}
+</style>
+</head><body>
+  <h1>Price Tags · Style ${style} · ${items.length} item${items.length === 1 ? "" : "s"}</h1>
+  <div class="grid">${tagsHtml}</div>
+</body></html>`;
+}
+
+// ----- Style A HTML / CSS -----
+
+function renderTagAHtml(it: PriceTagItem): string {
+  const { label, value, isOffer } = priceFor(it);
+  const mrp = fmt0(it.mrp);
+  const off = offAmount(it);
+  const desc = it.description || "";
+  const tamil = hasTamil(desc);
+  const descSpan = tamil
+    ? `<span class="tamil">${escapeHtml(desc)}</span>`
+    : escapeHtml(desc);
+  const img = it.imageUri
+    ? `<img src="${it.imageUri}" />`
+    : `<div class="img-placeholder">No&nbsp;Image</div>`;
+
+  return `
+    <div class="tagA">
+      ${isOffer ? `<div class="badgeA">SPECIAL<br/>OFFER</div>` : ""}
+      <div class="rowA">
+        <div class="leftA">
+          <div class="descA">${descSpan}</div>
+          ${mrp ? `
+            <div class="mrpRowA">
+              <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
+              <span class="mrpLabelA">MRP</span>
+              <div class="strikeA"></div>
+            </div>` : ""}
+          <div class="priceBlockA">
+            <div class="priceRowA">
+              <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
+            </div>
+            <div class="priceLabelA">${escapeHtml(label.toUpperCase())}</div>
+            ${off ? `<div class="offA">SAVE ₹${escapeHtml(off)}</div>` : ""}
+          </div>
+        </div>
+        <div class="rightA">
+          <div class="imgPanelA">${img}</div>
+          <div class="brandA">Sathyam</div>
+        </div>
+      </div>
+      <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}</div>
+    </div>
+  `;
+}
+
+const PDF_CSS_A = `
+  .tagA {
+    position: relative;
+    background: ${CREAM};
+    border: 2px solid ${DEEP_RED};
+    border-radius: 10px;
+    padding: 12px 12px 6px;
+    page-break-inside: avoid;
+    min-height: 240px;
+    overflow: hidden;
+  }
+  .badgeA {
+    position: absolute; top: 8px; right: 8px;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: ${DEEP_RED}; color: #FFF;
+    font-size: 9px; font-weight: 800; text-align: center;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px dashed ${GOLD};
+    line-height: 11px;
+  }
+  .rowA { display: flex; gap: 10px; }
+  .leftA { flex: 1.4; min-width: 0; }
+  .rightA { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .descA {
+    font-size: 14px; font-weight: 800; color: #0F172A;
+    line-height: 1.2; margin-bottom: 8px;
+  }
+  .mrpRowA {
+    position: relative; display: inline-flex; align-items: baseline;
+    gap: 4px; padding: 1px 4px; margin-bottom: 4px;
+  }
+  .rupeeSm { font-size: 12px; color: ${DEEP_RED}; font-weight: 800; }
+  .mrpValA { font-size: 22px; color: ${DEEP_RED}; font-weight: 800; line-height: 1; }
+  .mrpLabelA { font-size: 11px; color: ${DEEP_RED}; font-weight: 700; margin-left: 4px; letter-spacing: 0.5px; }
+  .strikeA {
+    position: absolute; left: 0; right: 0; top: 55%;
+    height: 1.5px; background: ${DEEP_RED}; transform: rotate(-6deg);
+  }
+  .priceBlockA { margin-top: 4px; }
+  .priceRowA { display: flex; align-items: baseline; gap: 2px; }
+  .rupeeBigA { font-size: 18px; color: ${GOLD}; font-weight: 800; }
+  .priceValA { font-size: 38px; color: ${GOLD}; font-weight: 900; line-height: 1; }
+  .priceLabelA {
+    font-size: 11px; color: ${GOLD}; font-weight: 800;
+    letter-spacing: 1px; margin-top: 2px;
+  }
+  .offA {
+    display: inline-block; margin-top: 4px;
+    background: ${DEEP_RED}; color: #FFF;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 4px;
+  }
+  .imgPanelA {
+    width: 100%; height: 110px;
+    background: ${DEEP_RED};
+    border-radius: 6px; padding: 4px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .imgPanelA img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .img-placeholder { color: #F4D9DC; font-size: 10px; }
+  .brandA {
+    margin-top: 4px; font-size: 11px; font-weight: 800;
+    color: ${DEEP_RED}; letter-spacing: 0.5px;
+  }
+  .itemFooterA {
+    margin-top: 6px; padding-top: 4px;
+    border-top: 1px dashed #C8B89F;
+    font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
+  }
+`;
+
+// ----- Style B HTML / CSS -----
+
+function renderTagBHtml(it: PriceTagItem): string {
+  const { value } = priceFor(it);
+  const off = offAmount(it);
+  const desc = it.description || "";
+  const tamil = hasTamil(desc);
+  const descSpan = tamil
+    ? `<span class="tamil">${escapeHtml(desc)}</span>`
+    : escapeHtml(desc);
+  const img = it.imageUri
+    ? `<img src="${it.imageUri}" />`
+    : `<div class="img-placeholder">No&nbsp;Image</div>`;
+
+  return `
+    <div class="tagB">
+      <div class="topBannerB">LOW PRICES</div>
+      <div class="middleB">
+        <div class="imgWrapB">${img}</div>
+        <div class="priceColB">
+          <div class="priceRowB">
+            <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}</span>
+          </div>
+          ${off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`}
+        </div>
+      </div>
+      <div class="bottomBannerB">${descSpan}</div>
+      <div class="itemFooterB">Item No: ${escapeHtml(it.itemNo || "—")}</div>
+    </div>
+  `;
+}
+
+const PDF_CSS_B = `
+  .tagB {
+    background: #FFF;
+    border: 1.5px solid ${RED};
+    border-radius: 6px;
+    overflow: hidden;
+    page-break-inside: avoid;
+    display: flex; flex-direction: column;
+  }
+  .topBannerB {
+    background: ${RED}; color: #FFF;
+    text-align: center;
+    font-size: 22px; font-weight: 900;
+    letter-spacing: 1px;
+    padding: 8px 4px;
+  }
+  .middleB {
+    display: flex; gap: 8px; padding: 10px;
+    align-items: center; min-height: 110px;
+  }
+  .imgWrapB {
+    width: 45%; height: 100px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .imgWrapB img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .img-placeholder { color: #94A3B8; font-size: 10px; }
+  .priceColB { flex: 1; text-align: right; }
+  .priceRowB { display: flex; justify-content: flex-end; align-items: baseline; gap: 2px; }
+  .rupeeB { font-size: 22px; color: #000; font-weight: 800; }
+  .priceValB { font-size: 48px; color: #000; font-weight: 900; line-height: 1; }
+  .offB {
+    color: ${RED}; font-size: 16px; font-weight: 800;
+    margin-top: 4px; letter-spacing: 0.5px;
+  }
+  .offBmuted {
+    color: ${RED}; font-size: 12px; font-weight: 700;
+    margin-top: 4px; letter-spacing: 0.5px;
+  }
+  .bottomBannerB {
+    background: ${RED}; color: #FFF;
+    text-align: center;
+    font-size: 16px; font-weight: 800;
+    letter-spacing: 0.5px;
+    padding: 8px;
+  }
+  .itemFooterB {
+    text-align: center;
+    font-size: 9px; color: #94A3B8; font-weight: 600;
+    padding: 4px; background: #FFF;
+  }
+`;
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -690,6 +970,10 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// ============================================================
+// Styles
+// ============================================================
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -734,68 +1018,41 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.success,
   },
   saveBtnText: { color: Colors.textInverse, fontWeight: "800", fontSize: 13 },
+  styleBar: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  styleBarLabel: {
+    fontSize: 12, fontWeight: "700",
+    color: Colors.textSecondary, letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  styleChip: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 999, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  styleChipActive: {
+    backgroundColor: Colors.primary, borderColor: Colors.primary,
+  },
+  styleChipText: { color: Colors.textSecondary, fontSize: 12, fontWeight: "700" },
+  styleChipTextActive: { color: Colors.textInverse },
   grid: {
     flexDirection: "row", flexWrap: "wrap",
     paddingHorizontal: 8, paddingTop: 10,
-    columnGap: 8, rowGap: 10,
+    columnGap: 8, rowGap: 12,
   },
-  tag: {
-    width: "48.5%",
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5, borderColor: Colors.primary,
-    borderRadius: 10, padding: 10,
-    position: "relative",
-  },
+  tagSlot: { width: "48.5%", position: "relative" },
   removeBtn: {
-    position: "absolute", top: -8, right: -8, zIndex: 2,
+    position: "absolute", top: -8, right: -8, zIndex: 5,
     width: 24, height: 24, borderRadius: 12,
     backgroundColor: Colors.danger,
     alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 }, elevation: 3,
   },
-  imgSlot: {
-    width: "100%", height: 110, marginBottom: 8,
-    borderRadius: 6, overflow: "hidden",
-    backgroundColor: Colors.background,
-    borderWidth: 1, borderColor: Colors.border, borderStyle: "dashed",
-    position: "relative",
-  },
-  img: { width: "100%", height: "100%" },
-  imgEmpty: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-  },
-  imgEmptyText: { color: Colors.textSecondary, fontWeight: "700", fontSize: 12, marginTop: 4 },
-  imgEmptySub: { color: Colors.textMuted, fontSize: 10, marginTop: 2 },
-  imgActions: {
-    position: "absolute", bottom: 4, right: 4, flexDirection: "row", gap: 4,
-  },
-  imgActionChip: {
-    flexDirection: "row", alignItems: "center", gap: 3,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  imgActionDanger: { backgroundColor: Colors.surface },
-  imgActionText: { color: Colors.text, fontSize: 10, fontWeight: "700" },
-  row1: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-  },
-  itemNo: { fontSize: 11, color: Colors.textMuted, fontWeight: "700", letterSpacing: 0.3 },
-  mrp: { fontSize: 11, color: Colors.textMuted, fontWeight: "700" },
-  desc: {
-    fontSize: 13, color: Colors.text, marginTop: 4, lineHeight: 17, minHeight: 34,
-  },
-  priceRow: {
-    marginTop: 8, paddingTop: 6,
-    borderTopWidth: 1, borderTopColor: Colors.border,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "baseline",
-  },
-  priceLabel: {
-    fontSize: 10, color: Colors.textSecondary,
-    fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4,
-  },
-  priceValue: { fontSize: 20, color: Colors.primary, fontWeight: "800" },
   noResults: {
     width: "100%", textAlign: "center",
     color: Colors.textMuted, fontStyle: "italic",
@@ -816,9 +1073,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10,
     fontSize: 14, color: Colors.text, marginBottom: 14,
   },
-  modalActions: {
-    flexDirection: "row", justifyContent: "flex-end", gap: 8,
-  },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   modalCancel: {
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8,
     borderWidth: 1, borderColor: Colors.border,
@@ -830,4 +1085,150 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   modalConfirmText: { color: Colors.textInverse, fontWeight: "800" },
+});
+
+// Style A — on-screen tag styles
+const a = StyleSheet.create({
+  card: {
+    backgroundColor: CREAM,
+    borderWidth: 2, borderColor: DEEP_RED,
+    borderRadius: 10, padding: 10,
+    overflow: "hidden",
+    minHeight: 230,
+  },
+  badge: {
+    position: "absolute", top: 6, right: 6, zIndex: 3,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: DEEP_RED,
+    borderWidth: 1.5, borderColor: GOLD, borderStyle: "dashed",
+    alignItems: "center", justifyContent: "center",
+  },
+  badgeText: {
+    color: "#FFF", fontSize: 8, fontWeight: "800",
+    textAlign: "center", lineHeight: 10,
+  },
+  row: { flexDirection: "row", gap: 8 },
+  left: { flex: 1.3, minWidth: 0 },
+  right: { flex: 1, alignItems: "center" },
+  desc: {
+    fontSize: 12, fontWeight: "800", color: "#0F172A",
+    lineHeight: 14, marginBottom: 6,
+  },
+  mrpRow: {
+    flexDirection: "row", alignItems: "baseline",
+    alignSelf: "flex-start", marginBottom: 4,
+    position: "relative", paddingHorizontal: 2,
+  },
+  rupeeSm: { fontSize: 10, color: DEEP_RED, fontWeight: "800" },
+  mrpVal: { fontSize: 18, color: DEEP_RED, fontWeight: "800", marginLeft: 1 },
+  mrpLabel: {
+    fontSize: 9, color: DEEP_RED, fontWeight: "700",
+    marginLeft: 3, letterSpacing: 0.5,
+  },
+  strike: {
+    position: "absolute", left: 0, right: 0, top: "55%",
+    height: 1.2, backgroundColor: DEEP_RED, transform: [{ rotate: "-6deg" }],
+  },
+  priceBlock: { marginTop: 2 },
+  priceRow: { flexDirection: "row", alignItems: "baseline" },
+  rupeeBig: { fontSize: 14, color: GOLD, fontWeight: "800" },
+  priceVal: { fontSize: 32, color: GOLD, fontWeight: "900", lineHeight: 32 },
+  priceLabel: {
+    fontSize: 9, color: GOLD, fontWeight: "800",
+    letterSpacing: 0.8, marginTop: 1,
+  },
+  offText: {
+    alignSelf: "flex-start", marginTop: 4,
+    backgroundColor: DEEP_RED, color: "#FFF",
+    fontSize: 9, fontWeight: "800", letterSpacing: 0.4,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    overflow: "hidden",
+  },
+  brandFooter: {
+    marginTop: 4, fontSize: 10, fontWeight: "800",
+    color: DEEP_RED, letterSpacing: 0.4,
+  },
+  itemNoFooter: {
+    marginTop: 6, paddingTop: 4,
+    borderTopWidth: 1, borderTopColor: "#C8B89F", borderStyle: "dashed",
+    fontSize: 9, color: "#94795E", fontWeight: "600",
+  },
+});
+
+// Style B — on-screen tag styles
+const b = StyleSheet.create({
+  card: {
+    backgroundColor: "#FFF",
+    borderWidth: 1.5, borderColor: RED,
+    borderRadius: 6, overflow: "hidden",
+    minHeight: 230,
+  },
+  topBanner: {
+    backgroundColor: RED, paddingVertical: 6,
+    alignItems: "center", justifyContent: "center",
+  },
+  bannerText: {
+    color: "#FFF", fontSize: 16, fontWeight: "900",
+    letterSpacing: 1,
+  },
+  middle: {
+    flexDirection: "row", padding: 8,
+    alignItems: "center", gap: 6, minHeight: 100,
+  },
+  imgWrap: { width: "45%", height: 90 },
+  priceCol: { flex: 1, alignItems: "flex-end" },
+  priceRow: { flexDirection: "row", alignItems: "baseline" },
+  rupee: { fontSize: 16, color: "#000", fontWeight: "800" },
+  priceVal: { fontSize: 34, color: "#000", fontWeight: "900", lineHeight: 36 },
+  offText: {
+    color: RED, fontSize: 13, fontWeight: "800",
+    marginTop: 2, letterSpacing: 0.4,
+  },
+  offTextMuted: {
+    color: RED, fontSize: 10, fontWeight: "700",
+    marginTop: 2, letterSpacing: 0.4,
+  },
+  bottomBanner: {
+    backgroundColor: RED, paddingVertical: 6, paddingHorizontal: 8,
+  },
+  descBanner: {
+    color: "#FFF", fontSize: 12, fontWeight: "800",
+    textAlign: "center", letterSpacing: 0.3,
+  },
+  itemNoFooter: {
+    textAlign: "center",
+    fontSize: 9, color: Colors.textMuted, fontWeight: "600",
+    paddingVertical: 4, backgroundColor: "#FFF",
+  },
+});
+
+// Shared image-slot styles
+const imgs = StyleSheet.create({
+  slot: {
+    width: "100%", height: "100%",
+    borderRadius: 6, overflow: "hidden",
+    position: "relative",
+  },
+  slotDark: {
+    backgroundColor: DEEP_RED, padding: 4,
+    minHeight: 90,
+  },
+  slotLight: {
+    backgroundColor: "#F8F8F8",
+    borderWidth: 1, borderColor: "#E2E8F0", borderStyle: "dashed",
+  },
+  empty: { alignItems: "center", justifyContent: "center" },
+  emptyText: { fontWeight: "700", fontSize: 11, marginTop: 2 },
+  emptySub: { fontSize: 9, marginTop: 1 },
+  img: { width: "100%", height: "100%" },
+  actions: {
+    position: "absolute", bottom: 2, right: 2,
+    flexDirection: "row", gap: 3,
+  },
+  actionChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
+  },
+  actionText: { color: Colors.text, fontSize: 9, fontWeight: "700" },
 });
