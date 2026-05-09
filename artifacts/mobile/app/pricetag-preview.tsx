@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -116,6 +117,27 @@ async function blobToDataUri(blob: Blob): Promise<string> {
   });
 }
 
+// Build a URL pointing at our api-server. On web (Expo running inside
+// the Replit preview iframe) the same origin handles `/api/...`
+// through the shared proxy, so a relative URL works. On a real
+// device we need the absolute Replit dev domain that the dev script
+// puts into `EXPO_PUBLIC_DOMAIN`.
+function apiUrl(path: string): string {
+  const dom = process.env.EXPO_PUBLIC_DOMAIN;
+  if (dom) return `https://${dom}${path}`;
+  return path;
+}
+
+type DriveFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  size?: string;
+  thumbnailLink?: string;
+  iconLink?: string;
+};
+
 // ============================================================
 // Screen
 // ============================================================
@@ -140,6 +162,16 @@ export default function PriceTagPreviewScreen() {
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
   const [driveUrl, setDriveUrl] = useState("");
   const [driveLoading, setDriveLoading] = useState(false);
+
+  // Drive *picker* (browse the connected Drive for an image).
+  // Distinct from the Drive *link* modal above, which only takes a
+  // pasted URL for an Anyone-with-the-link file.
+  const [drivePickOpenForKey, setDrivePickOpenForKey] = useState<string | null>(null);
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+  const [driveListLoading, setDriveListLoading] = useState(false);
+  const [driveListError, setDriveListError] = useState<string | null>(null);
+  const [driveSearch, setDriveSearch] = useState("");
+  const [driveAttachingId, setDriveAttachingId] = useState<string | null>(null);
 
   const items = mode === "modify" ? workingItems : priceTagItems;
 
@@ -270,23 +302,91 @@ export default function PriceTagPreviewScreen() {
       setDriveLoading(false);
     }
   }
+  // -------- Drive picker (browse) --------
+  const fetchDriveImages = useCallback(async (search: string) => {
+    setDriveListLoading(true);
+    setDriveListError(null);
+    try {
+      const qs = new URLSearchParams({ kind: "images" });
+      if (search.trim()) qs.set("search", search.trim());
+      const resp = await fetch(apiUrl(`/api/drive/files?${qs.toString()}`));
+      const text = await resp.text();
+      if (!resp.ok) {
+        let msg = `Drive list failed (${resp.status})`;
+        try {
+          const j = JSON.parse(text);
+          if (j?.error) msg = String(j.error);
+        } catch {}
+        throw new Error(msg);
+      }
+      const json = text ? JSON.parse(text) : {};
+      setDriveFiles(Array.isArray(json.files) ? json.files : []);
+    } catch (e: any) {
+      setDriveFiles([]);
+      setDriveListError(e?.message ?? "Could not reach Google Drive.");
+    } finally {
+      setDriveListLoading(false);
+    }
+  }, []);
+
+  function openDrivePicker(key: string) {
+    setDriveSearch("");
+    setDriveFiles([]);
+    setDriveListError(null);
+    setDrivePickOpenForKey(key);
+    fetchDriveImages("");
+  }
+
+  async function attachDriveFile(file: DriveFile) {
+    if (!drivePickOpenForKey) return;
+    const key = drivePickOpenForKey;
+    setDriveAttachingId(file.id);
+    try {
+      const url = apiUrl(
+        `/api/drive/file/${encodeURIComponent(file.id)}?mimeType=${encodeURIComponent(file.mimeType)}`
+      );
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
+      const blob = await resp.blob();
+      const dataUri = await blobToDataUri(blob);
+      await setPriceTagImage(key, dataUri);
+      setWorkingItems((prev) =>
+        prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setDrivePickOpenForKey(null);
+    } catch (e: any) {
+      Alert.alert("Couldn't fetch from Drive", e?.message ?? "Unknown error");
+    } finally {
+      setDriveAttachingId(null);
+    }
+  }
+
   function handleAddImage(key: string) {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ["Cancel", "Take Photo", "Choose from Library", "Google Drive Link"],
+          options: [
+            "Cancel",
+            "Take Photo",
+            "Choose from Library",
+            "Browse Google Drive",
+            "Google Drive Link",
+          ],
           cancelButtonIndex: 0,
         },
         (idx) => {
           if (idx === 1) takePhoto(key);
           else if (idx === 2) pickFromLibrary(key);
-          else if (idx === 3) openDriveModal(key);
+          else if (idx === 3) openDrivePicker(key);
+          else if (idx === 4) openDriveModal(key);
         }
       );
     } else {
       Alert.alert("Add Product Image", undefined, [
         { text: "Take Photo", onPress: () => takePhoto(key) },
         { text: "Choose from Library", onPress: () => pickFromLibrary(key) },
+        { text: "Browse Google Drive", onPress: () => openDrivePicker(key) },
         { text: "Google Drive Link", onPress: () => openDriveModal(key) },
         { text: "Cancel", style: "cancel" },
       ]);
@@ -511,6 +611,119 @@ export default function PriceTagPreviewScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Drive picker modal — browse images from the connected
+            Google Drive (uses the api-server's /drive/files endpoint
+            which proxies through the Replit google-drive connector). */}
+        <Modal
+          visible={drivePickOpenForKey !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDrivePickOpenForKey(null)}
+        >
+          <View style={styles.modalScrim}>
+            <View style={[styles.modalCard, { width: "92%", maxHeight: "82%" }]}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.modalTitle}>Browse Google Drive</Text>
+                <TouchableOpacity
+                  onPress={() => setDrivePickOpenForKey(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={20} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.pickerSearchRow}>
+                <Feather name="search" size={14} color={Colors.textMuted} />
+                <TextInput
+                  style={styles.pickerSearch}
+                  placeholder="Search images by name…"
+                  placeholderTextColor={Colors.textMuted}
+                  value={driveSearch}
+                  onChangeText={setDriveSearch}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  onSubmitEditing={() => fetchDriveImages(driveSearch)}
+                />
+                <TouchableOpacity
+                  style={styles.pickerSearchBtn}
+                  onPress={() => fetchDriveImages(driveSearch)}
+                  disabled={driveListLoading}
+                >
+                  <Text style={styles.pickerSearchBtnText}>Go</Text>
+                </TouchableOpacity>
+              </View>
+
+              {driveListLoading ? (
+                <View style={styles.pickerStatus}>
+                  <ActivityIndicator color={Colors.primary} />
+                  <Text style={styles.pickerStatusText}>Loading images from Drive…</Text>
+                </View>
+              ) : driveListError ? (
+                <View style={styles.pickerStatus}>
+                  <Feather name="alert-circle" size={20} color={Colors.danger} />
+                  <Text style={[styles.pickerStatusText, { color: Colors.danger }]}>
+                    {driveListError}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.pickerRetry}
+                    onPress={() => fetchDriveImages(driveSearch)}
+                  >
+                    <Text style={styles.pickerRetryText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : driveFiles.length === 0 ? (
+                <View style={styles.pickerStatus}>
+                  <Feather name="image" size={20} color={Colors.textMuted} />
+                  <Text style={styles.pickerStatusText}>
+                    No images found in your Google Drive.
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={driveFiles}
+                  keyExtractor={(it) => it.id}
+                  contentContainerStyle={{ paddingVertical: 4 }}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => {
+                    const busy = driveAttachingId === item.id;
+                    const anyBusy = driveAttachingId !== null;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.pickerRow, busy && { opacity: 0.6 }]}
+                        onPress={() => attachDriveFile(item)}
+                        disabled={anyBusy}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.pickerThumb}>
+                          <Feather name="image" size={18} color={DEEP_RED} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.pickerName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.pickerMeta} numberOfLines={1}>
+                            {item.mimeType.replace("image/", "").toUpperCase()}
+                            {item.modifiedTime
+                              ? ` · ${new Date(item.modifiedTime).toLocaleDateString()}`
+                              : ""}
+                          </Text>
+                        </View>
+                        {busy ? (
+                          <ActivityIndicator size="small" color={Colors.primary} />
+                        ) : (
+                          <Feather name="download" size={16} color={Colors.textMuted} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  }}
+                  ItemSeparatorComponent={() => <View style={styles.pickerSep} />}
+                />
+              )}
             </View>
           </View>
         </Modal>
@@ -1076,6 +1289,50 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   modalConfirmText: { color: Colors.textInverse, fontWeight: "800" },
+  pickerHeader: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", marginBottom: 8,
+  },
+  pickerSearchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10,
+  },
+  pickerSearch: {
+    flex: 1, fontSize: 13, color: Colors.text, paddingVertical: 8,
+  },
+  pickerSearchBtn: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6,
+  },
+  pickerSearchBtnText: {
+    color: Colors.textInverse, fontWeight: "800", fontSize: 12,
+  },
+  pickerStatus: {
+    paddingVertical: 24, alignItems: "center", gap: 8,
+  },
+  pickerStatusText: {
+    fontSize: 13, color: Colors.textMuted, textAlign: "center",
+  },
+  pickerRetry: {
+    marginTop: 4, paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 6, backgroundColor: Colors.primary,
+  },
+  pickerRetryText: { color: Colors.textInverse, fontWeight: "800", fontSize: 12 },
+  pickerRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 8, paddingHorizontal: 4,
+  },
+  pickerThumb: {
+    width: 36, height: 36, borderRadius: 6,
+    backgroundColor: CREAM,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: DEEP_RED,
+  },
+  pickerName: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  pickerMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  pickerSep: { height: 1, backgroundColor: Colors.border },
 });
 
 // Style A — on-screen tag styles
