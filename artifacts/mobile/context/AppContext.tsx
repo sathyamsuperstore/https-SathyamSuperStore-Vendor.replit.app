@@ -200,6 +200,14 @@ interface AppContextType {
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
   promoNewQty: Record<string, number>;
   setPromoNewQtyValue: (key: string, value: number | undefined) => Promise<void>;
+  // PriceTag workflow — items the user picked on PromoPrint and is
+  // previewing / exporting on PriceTag Preview. Persisted so the user
+  // can leave the screen and come back without losing their selection.
+  priceTagItems: PriceTagItem[];
+  savePriceTagItems: (items: PriceTagItem[]) => Promise<void>;
+  removePriceTagItem: (key: string) => Promise<void>;
+  setPriceTagImage: (key: string, imageUri: string | null) => Promise<void>;
+  clearPriceTagItems: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -285,6 +293,32 @@ export const PROMO_FIELDS = [
 // raw string from the cell.
 export type PromoEntry = Record<string, string | number>;
 
+// Snapshot of a single price tag the user is editing / printing. Built
+// from a Promo row when the user taps Save on the PromoPrint picker.
+// Stored in AppContext (and AsyncStorage) so the preview survives
+// navigation and app restarts.
+export interface PriceTagItem {
+  // Stable diff key — `${itemNo}|${batchNo}|${mrp}`. Mirrors the Promo
+  // importer's uniqueness contract so re-saving the same item replaces
+  // its previous selection cleanly instead of duplicating.
+  key: string;
+  itemNo: string;
+  description: string;
+  mrp: string | number;
+  promotionPrice: string | number;
+  // SP (regular shelf price) — used as a fallback when promotionPrice
+  // is empty so the printed tag always has a price line.
+  sp: string | number;
+  brand?: string;
+  category?: string;
+  vendorName?: string;
+  beat?: string;
+  // Optional product image as a data URI (jpeg base64). Added on the
+  // PriceTag Preview screen via camera / gallery / Drive URL.
+  imageUri?: string;
+  addedAt: number;
+}
+
 // One row in the Last Supply Date table. The date is stored as a
 // "DD/MM/YYYY" string (normalised at import time) so it is safe to
 // sort and display without further parsing.
@@ -312,6 +346,11 @@ const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
 // Promo workbook (which replaces every row) doesn't blow away the
 // quantities the user typed in. Cleared together with the Promo batch.
 const PROMO_NEW_QTY_KEY = "@promoNewQty";
+// PromoPrint / PriceTag state. Each entry is a snapshot of a Promo
+// row the user picked plus an optional product image (data URI), so
+// the PriceTag Preview screen and PDF export keep working even if
+// the underlying Promo data is later re-imported or cleared.
+const PRICE_TAG_KEY = "@priceTagItems";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -375,6 +414,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     promoEntriesRef.current = promoEntries;
   }, [promoEntries]);
   const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
+  const [priceTagItems, setPriceTagItems] = useState<PriceTagItem[]>([]);
+  // Mirror so the per-item helpers (image set, remove) can read the
+  // latest list without depending on a possibly-stale closure.
+  const priceTagItemsRef = useRef<PriceTagItem[]>([]);
+  useEffect(() => {
+    priceTagItemsRef.current = priceTagItems;
+  }, [priceTagItems]);
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -384,7 +430,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -396,6 +442,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PROMO_PREV_AT_KEY),
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
+        AsyncStorage.getItem(PRICE_TAG_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -427,6 +474,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? JSON.parse(promoNewQtyData)
         : {};
       setPromoNewQty(loadedPromoNewQty);
+
+      const loadedPriceTagItems: PriceTagItem[] = priceTagData
+        ? JSON.parse(priceTagData)
+        : [];
+      setPriceTagItems(loadedPriceTagItems);
 
       if (sessionData) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
@@ -799,6 +851,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // ----------------------------------------------------------------
+  // PriceTag workflow helpers (PromoPrint + PriceTag Preview screens)
+  //
+  // Persistence is write-first (mirrors the rest of the data layer)
+  // so a failed disk write never leaves the on-screen list out of
+  // sync with what's actually saved.
+  // ----------------------------------------------------------------
+  async function savePriceTagItems(items: PriceTagItem[]) {
+    await AsyncStorage.setItem(PRICE_TAG_KEY, JSON.stringify(items));
+    setPriceTagItems(items);
+  }
+
+  async function removePriceTagItem(key: string) {
+    const next = priceTagItemsRef.current.filter((i) => i.key !== key);
+    await AsyncStorage.setItem(PRICE_TAG_KEY, JSON.stringify(next));
+    setPriceTagItems(next);
+  }
+
+  async function setPriceTagImage(key: string, imageUri: string | null) {
+    const next = priceTagItemsRef.current.map((i) =>
+      i.key === key
+        ? imageUri == null
+          ? (() => { const { imageUri: _drop, ...rest } = i; return rest as PriceTagItem; })()
+          : { ...i, imageUri }
+        : i
+    );
+    await AsyncStorage.setItem(PRICE_TAG_KEY, JSON.stringify(next));
+    setPriceTagItems(next);
+  }
+
+  async function clearPriceTagItems() {
+    await AsyncStorage.removeItem(PRICE_TAG_KEY);
+    setPriceTagItems([]);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -870,6 +957,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearLastSupplyDates,
         promoNewQty,
         setPromoNewQtyValue,
+        priceTagItems,
+        savePriceTagItems,
+        removePriceTagItem,
+        setPriceTagImage,
+        clearPriceTagItems,
         hydrated,
       }}
     >

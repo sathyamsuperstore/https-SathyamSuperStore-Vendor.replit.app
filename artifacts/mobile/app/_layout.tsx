@@ -48,6 +48,7 @@ function RootLayoutNav() {
       <Stack.Screen name="user/import" options={{ presentation: "modal" }} />
       <Stack.Screen name="drive-import" options={{ presentation: "modal" }} />
       <Stack.Screen name="promo-compare" options={{ presentation: "card", title: "Promo Changes" }} />
+      <Stack.Screen name="pricetag-preview" options={{ presentation: "card", title: "PriceTag Preview" }} />
     </Stack>
   );
 }
