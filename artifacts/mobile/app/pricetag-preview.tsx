@@ -431,20 +431,12 @@ export default function PriceTagPreviewScreen() {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [
-            "Cancel",
-            "Take Photo",
-            "Choose from Library",
-            "Browse Google Drive",
-            "Google Drive Link",
-          ],
+          options: ["Cancel", "Take Photo", "Choose from Library"],
           cancelButtonIndex: 0,
         },
         (idx) => {
           if (idx === 1) takePhoto(key);
           else if (idx === 2) pickFromLibrary(key);
-          else if (idx === 3) openDrivePicker(key);
-          else if (idx === 4) openDriveModal(key);
         }
       );
     } else {
@@ -671,30 +663,6 @@ export default function PriceTagPreviewScreen() {
               >
                 <Feather name="image" size={18} color={Colors.primary} />
                 <Text style={styles.sheetRowText}>Choose from Library</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sheetRow}
-                onPress={() => chooseAddImageSource("drivePicker")}
-              >
-                <Feather name="folder" size={18} color={Colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetRowText}>Browse Google Drive</Text>
-                  <Text style={styles.sheetRowSub}>
-                    Pick from images in your connected Drive
-                  </Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sheetRow}
-                onPress={() => chooseAddImageSource("driveLink")}
-              >
-                <Feather name="link" size={18} color={Colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetRowText}>Google Drive Link</Text>
-                  <Text style={styles.sheetRowSub}>
-                    Paste a shared file URL
-                  </Text>
-                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.sheetRow, styles.sheetCancelRow]}
