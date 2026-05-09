@@ -535,7 +535,7 @@ function StyleATag({
   onAddImage: () => void;
   onRemoveImage: () => void;
 }) {
-  const { label, value, isOffer } = priceFor(item);
+  const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
   const off = offAmount(item);
 
@@ -550,11 +550,6 @@ function StyleATag({
           onRemoveImage={onRemoveImage}
           tone="dark"
         />
-        {isOffer && (
-          <View style={a.badge}>
-            <Text style={a.badgeText}>SPECIAL{"\n"}OFFER</Text>
-          </View>
-        )}
       </View>
 
       {/* Description */}
@@ -585,11 +580,12 @@ function StyleATag({
         </View>
       </View>
 
-      {/* Savings + brand row */}
-      <View style={a.footerRow}>
-        {off ? <Text style={a.offText}>SAVE ₹{off}</Text> : <View />}
-        <Text style={a.brandFooter}>Sathyam</Text>
-      </View>
+      {/* Savings row */}
+      {off && (
+        <View style={a.footerRow}>
+          <Text style={a.offText}>SAVE ₹{off}</Text>
+        </View>
+      )}
 
       <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
     </View>
@@ -764,7 +760,7 @@ function buildPdfHtml(items: PriceTagItem[], style: PriceTagStyle): string {
 // ----- Style A HTML / CSS -----
 
 function renderTagAHtml(it: PriceTagItem): string {
-  const { label, value, isOffer } = priceFor(it);
+  const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
   const off = offAmount(it);
   const desc = it.description || "";
@@ -780,7 +776,6 @@ function renderTagAHtml(it: PriceTagItem): string {
     <div class="tagA">
       <div class="imgPanelA">
         ${img}
-        ${isOffer ? `<div class="badgeA">SPECIAL<br/>OFFER</div>` : ""}
       </div>
       <div class="descA">${descSpan}</div>
       ${mrp ? `
@@ -793,10 +788,7 @@ function renderTagAHtml(it: PriceTagItem): string {
         <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
         <span class="priceLabelA">${escapeHtml(label.toUpperCase())}</span>
       </div>
-      <div class="footerA">
-        ${off ? `<span class="offA">SAVE ₹${escapeHtml(off)}</span>` : `<span></span>`}
-        <span class="brandA">Sathyam</span>
-      </div>
+      ${off ? `<div class="footerA"><span class="offA">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}</div>
     </div>
   `;
