@@ -523,9 +523,9 @@ export default function PriceTagPreviewScreen() {
 // Style A — Special Offer card (Protinex-inspired)
 // ============================================================
 //
-// Cream background with deep-red MRP strikethrough and a big OFFER
-// PRICE in dark gold/red. Image sits on the right inside a maroon
-// panel. Item No demoted to a tiny line at the bottom-left footer.
+// Vertical layout (image on top inside a maroon panel, prices below).
+// Side-by-side text+image cramped the price digits at the 48%-wide
+// tile size, so we stack instead and keep heights bounded.
 
 function StyleATag({
   item, busy, onAddImage, onRemoveImage,
@@ -541,53 +541,54 @@ function StyleATag({
 
   return (
     <View style={a.card}>
-      {/* SPECIAL OFFER badge (only when there's a real offer) */}
-      {isOffer && (
-        <View style={a.badge}>
-          <Text style={a.badgeText}>SPECIAL{"\n"}OFFER</Text>
+      {/* Image panel on top */}
+      <View style={a.imgPanel}>
+        <ImageSlot
+          item={item}
+          busy={busy}
+          onAddImage={onAddImage}
+          onRemoveImage={onRemoveImage}
+          tone="dark"
+        />
+        {isOffer && (
+          <View style={a.badge}>
+            <Text style={a.badgeText}>SPECIAL{"\n"}OFFER</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Description */}
+      <Text
+        style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
+        numberOfLines={2}
+      >
+        {item.description || "(no description)"}
+      </Text>
+
+      {/* MRP strikethrough */}
+      {mrp && (
+        <View style={a.mrpRow}>
+          <Text style={a.rupeeSm}>₹</Text>
+          <Text style={a.mrpVal}>{mrp}</Text>
+          <Text style={a.mrpLabel}>MRP</Text>
+          <View style={a.strike} />
         </View>
       )}
 
-      <View style={a.row}>
-        {/* Left: text */}
-        <View style={a.left}>
-          <Text
-            style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
-            numberOfLines={3}
-          >
-            {item.description || "(no description)"}
-          </Text>
-
-          {mrp && (
-            <View style={a.mrpRow}>
-              <Text style={a.rupeeSm}>₹</Text>
-              <Text style={a.mrpVal}>{mrp}</Text>
-              <Text style={a.mrpLabel}>MRP</Text>
-              <View style={a.strike} />
-            </View>
-          )}
-
-          <View style={a.priceBlock}>
-            <View style={a.priceRow}>
-              <Text style={a.rupeeBig}>₹</Text>
-              <Text style={a.priceVal}>{value}</Text>
-            </View>
-            <Text style={a.priceLabel}>{label.toUpperCase()}</Text>
-            {off && <Text style={a.offText}>SAVE ₹{off}</Text>}
-          </View>
+      {/* Big offer price */}
+      <View style={a.priceRow}>
+        <Text style={a.rupeeBig}>₹</Text>
+        <Text style={a.priceVal}>{value}</Text>
+        <View style={a.priceLabelCol}>
+          <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[0]}</Text>
+          <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[1] || ""}</Text>
         </View>
+      </View>
 
-        {/* Right: image panel */}
-        <View style={a.right}>
-          <ImageSlot
-            item={item}
-            busy={busy}
-            onAddImage={onAddImage}
-            onRemoveImage={onRemoveImage}
-            tone="dark"
-          />
-          <Text style={a.brandFooter}>Sathyam</Text>
-        </View>
+      {/* Savings + brand row */}
+      <View style={a.footerRow}>
+        {off ? <Text style={a.offText}>SAVE ₹{off}</Text> : <View />}
+        <Text style={a.brandFooter}>Sathyam</Text>
       </View>
 
       <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
@@ -777,28 +778,24 @@ function renderTagAHtml(it: PriceTagItem): string {
 
   return `
     <div class="tagA">
-      ${isOffer ? `<div class="badgeA">SPECIAL<br/>OFFER</div>` : ""}
-      <div class="rowA">
-        <div class="leftA">
-          <div class="descA">${descSpan}</div>
-          ${mrp ? `
-            <div class="mrpRowA">
-              <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
-              <span class="mrpLabelA">MRP</span>
-              <div class="strikeA"></div>
-            </div>` : ""}
-          <div class="priceBlockA">
-            <div class="priceRowA">
-              <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
-            </div>
-            <div class="priceLabelA">${escapeHtml(label.toUpperCase())}</div>
-            ${off ? `<div class="offA">SAVE ₹${escapeHtml(off)}</div>` : ""}
-          </div>
-        </div>
-        <div class="rightA">
-          <div class="imgPanelA">${img}</div>
-          <div class="brandA">Sathyam</div>
-        </div>
+      <div class="imgPanelA">
+        ${img}
+        ${isOffer ? `<div class="badgeA">SPECIAL<br/>OFFER</div>` : ""}
+      </div>
+      <div class="descA">${descSpan}</div>
+      ${mrp ? `
+        <div class="mrpRowA">
+          <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
+          <span class="mrpLabelA">MRP</span>
+          <div class="strikeA"></div>
+        </div>` : ""}
+      <div class="priceRowA">
+        <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
+        <span class="priceLabelA">${escapeHtml(label.toUpperCase())}</span>
+      </div>
+      <div class="footerA">
+        ${off ? `<span class="offA">SAVE ₹${escapeHtml(off)}</span>` : `<span></span>`}
+        <span class="brandA">Sathyam</span>
       </div>
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}</div>
     </div>
@@ -810,64 +807,66 @@ const PDF_CSS_A = `
     position: relative;
     background: ${CREAM};
     border: 2px solid ${DEEP_RED};
-    border-radius: 10px;
-    padding: 12px 12px 6px;
+    border-radius: 8px;
+    padding: 10px;
     page-break-inside: avoid;
-    min-height: 240px;
     overflow: hidden;
+    display: flex; flex-direction: column;
   }
+  .imgPanelA {
+    position: relative;
+    width: 100%; height: 130px;
+    background: ${DEEP_RED};
+    border-radius: 6px; padding: 5px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .imgPanelA img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .img-placeholder { color: #F4D9DC; font-size: 11px; }
   .badgeA {
-    position: absolute; top: 8px; right: 8px;
-    width: 56px; height: 56px; border-radius: 50%;
+    position: absolute; top: -6px; right: -6px;
+    width: 54px; height: 54px; border-radius: 50%;
     background: ${DEEP_RED}; color: #FFF;
     font-size: 9px; font-weight: 800; text-align: center;
     display: flex; align-items: center; justify-content: center;
     border: 2px dashed ${GOLD};
     line-height: 11px;
   }
-  .rowA { display: flex; gap: 10px; }
-  .leftA { flex: 1.4; min-width: 0; }
-  .rightA { flex: 1; display: flex; flex-direction: column; align-items: center; }
   .descA {
-    font-size: 14px; font-weight: 800; color: #0F172A;
-    line-height: 1.2; margin-bottom: 8px;
+    font-size: 13px; font-weight: 800; color: #0F172A;
+    line-height: 1.2; margin-bottom: 6px;
   }
   .mrpRowA {
     position: relative; display: inline-flex; align-items: baseline;
-    gap: 4px; padding: 1px 4px; margin-bottom: 4px;
+    gap: 3px; padding: 1px 4px; margin-bottom: 4px;
   }
-  .rupeeSm { font-size: 12px; color: ${DEEP_RED}; font-weight: 800; }
-  .mrpValA { font-size: 22px; color: ${DEEP_RED}; font-weight: 800; line-height: 1; }
-  .mrpLabelA { font-size: 11px; color: ${DEEP_RED}; font-weight: 700; margin-left: 4px; letter-spacing: 0.5px; }
+  .rupeeSm { font-size: 11px; color: ${DEEP_RED}; font-weight: 800; }
+  .mrpValA { font-size: 18px; color: ${DEEP_RED}; font-weight: 800; line-height: 1; }
+  .mrpLabelA { font-size: 10px; color: ${DEEP_RED}; font-weight: 700; margin-left: 3px; letter-spacing: 0.5px; }
   .strikeA {
     position: absolute; left: 0; right: 0; top: 55%;
     height: 1.5px; background: ${DEEP_RED}; transform: rotate(-6deg);
   }
-  .priceBlockA { margin-top: 4px; }
-  .priceRowA { display: flex; align-items: baseline; gap: 2px; }
+  .priceRowA { display: flex; align-items: baseline; gap: 4px; margin-top: 2px; }
   .rupeeBigA { font-size: 18px; color: ${GOLD}; font-weight: 800; }
-  .priceValA { font-size: 38px; color: ${GOLD}; font-weight: 900; line-height: 1; }
+  .priceValA { font-size: 36px; color: ${GOLD}; font-weight: 900; line-height: 1; }
   .priceLabelA {
     font-size: 11px; color: ${GOLD}; font-weight: 800;
-    letter-spacing: 1px; margin-top: 2px;
+    letter-spacing: 0.8px; margin-left: 4px;
+  }
+  .footerA {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 6px;
   }
   .offA {
-    display: inline-block; margin-top: 4px;
+    display: inline-block;
     background: ${DEEP_RED}; color: #FFF;
     font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
     padding: 2px 8px; border-radius: 4px;
   }
-  .imgPanelA {
-    width: 100%; height: 110px;
-    background: ${DEEP_RED};
-    border-radius: 6px; padding: 4px;
-    display: flex; align-items: center; justify-content: center;
-    overflow: hidden;
-  }
-  .imgPanelA img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .img-placeholder { color: #F4D9DC; font-size: 10px; }
   .brandA {
-    margin-top: 4px; font-size: 11px; font-weight: 800;
+    font-size: 11px; font-weight: 800;
     color: ${DEEP_RED}; letter-spacing: 0.5px;
   }
   .itemFooterA {
@@ -1092,66 +1091,76 @@ const a = StyleSheet.create({
   card: {
     backgroundColor: CREAM,
     borderWidth: 2, borderColor: DEEP_RED,
-    borderRadius: 10, padding: 10,
+    borderRadius: 8, padding: 8,
     overflow: "hidden",
-    minHeight: 230,
+  },
+  imgPanel: {
+    width: "100%", height: 90,
+    backgroundColor: DEEP_RED,
+    borderRadius: 6, padding: 3,
+    marginBottom: 6,
+    position: "relative",
   },
   badge: {
-    position: "absolute", top: 6, right: 6, zIndex: 3,
-    width: 44, height: 44, borderRadius: 22,
+    position: "absolute", top: -6, right: -6, zIndex: 3,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: DEEP_RED,
     borderWidth: 1.5, borderColor: GOLD, borderStyle: "dashed",
     alignItems: "center", justifyContent: "center",
   },
   badgeText: {
-    color: "#FFF", fontSize: 8, fontWeight: "800",
-    textAlign: "center", lineHeight: 10,
+    color: "#FFF", fontSize: 7, fontWeight: "800",
+    textAlign: "center", lineHeight: 9,
   },
-  row: { flexDirection: "row", gap: 8 },
-  left: { flex: 1.3, minWidth: 0 },
-  right: { flex: 1, alignItems: "center" },
   desc: {
-    fontSize: 12, fontWeight: "800", color: "#0F172A",
-    lineHeight: 14, marginBottom: 6,
+    fontSize: 11, fontWeight: "800", color: "#0F172A",
+    lineHeight: 13, marginBottom: 4, minHeight: 26,
   },
   mrpRow: {
     flexDirection: "row", alignItems: "baseline",
-    alignSelf: "flex-start", marginBottom: 4,
+    alignSelf: "flex-start", marginBottom: 2,
     position: "relative", paddingHorizontal: 2,
   },
-  rupeeSm: { fontSize: 10, color: DEEP_RED, fontWeight: "800" },
-  mrpVal: { fontSize: 18, color: DEEP_RED, fontWeight: "800", marginLeft: 1 },
+  rupeeSm: { fontSize: 9, color: DEEP_RED, fontWeight: "800" },
+  mrpVal: { fontSize: 14, color: DEEP_RED, fontWeight: "800", marginLeft: 1 },
   mrpLabel: {
-    fontSize: 9, color: DEEP_RED, fontWeight: "700",
-    marginLeft: 3, letterSpacing: 0.5,
+    fontSize: 8, color: DEEP_RED, fontWeight: "700",
+    marginLeft: 3, letterSpacing: 0.4,
   },
   strike: {
     position: "absolute", left: 0, right: 0, top: "55%",
     height: 1.2, backgroundColor: DEEP_RED, transform: [{ rotate: "-6deg" }],
   },
-  priceBlock: { marginTop: 2 },
-  priceRow: { flexDirection: "row", alignItems: "baseline" },
+  priceRow: {
+    flexDirection: "row", alignItems: "baseline", marginTop: 2,
+  },
   rupeeBig: { fontSize: 14, color: GOLD, fontWeight: "800" },
-  priceVal: { fontSize: 32, color: GOLD, fontWeight: "900", lineHeight: 32 },
+  priceVal: { fontSize: 26, color: GOLD, fontWeight: "900", lineHeight: 28 },
+  priceLabelCol: {
+    marginLeft: 4, justifyContent: "center",
+  },
   priceLabel: {
-    fontSize: 9, color: GOLD, fontWeight: "800",
-    letterSpacing: 0.8, marginTop: 1,
+    fontSize: 8, color: GOLD, fontWeight: "800",
+    letterSpacing: 0.6, lineHeight: 10,
+  },
+  footerRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", marginTop: 4, minHeight: 16,
   },
   offText: {
-    alignSelf: "flex-start", marginTop: 4,
     backgroundColor: DEEP_RED, color: "#FFF",
-    fontSize: 9, fontWeight: "800", letterSpacing: 0.4,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    fontSize: 9, fontWeight: "800", letterSpacing: 0.3,
+    paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3,
     overflow: "hidden",
   },
   brandFooter: {
-    marginTop: 4, fontSize: 10, fontWeight: "800",
-    color: DEEP_RED, letterSpacing: 0.4,
+    fontSize: 9, fontWeight: "800",
+    color: DEEP_RED, letterSpacing: 0.3,
   },
   itemNoFooter: {
-    marginTop: 6, paddingTop: 4,
+    marginTop: 4, paddingTop: 3,
     borderTopWidth: 1, borderTopColor: "#C8B89F", borderStyle: "dashed",
-    fontSize: 9, color: "#94795E", fontWeight: "600",
+    fontSize: 8, color: "#94795E", fontWeight: "600",
   },
 });
 

@@ -224,17 +224,18 @@ export default function PromoPrintScreen() {
       Alert.alert("No items selected", "Pick at least one item to print a price tag for.");
       return;
     }
-    // Build PriceTagItem snapshots from the currently selected Promo
-    // rows. Preserve any image the user already attached on a previous
-    // visit by carrying it across from the existing priceTagItems list.
+    // Append the selected Promo rows onto the existing PriceTag list
+    // (de-duplicated by key). Items the user already had — including
+    // any attached image — are kept as-is; new selections are added at
+    // the end so they're easy to find on the preview screen.
     const existingByKey = new Map(priceTagItems.map((i) => [i.key, i]));
     const now = Date.now();
-    const items: PriceTagItem[] = [];
+    const additions: PriceTagItem[] = [];
     for (const r of promoEntries) {
       const k = rowKey(r);
       if (!selected.has(k)) continue;
-      const prev = existingByKey.get(k);
-      items.push({
+      if (existingByKey.has(k)) continue; // already in preview, keep prior copy
+      additions.push({
         key: k,
         itemNo: s(r["Item No"]),
         description: s(r["Item Description"]),
@@ -245,12 +246,12 @@ export default function PromoPrintScreen() {
         category: s(r["Category"]) || undefined,
         vendorName: s(r["VendorName"]) || undefined,
         beat: beatFor(r) || undefined,
-        imageUri: prev?.imageUri,
-        addedAt: prev?.addedAt ?? now,
+        addedAt: now,
       });
     }
+    const merged = [...priceTagItems, ...additions];
     try {
-      await savePriceTagItems(items);
+      await savePriceTagItems(merged);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.push("/pricetag-preview");
     } catch (e: any) {
@@ -460,7 +461,11 @@ export default function PromoPrintScreen() {
       <View style={[styles.saveBar, { paddingBottom: insets.bottom + 12 }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.saveBarTitle}>{selected.size} selected</Text>
-          <Text style={styles.saveBarSub}>Save to open Price Tag preview</Text>
+          <Text style={styles.saveBarSub}>
+            {priceTagItems.length > 0
+              ? `${priceTagItems.length} already in preview · new items will be appended`
+              : "Tap to open Price Tag preview"}
+          </Text>
         </View>
         <TouchableOpacity
           style={[styles.saveBtn, selected.size === 0 && styles.saveBtnDisabled]}
@@ -468,7 +473,7 @@ export default function PromoPrintScreen() {
           disabled={selected.size === 0}
         >
           <Feather name="arrow-right" size={16} color={Colors.textInverse} />
-          <Text style={styles.saveBtnText}>Save</Text>
+          <Text style={styles.saveBtnText}>Save to PriceTag Preview</Text>
         </TouchableOpacity>
       </View>
     </View>
