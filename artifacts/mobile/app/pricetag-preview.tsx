@@ -19,6 +19,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
@@ -274,6 +276,50 @@ export default function PriceTagPreviewScreen() {
       setBusyKey(null);
     }
   }
+  // Open the OS file picker (Android Storage Access Framework /
+  // iOS Files / web file dialog). On phones with the Google Drive
+  // app installed, Drive shows up as a provider in this picker, so
+  // the user can browse a shared Drive folder and grab any image
+  // — same flow as the Suppliers tab Excel import.
+  async function pickFromFiles(key: string) {
+    setBusyKey(key);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["image/*"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset?.uri) throw new Error("No file returned by picker");
+
+      // Run through ImageManipulator to normalise as JPEG and get
+      // base64 — mirrors how applyAsset() handles ImagePicker assets.
+      const m = await ImageManipulator.manipulateAsync(asset.uri, [], {
+        compress: 0.6,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      });
+      let b64 = m.base64;
+      if (!b64 && Platform.OS !== "web") {
+        // Fallback: read the cached file directly.
+        b64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: "base64" as any,
+        });
+      }
+      if (!b64) throw new Error("Could not encode image");
+      const dataUri = `data:image/jpeg;base64,${b64}`;
+      await setPriceTagImage(key, dataUri);
+      setWorkingItems((prev) =>
+        prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Couldn't add image", e?.message ?? "Unknown error");
+    } finally {
+      setBusyKey(null);
+    }
+  }
   async function takePhoto(key: string) {
     if (!(await ensureCameraPermission())) return;
     setBusyKey(key);
@@ -431,12 +477,18 @@ export default function PriceTagPreviewScreen() {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
+          options: [
+            "Cancel",
+            "Take Photo",
+            "Choose from Library",
+            "Choose from Files (Drive…)",
+          ],
           cancelButtonIndex: 0,
         },
         (idx) => {
           if (idx === 1) takePhoto(key);
           else if (idx === 2) pickFromLibrary(key);
+          else if (idx === 3) pickFromFiles(key);
         }
       );
     } else {
@@ -448,13 +500,14 @@ export default function PriceTagPreviewScreen() {
   }
 
   function chooseAddImageSource(
-    source: "camera" | "library" | "drivePicker" | "driveLink",
+    source: "camera" | "library" | "files" | "drivePicker" | "driveLink",
   ) {
     const key = addImageOpenForKey;
     if (!key) return;
     setAddImageOpenForKey(null);
     if (source === "camera") takePhoto(key);
     else if (source === "library") pickFromLibrary(key);
+    else if (source === "files") pickFromFiles(key);
     else if (source === "drivePicker") openDrivePicker(key);
     else if (source === "driveLink") openDriveModal(key);
   }
@@ -663,6 +716,18 @@ export default function PriceTagPreviewScreen() {
               >
                 <Feather name="image" size={18} color={Colors.primary} />
                 <Text style={styles.sheetRowText}>Choose from Library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => chooseAddImageSource("files")}
+              >
+                <Feather name="folder" size={18} color={Colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetRowText}>Choose from Files</Text>
+                  <Text style={styles.sheetRowSub}>
+                    Includes Google Drive and other phone storage
+                  </Text>
+                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.sheetRow, styles.sheetCancelRow]}
