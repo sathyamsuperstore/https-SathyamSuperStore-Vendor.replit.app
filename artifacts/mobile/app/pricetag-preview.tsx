@@ -108,6 +108,20 @@ function extractDriveFileId(input: string): string | null {
   return null;
 }
 
+// Distinguish a Drive folder URL from a single-file URL so the
+// "Drive Link" flow can route folders into the browse picker
+// (rooted at that folder) instead of trying to download them.
+function extractDriveLink(
+  input: string,
+): { id: string; kind: "file" | "folder" } | null {
+  const s = input.trim();
+  const folderMatch = s.match(/\/(?:folders|drive\/folders|drive\/u\/\d+\/folders)\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return { id: folderMatch[1], kind: "folder" };
+  const id = extractDriveFileId(s);
+  if (!id) return null;
+  return { id, kind: "file" };
+}
+
 async function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -282,15 +296,24 @@ export default function PriceTagPreviewScreen() {
   }
   async function attachDrive() {
     if (!driveOpenForKey) return;
-    const id = extractDriveFileId(driveUrl);
-    if (!id) {
+    const link = extractDriveLink(driveUrl);
+    if (!link) {
       Alert.alert(
         "Invalid Drive link",
-        "Paste a Google Drive sharing link or file ID. The file must be shared as 'Anyone with the link'."
+        "Paste a Google Drive image link or folder link. Items must be shared as 'Anyone with the link'."
       );
       return;
     }
     const key = driveOpenForKey;
+    // Folder link → close this modal and open the browse picker
+    // rooted at that folder, so the user can navigate sub-folders
+    // and pick any image inside.
+    if (link.kind === "folder") {
+      setDriveOpenForKey(null);
+      openDrivePicker(key, { id: link.id, name: "Shared folder" });
+      return;
+    }
+    const id = link.id;
     setDriveLoading(true);
     try {
       const url = `https://drive.google.com/uc?export=download&id=${id}`;
@@ -344,13 +367,20 @@ export default function PriceTagPreviewScreen() {
     }
   }, []);
 
-  function openDrivePicker(key: string) {
+  function openDrivePicker(
+    key: string,
+    initialFolder?: { id: string; name: string },
+  ) {
     setDriveSearch("");
     setDriveFiles([]);
     setDriveListError(null);
-    setDriveFolderStack([{ id: null, name: "Drive" }]);
+    const stack: { id: string | null; name: string }[] = [
+      { id: null, name: "Drive" },
+    ];
+    if (initialFolder) stack.push(initialFolder);
+    setDriveFolderStack(stack);
     setDrivePickOpenForKey(key);
-    fetchDriveImages("", null);
+    fetchDriveImages("", initialFolder ? initialFolder.id : null);
   }
 
   function enterDriveFolder(folder: DriveFile) {
@@ -687,11 +717,11 @@ export default function PriceTagPreviewScreen() {
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Add image from Google Drive</Text>
               <Text style={styles.modalBody}>
-                Paste the Drive sharing link. The file must be shared as “Anyone with the link”.
+                Paste a Drive image link, or paste a folder link to browse it (sub-folders included). Must be shared as “Anyone with the link”.
               </Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="https://drive.google.com/file/d/…"
+                placeholder="https://drive.google.com/drive/folders/…"
                 placeholderTextColor={Colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
