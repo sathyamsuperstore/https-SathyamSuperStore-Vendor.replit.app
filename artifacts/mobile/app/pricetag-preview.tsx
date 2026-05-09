@@ -325,7 +325,11 @@ export default function PriceTagPreviewScreen() {
     setBusyKey(key);
     try {
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false,
+        // Hand the captured photo to the phone's built-in editor
+        // (crop, rotate, etc.) before returning. The user can still
+        // tap "Use Photo" / "Save" without changes if they want to
+        // keep the original.
+        allowsEditing: true,
         quality: 0.6,
         base64: true,
       });
