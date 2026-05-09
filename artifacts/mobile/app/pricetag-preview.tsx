@@ -172,6 +172,12 @@ export default function PriceTagPreviewScreen() {
   const [driveListError, setDriveListError] = useState<string | null>(null);
   const [driveSearch, setDriveSearch] = useState("");
   const [driveAttachingId, setDriveAttachingId] = useState<string | null>(null);
+  // Folder-navigation breadcrumb. First entry is the virtual "Drive"
+  // root (folderId=null lists everything the user can see). Tapping
+  // a folder pushes onto the stack; the back chevron pops.
+  const [driveFolderStack, setDriveFolderStack] = useState<
+    { id: string | null; name: string }[]
+  >([{ id: null, name: "Drive" }]);
 
   // Add-image action sheet (used on web + Android — iOS uses the
   // native ActionSheetIOS instead). Tracks which item the chosen
@@ -308,12 +314,16 @@ export default function PriceTagPreviewScreen() {
     }
   }
   // -------- Drive picker (browse) --------
-  const fetchDriveImages = useCallback(async (search: string) => {
+  const fetchDriveImages = useCallback(async (
+    search: string,
+    folderId: string | null,
+  ) => {
     setDriveListLoading(true);
     setDriveListError(null);
     try {
       const qs = new URLSearchParams({ kind: "images" });
       if (search.trim()) qs.set("search", search.trim());
+      if (folderId) qs.set("folderId", folderId);
       const resp = await fetch(apiUrl(`/api/drive/files?${qs.toString()}`));
       const text = await resp.text();
       if (!resp.ok) {
@@ -338,12 +348,32 @@ export default function PriceTagPreviewScreen() {
     setDriveSearch("");
     setDriveFiles([]);
     setDriveListError(null);
+    setDriveFolderStack([{ id: null, name: "Drive" }]);
     setDrivePickOpenForKey(key);
-    fetchDriveImages("");
+    fetchDriveImages("", null);
+  }
+
+  function enterDriveFolder(folder: DriveFile) {
+    const next = [...driveFolderStack, { id: folder.id, name: folder.name }];
+    setDriveFolderStack(next);
+    setDriveSearch("");
+    fetchDriveImages("", folder.id);
+  }
+
+  function popDriveFolder() {
+    if (driveFolderStack.length <= 1) return;
+    const next = driveFolderStack.slice(0, -1);
+    setDriveFolderStack(next);
+    setDriveSearch("");
+    fetchDriveImages("", next[next.length - 1].id);
   }
 
   async function attachDriveFile(file: DriveFile) {
     if (!drivePickOpenForKey) return;
+    if (file.mimeType === "application/vnd.google-apps.folder") {
+      enterDriveFolder(file);
+      return;
+    }
     const key = drivePickOpenForKey;
     setDriveAttachingId(file.id);
     try {
@@ -713,22 +743,54 @@ export default function PriceTagPreviewScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* Breadcrumb path */}
+              <View style={styles.pickerCrumbs}>
+                <TouchableOpacity
+                  onPress={popDriveFolder}
+                  disabled={driveFolderStack.length <= 1}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Feather
+                    name="chevron-left"
+                    size={18}
+                    color={driveFolderStack.length > 1 ? Colors.primary : Colors.textMuted}
+                  />
+                </TouchableOpacity>
+                <Text style={styles.pickerCrumbsText} numberOfLines={1}>
+                  {driveFolderStack.map((f) => f.name).join("  /  ")}
+                </Text>
+              </View>
+
               <View style={styles.pickerSearchRow}>
                 <Feather name="search" size={14} color={Colors.textMuted} />
                 <TextInput
                   style={styles.pickerSearch}
-                  placeholder="Search images by name…"
+                  placeholder={
+                    driveFolderStack.length > 1
+                      ? `Search in ${driveFolderStack[driveFolderStack.length - 1].name}…`
+                      : "Search images by name…"
+                  }
                   placeholderTextColor={Colors.textMuted}
                   value={driveSearch}
                   onChangeText={setDriveSearch}
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="search"
-                  onSubmitEditing={() => fetchDriveImages(driveSearch)}
+                  onSubmitEditing={() =>
+                    fetchDriveImages(
+                      driveSearch,
+                      driveFolderStack[driveFolderStack.length - 1].id,
+                    )
+                  }
                 />
                 <TouchableOpacity
                   style={styles.pickerSearchBtn}
-                  onPress={() => fetchDriveImages(driveSearch)}
+                  onPress={() =>
+                    fetchDriveImages(
+                      driveSearch,
+                      driveFolderStack[driveFolderStack.length - 1].id,
+                    )
+                  }
                   disabled={driveListLoading}
                 >
                   <Text style={styles.pickerSearchBtnText}>Go</Text>
@@ -738,7 +800,7 @@ export default function PriceTagPreviewScreen() {
               {driveListLoading ? (
                 <View style={styles.pickerStatus}>
                   <ActivityIndicator color={Colors.primary} />
-                  <Text style={styles.pickerStatusText}>Loading images from Drive…</Text>
+                  <Text style={styles.pickerStatusText}>Loading from Drive…</Text>
                 </View>
               ) : driveListError ? (
                 <View style={styles.pickerStatus}>
@@ -748,7 +810,12 @@ export default function PriceTagPreviewScreen() {
                   </Text>
                   <TouchableOpacity
                     style={styles.pickerRetry}
-                    onPress={() => fetchDriveImages(driveSearch)}
+                    onPress={() =>
+                      fetchDriveImages(
+                        driveSearch,
+                        driveFolderStack[driveFolderStack.length - 1].id,
+                      )
+                    }
                   >
                     <Text style={styles.pickerRetryText}>Retry</Text>
                   </TouchableOpacity>
@@ -757,16 +824,24 @@ export default function PriceTagPreviewScreen() {
                 <View style={styles.pickerStatus}>
                   <Feather name="image" size={20} color={Colors.textMuted} />
                   <Text style={styles.pickerStatusText}>
-                    No images found in your Google Drive.
+                    {driveFolderStack.length > 1
+                      ? "This folder has no images or sub-folders."
+                      : "No images or folders found in your Google Drive."}
                   </Text>
                 </View>
               ) : (
                 <FlatList
-                  data={driveFiles}
+                  data={[...driveFiles].sort((a, b) => {
+                    const af = a.mimeType === "application/vnd.google-apps.folder" ? 0 : 1;
+                    const bf = b.mimeType === "application/vnd.google-apps.folder" ? 0 : 1;
+                    if (af !== bf) return af - bf;
+                    return a.name.localeCompare(b.name);
+                  })}
                   keyExtractor={(it) => it.id}
                   contentContainerStyle={{ paddingVertical: 4 }}
                   keyboardShouldPersistTaps="handled"
                   renderItem={({ item }) => {
+                    const isFolder = item.mimeType === "application/vnd.google-apps.folder";
                     const busy = driveAttachingId === item.id;
                     const anyBusy = driveAttachingId !== null;
                     return (
@@ -776,15 +851,26 @@ export default function PriceTagPreviewScreen() {
                         disabled={anyBusy}
                         activeOpacity={0.7}
                       >
-                        <View style={styles.pickerThumb}>
-                          <Feather name="image" size={18} color={DEEP_RED} />
+                        <View
+                          style={[
+                            styles.pickerThumb,
+                            isFolder && { backgroundColor: "#FFF7E0" },
+                          ]}
+                        >
+                          <Feather
+                            name={isFolder ? "folder" : "image"}
+                            size={18}
+                            color={isFolder ? "#B8860B" : DEEP_RED}
+                          />
                         </View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={styles.pickerName} numberOfLines={1}>
                             {item.name}
                           </Text>
                           <Text style={styles.pickerMeta} numberOfLines={1}>
-                            {item.mimeType.replace("image/", "").toUpperCase()}
+                            {isFolder
+                              ? "Folder"
+                              : item.mimeType.replace("image/", "").toUpperCase()}
                             {item.modifiedTime
                               ? ` · ${new Date(item.modifiedTime).toLocaleDateString()}`
                               : ""}
@@ -793,7 +879,11 @@ export default function PriceTagPreviewScreen() {
                         {busy ? (
                           <ActivityIndicator size="small" color={Colors.primary} />
                         ) : (
-                          <Feather name="download" size={16} color={Colors.textMuted} />
+                          <Feather
+                            name={isFolder ? "chevron-right" : "download"}
+                            size={16}
+                            color={Colors.textMuted}
+                          />
                         )}
                       </TouchableOpacity>
                     );
@@ -1396,6 +1486,15 @@ const styles = StyleSheet.create({
   pickerHeader: {
     flexDirection: "row", justifyContent: "space-between",
     alignItems: "center", marginBottom: 8,
+  },
+  pickerCrumbs: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 4, paddingVertical: 6, marginBottom: 6,
+    backgroundColor: Colors.surfaceSecondary, borderRadius: 8,
+  },
+  pickerCrumbsText: {
+    flex: 1, fontSize: 12, fontWeight: "600",
+    color: Colors.textSecondary,
   },
   pickerSearchRow: {
     flexDirection: "row", alignItems: "center", gap: 8,

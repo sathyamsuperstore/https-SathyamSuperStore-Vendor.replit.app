@@ -6,14 +6,19 @@ const connectors = new ReplitConnectors();
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const GSHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 // MIME filter clauses by `kind` query param. Default keeps the
 // historical behaviour (spreadsheets) so existing callers don't
 // break; `images` is used by the mobile PriceTag Preview's Drive
-// picker.
+// picker — and includes folders so the user can drill into a
+// shared folder of pictures.
 function mimeFilterFor(kind: string | undefined): string {
   if (kind === "images") {
-    return "(mimeType contains 'image/')";
+    return `(mimeType contains 'image/' or mimeType='${FOLDER_MIME}')`;
+  }
+  if (kind === "folders") {
+    return `(mimeType='${FOLDER_MIME}')`;
   }
   return `(mimeType='${XLSX_MIME}' or mimeType='${GSHEET_MIME}')`;
 }
