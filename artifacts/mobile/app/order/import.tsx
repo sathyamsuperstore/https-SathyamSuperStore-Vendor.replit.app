@@ -1001,8 +1001,10 @@ export default function ImportOrderScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const successMsg = `${total} order${total > 1 ? "s" : ""} created successfully.`;
+      // Chain to the next step in the import sequence: Place Orders
+      // → Promo. router.replace so the importer stack doesn't grow.
       webSafeAlert("Orders Created", successMsg, [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: () => router.replace("/(tabs)/promo") },
       ]);
     } catch (e: any) {
       const msg = e?.message ?? String(e) ?? "Unknown error";

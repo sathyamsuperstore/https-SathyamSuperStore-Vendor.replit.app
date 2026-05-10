@@ -808,10 +808,10 @@ export default function LatestPurchasesScreen() {
       );
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Jump to the Promo tab so the user immediately sees the freshly
-      // imported purchase data alongside the live promo offers, which is
-      // the most common next step after a Latest Purchases import.
-      router.replace("/catalog?view=promo");
+      // Chain to the next step in the import sequence: LatestPurchases
+      // → Place Orders. router.replace so the importer stack doesn't
+      // grow as the operator walks through each tab.
+      router.replace("/order/import");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {

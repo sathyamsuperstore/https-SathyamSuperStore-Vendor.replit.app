@@ -155,11 +155,15 @@ export default function ImportUsersScreen() {
         const msg = skipped.length > 0
           ? `${added} user${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate UserID): ${skipped.join(", ")}`
           : `${added} user${added !== 1 ? "s" : ""} added successfully.`;
+        // Chain to the next step in the import sequence: Users →
+        // LastSupplyDate. router.replace so the importer stack
+        // doesn't grow as the operator walks through each tab.
+        const goNext = () => router.replace("/(tabs)/last-supply-date");
         if (Platform.OS === "web") {
           window.alert(`Import Complete\n\n${msg}`);
-          router.back();
+          goNext();
         } else {
-          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: goNext }]);
         }
       } catch {
         showStorageErrorAlert();

@@ -153,11 +153,15 @@ export default function ImportSuppliersScreen() {
         const msg = skipped.length > 0
           ? `${added} supplier${added !== 1 ? "s" : ""} added.\n${skipped.length} skipped (duplicate VendorCode): ${skipped.join(", ")}`
           : `${added} supplier${added !== 1 ? "s" : ""} added successfully.`;
+        // Chain to the next step in the import sequence: Suppliers
+        // → Users. router.replace (rather than push) so the user
+        // doesn't accumulate a long back-stack of importer screens.
+        const goNext = () => router.replace("/user/import");
         if (Platform.OS === "web") {
           window.alert(`Import Complete\n\n${msg}`);
-          router.back();
+          goNext();
         } else {
-          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: () => router.back() }]);
+          Alert.alert("Import Complete", msg, [{ text: "OK", onPress: goNext }]);
         }
       } catch {
         showStorageErrorAlert();

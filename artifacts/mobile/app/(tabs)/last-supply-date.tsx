@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -109,6 +110,7 @@ export default function LastSupplyDateScreen() {
   const { lastSupplyDates, saveLastSupplyDateBatch, clearLastSupplyDates } =
     useApp();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -295,7 +297,13 @@ export default function LastSupplyDateScreen() {
       );
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Chain to the next step in the import sequence: LastSupplyDate
+      // → MRP. Brief pause lets the 100% bar render before we navigate.
       setLoading(false);
+      setTimeout(() => {
+        router.replace("/(tabs)/mrp");
+      }, 400);
+      return;
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {

@@ -208,12 +208,13 @@ export default function MrpScreen() {
       setStatusMsg(`Imported ${parsed.length} MRP entr${parsed.length !== 1 ? "ies" : "y"} from "${asset.name}".`);
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Switch directly to the Latest Purchases screen so the user
-      // immediately sees the freshly-imported MRP data in context.
-      // Brief pause lets the 100% bar render before we navigate away.
+      // Chain to the next step in the import sequence: MRP →
+      // LatestPurchases. router.replace (rather than push) so the
+      // importer stack doesn't grow as the operator walks through
+      // each tab. Brief pause lets the 100% bar render first.
       setLoading(false);
       setTimeout(() => {
-        router.push("/(tabs)/latest-purchases");
+        router.replace("/(tabs)/latest-purchases");
       }, 400);
       return;
     } catch (e: any) {
