@@ -89,6 +89,18 @@ function priceFor(item: PriceTagItem): { label: string; value: string; isOffer: 
 
 // Customer savings = MRP - active price. Returns null when there's
 // no real saving (no MRP, no offer line, or MRP <= offer).
+// Minimum purchase qty to show on the tag. Returns the formatted
+// number when EligibleQty is present and not equal to 1, otherwise
+// null (single-unit promos don't need the disclaimer).
+function minPurchaseQty(item: PriceTagItem): string | null {
+  const raw = item.eligibleQty;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return null;
+  if (n === 1) return null;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 function offAmount(item: PriceTagItem): string | null {
   const mrp = toNum(item.mrp);
   // Only compute "OFF" against the offer price — falling back to SP
@@ -1395,6 +1407,7 @@ function StyleATag({
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
   const off = offAmount(item);
+  const minQty = minPurchaseQty(item);
 
   return (
     <View style={a.card}>
@@ -1418,6 +1431,12 @@ function StyleATag({
         {item.description || "(no description)"}
       </Text>
 
+      {/* Minimum purchase qty disclaimer — only when EligibleQty > 1.
+          Sits flush to the left edge directly under the description. */}
+      {minQty ? (
+        <Text style={a.minQty}>* Minimum Purchase Qty: {minQty}</Text>
+      ) : null}
+
       {/* Row 2 — prices on the left, square image on the right */}
       <View style={a.bodyRow}>
         <View style={a.bodyLeft}>
@@ -1430,7 +1449,7 @@ function StyleATag({
           )}
           <View style={a.priceRow}>
             <Text style={a.rupeeBig}>₹</Text>
-            <Text style={a.priceVal}>{value}</Text>
+            <Text style={a.priceVal}>{value}{minQty ? "*" : ""}</Text>
             <View style={a.priceLabelCol}>
               <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[0]}</Text>
               <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[1] || ""}</Text>
@@ -1495,6 +1514,7 @@ function StyleBTag({
 }) {
   const { value } = priceFor(item);
   const off = offAmount(item);
+  const minQtyB = minPurchaseQty(item);
 
   return (
     <View style={b.card}>
@@ -1534,6 +1554,9 @@ function StyleBTag({
           ) : (
             <Text style={b.offTextMuted}>OFFER PRICE</Text>
           )}
+          {minQtyB ? (
+            <Text style={b.minQty}>* Minimum Purchase Qty: {minQtyB}</Text>
+          ) : null}
         </View>
       </View>
 
@@ -1688,6 +1711,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
   const off = offAmount(it);
+  const minQtyA = minPurchaseQty(it);
   const desc = it.description || "";
   const tamil = hasTamil(desc);
   const descSpan = tamil
@@ -1718,6 +1742,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
       ${watermark}
       ${validTill}
       <div class="descA">${descSpan}</div>
+      ${minQtyA ? `<div class="minQtyA">* Minimum Purchase Qty: ${escapeHtml(minQtyA)}</div>` : ""}
       <div class="bodyRowA">
         <div class="bodyLeftA">
           ${mrp ? `
@@ -1726,7 +1751,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
               <span class="mrpLabelA">MRP</span>
             </div>` : ""}
           <div class="priceRowA">
-            <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
+            <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}${minQtyA ? "*" : ""}</span>
             <span class="priceLabelColA">
               <span class="priceLabelA">${labelLine1}</span>
               <span class="priceLabelA">${labelLine2}</span>
@@ -1789,6 +1814,10 @@ const PDF_CSS_A = `
   .descA {
     font-size: 13px; font-weight: 800; color: ${DEEP_RED};
     line-height: 1.25; margin-bottom: 8px;
+  }
+  .minQtyA {
+    font-size: 10px; font-weight: 700; color: ${DEEP_RED};
+    margin: -4px 0 6px 0; text-align: left;
   }
   .bodyRowA {
     display: flex; flex-direction: row; align-items: center;
@@ -1854,6 +1883,7 @@ const PDF_CSS_A = `
 function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
   const { value } = priceFor(it);
   const off = offAmount(it);
+  const minQtyB = minPurchaseQty(it);
   const desc = it.description || "";
   const tamil = hasTamil(desc);
   const descSpan = tamil
@@ -1885,6 +1915,7 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
             <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}</span>
           </div>
           ${off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`}
+          ${minQtyB ? `<div class="minQtyB">* Minimum Purchase Qty: ${escapeHtml(minQtyB)}</div>` : ""}
         </div>
       </div>
       <div class="bottomBannerB">${descSpan}</div>
@@ -1955,6 +1986,10 @@ const PDF_CSS_B = `
   .offB {
     color: ${RED}; font-size: 16px; font-weight: 800;
     margin-top: 4px; letter-spacing: 0.5px;
+  }
+  .minQtyB {
+    font-size: 10px; font-weight: 700; color: #B00020;
+    text-align: right; margin-top: 4px;
   }
   .offBmuted {
     color: ${RED}; font-size: 12px; font-weight: 700;
@@ -2295,6 +2330,10 @@ const a = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: "#C8B89F", borderStyle: "dashed",
     fontSize: 8, color: "#94795E", fontWeight: "600",
   },
+  minQty: {
+    fontSize: 9, fontWeight: "700", color: DEEP_RED,
+    marginTop: -2, marginBottom: 4, textAlign: "left",
+  },
 });
 
 // Style B — on-screen tag styles
@@ -2329,6 +2368,10 @@ const b = StyleSheet.create({
   offTextMuted: {
     color: RED, fontSize: 10, fontWeight: "700",
     marginTop: 2, letterSpacing: 0.4,
+  },
+  minQty: {
+    color: RED, fontSize: 9, fontWeight: "700",
+    marginTop: 3, textAlign: "right",
   },
   bottomBanner: {
     backgroundColor: RED, paddingVertical: 6, paddingHorizontal: 8,
