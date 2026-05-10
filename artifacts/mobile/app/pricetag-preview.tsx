@@ -1908,8 +1908,8 @@ const PDF_CSS_B = `
     z-index: 0;
   }
   .tagB > *:not(.watermark) { position: relative; z-index: 1; }
-  /* "Valid Till" rail for Style B — moved to the LEFT edge and
-     rotated 180deg per user request (reads upside-down). */
+  /* "Valid Till" rail for Style B — left edge, rotated -90deg so
+     the text reads bottom-to-top (natural for a left-edge label). */
   .tagB .validTillB {
     position: absolute;
     top: 0; left: 2px; bottom: 0;
@@ -1919,7 +1919,7 @@ const PDF_CSS_B = `
   }
   .tagB .validTillB span {
     display: inline-block;
-    transform: rotate(180deg);
+    transform: rotate(-90deg);
     white-space: nowrap;
     font-size: 9px; color: #6B7280; font-weight: 600;
     letter-spacing: 0.3px;
@@ -2358,8 +2358,9 @@ const validTillStyles = StyleSheet.create({
     width: 200,
     textAlign: "center",
   },
-  // Style B: rail on the LEFT edge with the text flipped 180deg
-  // (per user request — reads upside-down horizontally).
+  // Style B: rail on the LEFT edge. Text rotated -90deg so it reads
+  // bottom-to-top — the natural orientation for a left-edge label
+  // (reader tilts head to the left).
   railB: {
     position: "absolute",
     top: 0, bottom: 0, left: 2,
@@ -2370,7 +2371,7 @@ const validTillStyles = StyleSheet.create({
   textB: {
     fontSize: 9, color: Colors.textMuted, fontWeight: "600",
     letterSpacing: 0.3,
-    transform: [{ rotate: "180deg" }],
+    transform: [{ rotate: "-90deg" }],
     width: 200,
     textAlign: "center",
   },
