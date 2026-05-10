@@ -34,12 +34,14 @@ export default function AdmnHubScreen() {
     mrpEntries,
     latestPurchases,
     orders,
+    lastSupplyDates,
     clearAllSuppliers,
     clearAllAppUsers,
     clearPromoBatch,
     clearMrpBatch,
     clearLatestPurchases,
     clearAllOrders,
+    clearLastSupplyDates,
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
