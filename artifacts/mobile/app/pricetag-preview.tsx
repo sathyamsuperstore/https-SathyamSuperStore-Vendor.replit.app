@@ -752,13 +752,33 @@ export default function PriceTagPreviewScreen() {
     if (!item?.imageUri) return false;
     setBusyKey(key);
     try {
+      // Since the SQLITE_FULL fix, imageUri is a `file://` path (not a
+      // data URI). The server expects a `data:image/...;base64,...`
+      // payload, so read the file back to base64 here. Existing
+      // `data:` URIs (legacy in-memory state, web platform) are passed
+      // through as-is. Anything else is rejected up-front so the user
+      // gets a clear message instead of a generic Pixian 400.
+      let imageDataUri: string;
+      if (item.imageUri.startsWith("data:")) {
+        imageDataUri = item.imageUri;
+      } else if (item.imageUri.startsWith("file://")) {
+        const lower = item.imageUri.toLowerCase().split(/[?#]/)[0] ?? "";
+        const mime = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+        const b64 = await FileSystem.readAsStringAsync(item.imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        imageDataUri = `data:${mime};base64,${b64}`;
+      } else {
+        throw new Error("Unsupported image source.");
+      }
+
       const resp = await fetch(apiUrl("/api/pixian/remove-bg"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ imageDataUri: item.imageUri }),
+        body: JSON.stringify({ imageDataUri }),
       });
       const text = await resp.text();
       if (resp.status === 401) {

@@ -106,8 +106,23 @@ router.post(
       let msg = `Pixian responded ${upstream.status}`;
       try {
         const j = JSON.parse(text);
-        if (j?.message) msg = String(j.message);
-        else if (j?.error) msg = String(j.error);
+        // Pixian wraps errors as { status:"error", error:{ code, message } }.
+        // Earlier we did `String(j.error)` which yielded the literal
+        // string "[object Object]" — surface the nested message
+        // (or top-level message) instead, falling back to a JSON dump.
+        const nested =
+          (j && typeof j === "object" && j.error && typeof j.error === "object"
+            ? (j.error as { message?: unknown }).message
+            : undefined);
+        if (typeof nested === "string" && nested) {
+          msg = nested;
+        } else if (typeof j?.message === "string" && j.message) {
+          msg = j.message;
+        } else if (typeof j?.error === "string" && j.error) {
+          msg = j.error;
+        } else if (j && typeof j === "object") {
+          msg = JSON.stringify(j).slice(0, 200);
+        }
       } catch {
         if (text) msg = text.slice(0, 200);
       }
