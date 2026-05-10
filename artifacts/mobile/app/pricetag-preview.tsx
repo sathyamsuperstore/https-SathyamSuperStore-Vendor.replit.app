@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -134,6 +134,91 @@ async function blobToDataUri(blob: Blob): Promise<string> {
   });
 }
 
+// -----------------------------------------------------------------------
+// On-disk image storage
+//
+// Price-tag images used to be persisted as base64 `data:` URIs inside
+// the AppContext JSON blob. AsyncStorage on Android is backed by
+// SQLite (RKStorage), which has a tight default size cap; a few
+// 1024x1024 PNG/JPEG data URIs would fill it and then every later
+// AsyncStorage.setItem would fail with `SQLite Error code 13:
+// SQLITE_FULL`, surfacing as "Couldn't add image" on this screen.
+//
+// To keep the AsyncStorage payload tiny we instead write the image
+// bytes to the app's own document directory and only store the
+// `file://` URI. Each image now costs ~80 bytes of AsyncStorage
+// instead of multiple megabytes. Same RN <Image> component renders
+// `file://` and `data:` URIs identically, and the print HTML embeds
+// either one fine.
+//
+// Web has no FileSystem.documentDirectory, so on web we keep the
+// data: URI behaviour (web AsyncStorage = localStorage which has a
+// much larger budget and isn't subject to SQLITE_FULL).
+// -----------------------------------------------------------------------
+const PRICE_TAG_IMAGE_DIR =
+  (FileSystem.documentDirectory ?? "") + "pricetags/";
+
+async function ensurePriceTagDir(): Promise<void> {
+  if (Platform.OS === "web") return;
+  try {
+    const info = await FileSystem.getInfoAsync(PRICE_TAG_IMAGE_DIR);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(PRICE_TAG_IMAGE_DIR, {
+        intermediates: true,
+      });
+    }
+  } catch {
+    /* best effort — write below will surface a real error */
+  }
+}
+
+// Decode a `data:<mime>;base64,<bytes>` URI into its parts. Returns
+// null if the input isn't a recognisable data URI.
+function parseDataUri(uri: string): { mime: string; base64: string } | null {
+  const m = /^data:([^;,]+);base64,(.*)$/i.exec(uri);
+  if (!m) return null;
+  return { mime: m[1].toLowerCase(), base64: m[2] };
+}
+
+function extForMime(mime: string): string {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/heic" || mime === "image/heif") return "heic";
+  return "jpg";
+}
+
+// Persist a `data:` URI to the app's document directory and return
+// the new `file://` URI. On web (or if the input is already a
+// `file://` URI) the input is returned unchanged.
+async function persistDataUri(key: string, uri: string): Promise<string> {
+  if (Platform.OS === "web") return uri;
+  if (!uri.startsWith("data:")) return uri;
+  const parsed = parseDataUri(uri);
+  if (!parsed) return uri;
+  await ensurePriceTagDir();
+  const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = `${safeKey}-${Date.now()}.${extForMime(parsed.mime)}`;
+  const path = PRICE_TAG_IMAGE_DIR + filename;
+  await FileSystem.writeAsStringAsync(path, parsed.base64, {
+    encoding: "base64" as any,
+  });
+  return path;
+}
+
+// Delete a previously-persisted price-tag image file. Anything other
+// than a `file://` URI inside our own document dir is ignored, so
+// stray data: URIs and external file paths are safe to pass in.
+async function cleanupPriceTagFile(uri: string | null | undefined): Promise<void> {
+  if (!uri) return;
+  if (Platform.OS === "web") return;
+  if (!uri.startsWith(PRICE_TAG_IMAGE_DIR)) return;
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch {
+    /* best effort */
+  }
+}
+
 // Build a URL pointing at our api-server. On web (Expo running inside
 // the Replit preview iframe) the same origin handles `/api/...`
 // through the shared proxy, so a relative URL works. On a real
@@ -173,6 +258,13 @@ export default function PriceTagPreviewScreen() {
 
   const [mode, setMode] = useState<Mode>("view");
   const [workingItems, setWorkingItems] = useState<PriceTagItem[]>(priceTagItems);
+  // Tracks the latest working items for closure-safe lookups (e.g. the
+  // previous imageUri inside async picker handlers, used for on-disk
+  // cleanup when an image is replaced).
+  const workingItemsRef = useRef<PriceTagItem[]>(workingItems);
+  useEffect(() => {
+    workingItemsRef.current = workingItems;
+  }, [workingItems]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [bgAllRunning, setBgAllRunning] = useState(false);
   const { token: authToken, logout } = useAuth();
@@ -263,6 +355,52 @@ export default function PriceTagPreviewScreen() {
     const uri = (opts.uri ?? "").toLowerCase().split(/[?#]/)[0] ?? "";
     return uri.endsWith(".png");
   }
+  // Persist a freshly-built `data:` URI to disk and wire it through
+  // AppContext + the local working-items state. Replaces (and best-
+  // -effort deletes) any previously persisted file for the same key
+  // so the document directory doesn't accumulate orphans.
+  async function commitImageForKey(key: string, dataUri: string): Promise<void> {
+    const prevUri = workingItemsRef.current.find((i) => i.key === key)?.imageUri;
+    const finalUri = await persistDataUri(key, dataUri);
+    await setPriceTagImage(key, finalUri);
+    setWorkingItems((cur) =>
+      cur.map((i) => (i.key === key ? { ...i, imageUri: finalUri } : i))
+    );
+    if (prevUri && prevUri !== finalUri) {
+      void cleanupPriceTagFile(prevUri);
+    }
+  }
+
+  // One-time, screen-mount migration. Walks any existing items that
+  // still hold a `data:` URI (from before this fix shipped) and
+  // moves the bytes to disk, replacing the stored value with the
+  // small `file://` URI. Each rewrite shrinks the AsyncStorage JSON
+  // blob, so even a phone that's currently SQLITE_FULL recovers
+  // space as the migration progresses.
+  const migrationDone = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (migrationDone.current) return;
+    migrationDone.current = true;
+    void (async () => {
+      const stale = priceTagItems.filter(
+        (i) => typeof i.imageUri === "string" && i.imageUri.startsWith("data:"),
+      );
+      for (const it of stale) {
+        try {
+          await commitImageForKey(it.key, it.imageUri!);
+        } catch {
+          // If even one rewrite fails (e.g. disk genuinely full) stop
+          // — the next mount will retry once the user clears space.
+          break;
+        }
+      }
+    })();
+    // priceTagItems intentionally excluded — we only want this to
+    // run once, against the hydrated initial value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function applyAsset(key: string, asset: ImagePicker.ImagePickerAsset) {
     // Force the saved image to a 1024x1024 square. If the source isn't
     // already square (e.g. user skipped the editor or picked something
@@ -297,10 +435,7 @@ export default function PriceTagPreviewScreen() {
     const dataUri = isPng
       ? `data:image/png;base64,${b64}`
       : `data:image/jpeg;base64,${b64}`;
-    await setPriceTagImage(key, dataUri);
-    setWorkingItems((prev) =>
-      prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
-    );
+    await commitImageForKey(key, dataUri);
   }
   async function pickFromLibrary(key: string) {
     if (!(await ensureLibraryPermission())) return;
@@ -389,10 +524,7 @@ export default function PriceTagPreviewScreen() {
       const dataUri = isPng
         ? `data:image/png;base64,${b64}`
         : `data:image/jpeg;base64,${b64}`;
-      await setPriceTagImage(key, dataUri);
-      setWorkingItems((prev) =>
-        prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
-      );
+      await commitImageForKey(key, dataUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       Alert.alert("Couldn't add image", e?.message ?? "Unknown error");
@@ -451,10 +583,7 @@ export default function PriceTagPreviewScreen() {
       if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
       const blob = await resp.blob();
       const dataUri = await blobToDataUri(blob);
-      await setPriceTagImage(key, dataUri);
-      setWorkingItems((prev) =>
-        prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
-      );
+      await commitImageForKey(key, dataUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDriveOpenForKey(null);
     } catch (e: any) {
@@ -544,10 +673,7 @@ export default function PriceTagPreviewScreen() {
       if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
       const blob = await resp.blob();
       const dataUri = await blobToDataUri(blob);
-      await setPriceTagImage(key, dataUri);
-      setWorkingItems((prev) =>
-        prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
-      );
+      await commitImageForKey(key, dataUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDrivePickOpenForKey(null);
     } catch (e: any) {
@@ -597,10 +723,14 @@ export default function PriceTagPreviewScreen() {
   }
   async function removeImage(key: string) {
     try {
+      const prevUri = workingItemsRef.current.find((i) => i.key === key)?.imageUri;
       await setPriceTagImage(key, null);
       setWorkingItems((prev) =>
         prev.map((i) => (i.key === key ? { ...i, imageUri: undefined } : i))
       );
+      // Free the disk space too — otherwise the file lingers in the
+      // app's document directory after the user clears the tag.
+      if (prevUri) void cleanupPriceTagFile(prevUri);
     } catch (e: any) {
       Alert.alert("Couldn't remove image", e?.message ?? "Storage error");
     }
@@ -661,10 +791,7 @@ export default function PriceTagPreviewScreen() {
       const finalUri = m.base64
         ? `data:image/png;base64,${m.base64}`
         : outDataUri;
-      await setPriceTagImage(key, finalUri);
-      setWorkingItems((prev) =>
-        prev.map((i) => (i.key === key ? { ...i, imageUri: finalUri } : i))
-      );
+      await commitImageForKey(key, finalUri);
       return true;
     } catch (e: any) {
       if (!opts.silent) {
