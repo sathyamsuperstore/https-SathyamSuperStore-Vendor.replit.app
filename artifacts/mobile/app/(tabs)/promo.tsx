@@ -337,6 +337,10 @@ export default function PromoScreen({
   // amber "from MRP tab" row). Lets the user jump straight to items
   // that need their promo data filled in.
   const [missingPromo, setMissingPromo] = useState(false);
+  // Quick toggle: when on, restrict the table to rows whose
+  // PromoSortCode cell is non-empty (IsNotNull). Off = show all
+  // rows regardless of sort code.
+  const [hasSortCodeOnly, setHasSortCodeOnly] = useState(false);
   // Inclusive date range filter for the "Promo CR Date" column. Both
   // bounds are optional — only-from / only-to / both-set all narrow
   // the table; cleared = show all rows. Drafts hold the in-progress
@@ -717,6 +721,13 @@ export default function PromoScreen({
       );
     }
 
+    // "Has Sort Code" toggle: keep only rows whose PromoSortCode
+    // cell is present and non-blank. Stored as TEXT so any
+    // non-empty trimmed string qualifies.
+    if (hasSortCodeOnly) {
+      base = base.filter((r) => String(r["PromoSortCode"] ?? "").trim() !== "");
+    }
+
     return base;
   }, [
     promoEntries,
@@ -726,6 +737,7 @@ export default function PromoScreen({
     activeCategories,
     onlyMultiMrp,
     missingPromo,
+    hasSortCodeOnly,
     missingPromoItemSet,
   ]);
 
@@ -1911,6 +1923,17 @@ export default function PromoScreen({
                   variant="highlight"
                   onPress={() => setOnlyMultiMrp((v) => !v)}
                   onClear={() => setOnlyMultiMrp(false)}
+                />
+              </View>
+              <View style={styles.filterCol}>
+                <FilterBar
+                  icon="hash"
+                  label={hasSortCodeOnly ? "Sort Code: Set" : "Sort Code: All"}
+                  active={hasSortCodeOnly}
+                  toggleOnly
+                  variant="highlight"
+                  onPress={() => setHasSortCodeOnly((v) => !v)}
+                  onClear={() => setHasSortCodeOnly(false)}
                 />
               </View>
               {/* Explicit "Save" chip surfaced only while Modify mode

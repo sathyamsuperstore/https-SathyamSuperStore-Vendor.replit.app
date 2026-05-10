@@ -81,6 +81,10 @@ export default function PromoPrintScreen() {
   // Which facet's value list is open (null = none open).
   const [openFacet, setOpenFacet] = useState<FacetKey | null>(null);
   const [search, setSearch] = useState("");
+  // Quick toggle: when on, restrict the picker list to rows whose
+  // PromoSortCode cell is non-empty. Co-exists with all facet
+  // filters and the search box.
+  const [hasSortCodeOnly, setHasSortCodeOnly] = useState(false);
 
   // Selected row keys. Seed with whatever's already in the saved
   // priceTagItems list so re-entering the screen shows current picks.
@@ -163,6 +167,7 @@ export default function PromoPrintScreen() {
         const v = valueFor(r, f).toLowerCase();
         if (!sel.has(v)) return false;
       }
+      if (hasSortCodeOnly && s(r["PromoSortCode"]) === "") return false;
       if (!q) return true;
       return [
         s(r["Item No"]),
@@ -170,10 +175,11 @@ export default function PromoPrintScreen() {
         s(r["Brand"]),
         s(r["Category"]),
         s(r["VendorName"]),
+        s(r["PromoSortCode"]),
       ].some((x) => x.toLowerCase().includes(q));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promoEntries, filters, search, beatByVendorCode]);
+  }, [promoEntries, filters, search, hasSortCodeOnly, beatByVendorCode]);
 
   function toggleFilter(facet: FacetKey, value: string) {
     const key = value.toLowerCase();
@@ -342,6 +348,22 @@ export default function PromoPrintScreen() {
               </TouchableOpacity>
             );
           })}
+          {/* Quick toggle: restrict to rows where PromoSortCode is set.
+              Co-exists with the facet filters and search box above. */}
+          <TouchableOpacity
+            style={[styles.facetChip, hasSortCodeOnly && styles.facetChipActive]}
+            onPress={() => setHasSortCodeOnly((v) => !v)}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[
+                styles.facetChipText,
+                hasSortCodeOnly && styles.facetChipTextActive,
+              ]}
+            >
+              {hasSortCodeOnly ? "Sort Code: Set" : "Sort Code: All"}
+            </Text>
+          </TouchableOpacity>
           {activeFilterCount > 0 && (
             <TouchableOpacity onPress={clearAllFilters} style={styles.clearAllBtn}>
               <Feather name="x-circle" size={14} color={Colors.danger} />
