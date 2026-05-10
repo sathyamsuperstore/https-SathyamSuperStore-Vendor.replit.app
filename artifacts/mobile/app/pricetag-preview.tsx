@@ -1719,9 +1719,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
   const descSpan = tamil
     ? `<span class="tamil">${escapeHtml(desc)}</span>`
     : escapeHtml(desc);
-  const img = it.imageUri
-    ? `<img src="${it.imageUri}" />`
-    : `<div class="img-placeholder">No&nbsp;Image</div>`;
+  const img = it.imageUri ? `<img src="${it.imageUri}" />` : "";
 
   // Split the price label across two lines (e.g. "OFFER" / "PRICE")
   // so the PDF matches the two-line on-screen layout.
@@ -1891,9 +1889,7 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
   const descSpan = tamil
     ? `<span class="tamil">${escapeHtml(desc)}</span>`
     : escapeHtml(desc);
-  const img = it.imageUri
-    ? `<img src="${it.imageUri}" />`
-    : `<div class="img-placeholder">No&nbsp;Image</div>`;
+  const img = it.imageUri ? `<img src="${it.imageUri}" />` : "";
 
   const watermark = showLogo
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
