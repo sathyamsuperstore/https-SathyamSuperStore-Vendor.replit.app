@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createRateLimit } from "../middlewares/rate-limit";
+import { requireSession } from "../middlewares/require-session";
 
 const router = Router();
 
@@ -22,7 +23,7 @@ const pixianPerDay = createRateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 200 }
 // certainly a misuse / accidental payload, so we reject early.
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-router.post("/pixian/remove-bg", pixianPerMinute, pixianPerDay, async (req, res) => {
+router.post("/pixian/remove-bg", requireSession, pixianPerMinute, pixianPerDay, async (req, res) => {
   const id = process.env.PIXIAN_API_ID;
   const secret = process.env.PIXIAN_API_SECRET;
   if (!id || !secret) {

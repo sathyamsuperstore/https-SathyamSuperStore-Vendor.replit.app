@@ -61,6 +61,7 @@
     "expo-file-system": "^19.0.21",
     "expo-image-manipulator": "^55.0.15",
     "expo-print": "~15.0.8",
+    "expo-secure-store": "^55.0.13",
     "expo-sharing": "~14.0.8",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"

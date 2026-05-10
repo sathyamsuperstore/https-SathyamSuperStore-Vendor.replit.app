@@ -26,6 +26,7 @@ import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { pickFont, hasTamil } from "@/constants/typography";
 
 // PriceTag Preview screen.
@@ -174,6 +175,7 @@ export default function PriceTagPreviewScreen() {
   const [workingItems, setWorkingItems] = useState<PriceTagItem[]>(priceTagItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [bgAllRunning, setBgAllRunning] = useState(false);
+  const { token: authToken, logout } = useAuth();
   const [exporting, setExporting] = useState(false);
 
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
@@ -577,10 +579,20 @@ export default function PriceTagPreviewScreen() {
     try {
       const resp = await fetch(apiUrl("/api/pixian/remove-bg"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ imageDataUri: item.imageUri }),
       });
       const text = await resp.text();
+      if (resp.status === 401) {
+        // Session expired or revoked — drop the stored token so the
+        // PinGate re-prompts on the next render, and bail out of the
+        // current run.
+        await logout();
+        throw new Error("Session expired. Please re-enter your PIN.");
+      }
       if (!resp.ok) {
         let msg = `Background removal failed (${resp.status})`;
         try {

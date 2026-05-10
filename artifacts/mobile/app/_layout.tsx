@@ -18,7 +18,9 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PinGate } from "@/components/PinGate";
 import { AppProvider } from "@/context/AppContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
@@ -77,9 +79,13 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <AppProvider>
-              <RootLayoutNav />
-            </AppProvider>
+            <AuthProvider>
+              <PinGate>
+                <AppProvider>
+                  <RootLayoutNav />
+                </AppProvider>
+              </PinGate>
+            </AuthProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
