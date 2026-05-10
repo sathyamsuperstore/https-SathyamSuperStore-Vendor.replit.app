@@ -281,6 +281,14 @@ export default function PriceTagPreviewScreen() {
     workingItemsRef.current = workingItems;
   }, [workingItems]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Snapshot of `priceTagItems` taken right before "Sort by Code"
+  // applies its ordering. While non-null, the toolbar button flips
+  // to "Undo Sort" and tapping it restores this snapshot. Cleared
+  // whenever the underlying item set changes (add / remove / Modify
+  // commit) so we never restore a stale, mismatched ordering.
+  const [preSortSnapshot, setPreSortSnapshot] = useState<
+    PriceTagItem[] | null
+  >(null);
   const [bgAllRunning, setBgAllRunning] = useState(false);
   const { token: authToken, logout } = useAuth();
   const [exporting, setExporting] = useState(false);
@@ -323,6 +331,10 @@ export default function PriceTagPreviewScreen() {
   async function commitModify() {
     try {
       await savePriceTagItems(workingItems);
+      // The user has just established a new manual order — discard
+      // any "Undo Sort" snapshot so the toolbar button reverts to
+      // "Sort by Code" instead of restoring the pre-sort layout.
+      setPreSortSnapshot(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMode("view");
     } catch (e: any) {
@@ -358,6 +370,20 @@ export default function PriceTagPreviewScreen() {
   // user asked for). The new order is persisted immediately so PDF
   // export and the on-screen grid both reflect it.
   async function sortByPromoSortCode() {
+    // Second tap = undo: restore the snapshot taken before the last
+    // sort and clear it so the next tap will sort again.
+    if (preSortSnapshot) {
+      try {
+        await savePriceTagItems(preSortSnapshot);
+        setPreSortSnapshot(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e: any) {
+        Alert.alert("Couldn't restore", e?.message ?? "Storage error");
+      }
+      return;
+    }
+    // First tap = remember the current order, then apply the sort.
+    const snapshot = priceTagItems.slice();
     const sorted = [...priceTagItems].sort((a, b) => {
       const ac = (a.promoSortCode ?? "").trim();
       const bc = (b.promoSortCode ?? "").trim();
@@ -375,11 +401,32 @@ export default function PriceTagPreviewScreen() {
     });
     try {
       await savePriceTagItems(sorted);
+      setPreSortSnapshot(snapshot);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       Alert.alert("Couldn't sort", e?.message ?? "Storage error");
     }
   }
+
+  // Invalidate the undo snapshot any time the item set itself
+  // changes (additions from PromoPrint, removals, Modify commits).
+  // We compare the key-set rather than full equality so a mere
+  // image-attachment edit doesn't drop the snapshot.
+  useEffect(() => {
+    if (!preSortSnapshot) return;
+    const a = new Set(preSortSnapshot.map((i) => i.key));
+    const b = new Set(priceTagItems.map((i) => i.key));
+    if (a.size !== b.size) {
+      setPreSortSnapshot(null);
+      return;
+    }
+    for (const k of a) {
+      if (!b.has(k)) {
+        setPreSortSnapshot(null);
+        return;
+      }
+    }
+  }, [priceTagItems, preSortSnapshot]);
 
   // -------- Image attachment (camera / gallery / drive) --------
   async function ensureLibraryPermission() {
@@ -1040,8 +1087,14 @@ export default function PriceTagPreviewScreen() {
                 onPress={sortByPromoSortCode}
                 disabled={priceTagItems.length < 2}
               >
-                <Feather name="bar-chart-2" size={14} color={Colors.text} />
-                <Text style={styles.modifyBtnText}>Sort by Code</Text>
+                <Feather
+                  name={preSortSnapshot ? "rotate-ccw" : "bar-chart-2"}
+                  size={14}
+                  color={Colors.text}
+                />
+                <Text style={styles.modifyBtnText}>
+                  {preSortSnapshot ? "Undo Sort" : "Sort by Code"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modifyBtn} onPress={enterModify}>
                 <Feather name="edit-2" size={14} color={Colors.text} />
