@@ -243,6 +243,26 @@ export default function PriceTagPreviewScreen() {
     }
     return true;
   }
+  // Detect whether the source is (or should be treated as) a PNG so we
+  // can preserve its alpha channel. Re-encoding a transparent PNG as
+  // JPEG flattens transparent pixels to solid black, which is what was
+  // happening to logos/cutouts dropped onto a price tag. We sniff the
+  // MIME type first, then fall back to the file extension on the URI
+  // / fileName when MIME is missing (common with DocumentPicker on
+  // Android and with Drive-hosted files).
+  function isPngSource(opts: {
+    uri?: string | null;
+    mimeType?: string | null;
+    fileName?: string | null;
+  }): boolean {
+    const mime = (opts.mimeType ?? "").toLowerCase();
+    if (mime === "image/png") return true;
+    if (mime && mime !== "image/png" && mime.startsWith("image/")) return false;
+    const name = (opts.fileName ?? "").toLowerCase();
+    if (name.endsWith(".png")) return true;
+    const uri = (opts.uri ?? "").toLowerCase().split(/[?#]/)[0] ?? "";
+    return uri.endsWith(".png");
+  }
   async function applyAsset(key: string, asset: ImagePicker.ImagePickerAsset) {
     // Force the saved image to a 1024x1024 square. If the source isn't
     // already square (e.g. user skipped the editor or picked something
@@ -262,14 +282,21 @@ export default function PriceTagPreviewScreen() {
       });
     }
     actions.push({ resize: { width: 1024, height: 1024 } });
+    const isPng = isPngSource({
+      uri: asset.uri,
+      mimeType: (asset as any).mimeType,
+      fileName: (asset as any).fileName,
+    });
     const m = await ImageManipulator.manipulateAsync(asset.uri, actions, {
-      compress: 0.6,
-      format: ImageManipulator.SaveFormat.JPEG,
+      compress: isPng ? 1 : 0.6,
+      format: isPng ? ImageManipulator.SaveFormat.PNG : ImageManipulator.SaveFormat.JPEG,
       base64: true,
     });
     const b64 = m.base64 ?? asset.base64;
     if (!b64) throw new Error("Could not encode image");
-    const dataUri = `data:image/jpeg;base64,${b64}`;
+    const dataUri = isPng
+      ? `data:image/png;base64,${b64}`
+      : `data:image/jpeg;base64,${b64}`;
     await setPriceTagImage(key, dataUri);
     setWorkingItems((prev) =>
       prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
@@ -312,11 +339,24 @@ export default function PriceTagPreviewScreen() {
       const asset = result.assets[0];
       if (!asset?.uri) throw new Error("No file returned by picker");
 
+      // Decide format BEFORE the probe so a transparent PNG is never
+      // round-tripped through JPEG (which would bake a solid-black
+      // background into the alpha pixels). We sniff MIME / filename /
+      // URI extension; everything else stays JPEG to keep file sizes
+      // small for the typical photo case.
+      const isPng = isPngSource({
+        uri: asset.uri,
+        mimeType: (asset as any).mimeType,
+        fileName: asset.name,
+      });
+      const fmt = isPng
+        ? ImageManipulator.SaveFormat.PNG
+        : ImageManipulator.SaveFormat.JPEG;
       // First pass: probe the image dimensions (no actions, no base64).
       // DocumentPicker can't open the OS crop editor, so we center-crop
       // non-square sources programmatically and downscale to 1024x1024.
       const probe = await ImageManipulator.manipulateAsync(asset.uri, [], {
-        format: ImageManipulator.SaveFormat.JPEG,
+        format: fmt,
       });
       const w = probe.width ?? 0;
       const h = probe.height ?? 0;
@@ -334,8 +374,8 @@ export default function PriceTagPreviewScreen() {
       }
       actions.push({ resize: { width: 1024, height: 1024 } });
       const m = await ImageManipulator.manipulateAsync(asset.uri, actions, {
-        compress: 0.6,
-        format: ImageManipulator.SaveFormat.JPEG,
+        compress: isPng ? 1 : 0.6,
+        format: fmt,
         base64: true,
       });
       let b64 = m.base64;
@@ -346,7 +386,9 @@ export default function PriceTagPreviewScreen() {
         });
       }
       if (!b64) throw new Error("Could not encode image");
-      const dataUri = `data:image/jpeg;base64,${b64}`;
+      const dataUri = isPng
+        ? `data:image/png;base64,${b64}`
+        : `data:image/jpeg;base64,${b64}`;
       await setPriceTagImage(key, dataUri);
       setWorkingItems((prev) =>
         prev.map((i) => (i.key === key ? { ...i, imageUri: dataUri } : i))
