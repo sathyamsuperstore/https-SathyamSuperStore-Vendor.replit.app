@@ -333,6 +333,54 @@ export default function PriceTagPreviewScreen() {
     setWorkingItems((prev) => prev.filter((i) => i.key !== key));
   }
 
+  // Manual reorder used by the up/down chevrons rendered on each tile
+  // while Modify mode is on. Swaps the tile with its previous (`-1`)
+  // or next (`+1`) neighbour. Order is committed to storage when the
+  // user taps Save (commitModify), so cancelling discards the
+  // reordering along with any other in-progress edits.
+  function moveInWorking(key: string, dir: -1 | 1) {
+    setWorkingItems((prev) => {
+      const i = prev.findIndex((x) => x.key === key);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  // "Sort by Code" — re-orders the saved tag list by PromoSortCode
+  // ascending (numeric-aware so "A2" < "A10"). Items whose sort code
+  // is empty/missing fall to the bottom of the list, ordered by the
+  // original `addedAt` timestamp so the most-recently-appended items
+  // stay at the very bottom (matching the "appended time" rule the
+  // user asked for). The new order is persisted immediately so PDF
+  // export and the on-screen grid both reflect it.
+  async function sortByPromoSortCode() {
+    const sorted = [...priceTagItems].sort((a, b) => {
+      const ac = (a.promoSortCode ?? "").trim();
+      const bc = (b.promoSortCode ?? "").trim();
+      if (ac && bc) {
+        const cmp = ac.localeCompare(bc, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        if (cmp !== 0) return cmp;
+        return (a.addedAt ?? 0) - (b.addedAt ?? 0);
+      }
+      if (ac) return -1; // non-empty before empty
+      if (bc) return 1;
+      return (a.addedAt ?? 0) - (b.addedAt ?? 0);
+    });
+    try {
+      await savePriceTagItems(sorted);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Couldn't sort", e?.message ?? "Storage error");
+    }
+  }
+
   // -------- Image attachment (camera / gallery / drive) --------
   async function ensureLibraryPermission() {
     const r = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -987,6 +1035,14 @@ export default function PriceTagPreviewScreen() {
           <View style={{ flex: 1 }} />
           {mode === "view" ? (
             <>
+              <TouchableOpacity
+                style={styles.modifyBtn}
+                onPress={sortByPromoSortCode}
+                disabled={priceTagItems.length < 2}
+              >
+                <Feather name="bar-chart-2" size={14} color={Colors.text} />
+                <Text style={styles.modifyBtnText}>Sort by Code</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.modifyBtn} onPress={enterModify}>
                 <Feather name="edit-2" size={14} color={Colors.text} />
                 <Text style={styles.modifyBtnText}>Modify</Text>
@@ -1079,19 +1135,63 @@ export default function PriceTagPreviewScreen() {
         <ScrollView
           contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 24 }]}
         >
-          {items.map((it) => {
+          {items.map((it, idx) => {
             const isBusy = busyKey === it.key || bgAllRunning;
             const TagComponent = priceTagStyle === "B" ? StyleBTag : StyleATag;
             return (
               <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
-                  <TouchableOpacity
-                    style={styles.removeBtn}
-                    onPress={() => removeFromWorking(it.key)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="x" size={14} color={Colors.textInverse} />
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity
+                      style={styles.removeBtn}
+                      onPress={() => removeFromWorking(it.key)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x" size={14} color={Colors.textInverse} />
+                    </TouchableOpacity>
+                    {/* Manual reorder controls (up / down). Used in lieu
+                        of a true drag-and-drop affordance so the grid
+                        layout works reliably on both native and web
+                        without pulling in another gesture library. */}
+                    <View style={styles.reorderBar}>
+                      <TouchableOpacity
+                        style={[
+                          styles.reorderBtn,
+                          idx === 0 && styles.reorderBtnDisabled,
+                        ]}
+                        onPress={() => moveInWorking(it.key, -1)}
+                        disabled={idx === 0}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Feather
+                          name="chevron-up"
+                          size={14}
+                          color={
+                            idx === 0 ? Colors.textMuted : Colors.textInverse
+                          }
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.reorderBtn,
+                          idx === items.length - 1 && styles.reorderBtnDisabled,
+                        ]}
+                        onPress={() => moveInWorking(it.key, 1)}
+                        disabled={idx === items.length - 1}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Feather
+                          name="chevron-down"
+                          size={14}
+                          color={
+                            idx === items.length - 1
+                              ? Colors.textMuted
+                              : Colors.textInverse
+                          }
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </>
                 )}
                 <TagComponent
                   item={it}
@@ -2136,6 +2236,20 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 }, elevation: 3,
+  },
+  reorderBar: {
+    position: "absolute", top: -8, left: -8, zIndex: 5,
+    flexDirection: "row", gap: 4,
+  },
+  reorderBtn: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 }, elevation: 3,
+  },
+  reorderBtnDisabled: {
+    backgroundColor: Colors.border,
   },
   noResults: {
     width: "100%", textAlign: "center",
