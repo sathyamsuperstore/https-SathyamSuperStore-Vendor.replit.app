@@ -246,6 +246,7 @@ export default function PromoPrintScreen() {
         category: s(r["Category"]) || undefined,
         vendorName: s(r["VendorName"]) || undefined,
         beat: beatFor(r) || undefined,
+        promotionToDate: s(r["PromotionToDate"]) || undefined,
         addedAt: now,
       });
     }

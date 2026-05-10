@@ -325,6 +325,11 @@ export interface PriceTagItem {
   // Optional product image as a data URI (jpeg base64). Added on the
   // PriceTag Preview screen via camera / gallery / Drive URL.
   imageUri?: string;
+  // PromotionToDate from the source Promo row. Stored as the raw
+  // string the importer produced (typically "DD/MM/YYYY"); the
+  // PriceTag Preview formatter swaps "/" for "-" before rendering.
+  // Optional so legacy items pre-dating this field still load.
+  promotionToDate?: string;
   addedAt: number;
 }
 

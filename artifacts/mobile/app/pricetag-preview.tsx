@@ -1457,6 +1457,16 @@ function StyleATag({
       </View>
 
       <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+
+      {/* Valid Till — vertical rail on the right edge. Rendered last
+          so it paints on top of the watermark and any overflow. */}
+      {item.promotionToDate ? (
+        <View pointerEvents="none" style={validTillStyles.railA}>
+          <Text style={validTillStyles.textA}>
+            Valid Till: {formatValidTill(item.promotionToDate)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1534,6 +1544,15 @@ function StyleBTag({
       </View>
 
       <Text style={b.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+
+      {/* Valid Till — vertical rail on the right edge. */}
+      {item.promotionToDate ? (
+        <View pointerEvents="none" style={validTillStyles.railB}>
+          <Text style={validTillStyles.textB}>
+            Valid Till: {formatValidTill(item.promotionToDate)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1682,9 +1701,16 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
     : "";
 
+  const validTill = it.promotionToDate
+    ? `<div class="validTillA"><span>Valid Till: ${escapeHtml(
+        (it.promotionToDate || "").trim().replace(/\//g, "-"),
+      )}</span></div>`
+    : "";
+
   return `
     <div class="tagA">
       ${watermark}
+      ${validTill}
       <div class="descA">${descSpan}</div>
       <div class="bodyRowA">
         <div class="bodyLeftA">
@@ -1738,6 +1764,22 @@ const PDF_CSS_A = `
     z-index: 0;
   }
   .tagA > *:not(.watermark) { position: relative; z-index: 1; }
+  /* Vertical "Valid Till" rail — narrow column on the right edge
+     with the text rotated 90deg so it reads top-to-bottom. */
+  .tagA .validTillA {
+    position: absolute;
+    top: 0; right: 2px; bottom: 0;
+    width: 14px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2; pointer-events: none;
+  }
+  .tagA .validTillA span {
+    display: inline-block;
+    transform: rotate(90deg);
+    white-space: nowrap;
+    font-size: 8px; color: #94795E; font-weight: 600;
+    letter-spacing: 0.3px;
+  }
   .descA {
     font-size: 13px; font-weight: 800; color: ${DEEP_RED};
     line-height: 1.25; margin-bottom: 8px;
@@ -1819,9 +1861,16 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
     : "";
 
+  const validTill = it.promotionToDate
+    ? `<div class="validTillB"><span>Valid Till: ${escapeHtml(
+        (it.promotionToDate || "").trim().replace(/\//g, "-"),
+      )}</span></div>`
+    : "";
+
   return `
     <div class="tagB">
       ${watermark}
+      ${validTill}
       <div class="topBannerB">LOW PRICES</div>
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
@@ -1859,6 +1908,21 @@ const PDF_CSS_B = `
     z-index: 0;
   }
   .tagB > *:not(.watermark) { position: relative; z-index: 1; }
+  /* Vertical "Valid Till" rail — same treatment as Style A. */
+  .tagB .validTillB {
+    position: absolute;
+    top: 0; right: 2px; bottom: 0;
+    width: 14px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2; pointer-events: none;
+  }
+  .tagB .validTillB span {
+    display: inline-block;
+    transform: rotate(90deg);
+    white-space: nowrap;
+    font-size: 9px; color: #6B7280; font-weight: 600;
+    letter-spacing: 0.3px;
+  }
   .topBannerB {
     background: ${RED}; color: #FFF;
     text-align: center;
@@ -2272,6 +2336,53 @@ const b = StyleSheet.create({
     paddingVertical: 4, backgroundColor: "#FFF",
   },
 });
+
+// "Valid Till" vertical rail. A narrow, full-height column pinned to
+// the right edge of each tag card; the inner Text is rotated 90deg
+// so the date reads top-to-bottom. Font sizes mirror each style's
+// `itemNoFooter` so the new label matches the existing footer
+// typography.
+const validTillStyles = StyleSheet.create({
+  railA: {
+    position: "absolute",
+    top: 0, bottom: 0, right: 2,
+    width: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textA: {
+    fontSize: 8, color: "#94795E", fontWeight: "600",
+    letterSpacing: 0.3,
+    transform: [{ rotate: "90deg" }],
+    width: 200,
+    textAlign: "center",
+  },
+  railB: {
+    position: "absolute",
+    top: 0, bottom: 0, right: 2,
+    width: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textB: {
+    fontSize: 9, color: Colors.textMuted, fontWeight: "600",
+    letterSpacing: 0.3,
+    transform: [{ rotate: "90deg" }],
+    width: 200,
+    textAlign: "center",
+  },
+});
+
+// Normalises a PromotionToDate string for display. The Promo importer
+// stores values as "DD/MM/YYYY" (occasionally with stray whitespace),
+// but the user wants "DD-MM-YYYY" on the tag. Anything we don't
+// recognise is returned as-is so an unexpected format still shows
+// something useful instead of a blank.
+function formatValidTill(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/\//g, "-");
+}
 
 // Logo watermark layer. An absolutely-positioned, centered image at
 // 30% opacity that spans the whole tag card. Rendered as the first
