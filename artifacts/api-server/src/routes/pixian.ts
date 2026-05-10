@@ -1,10 +1,23 @@
 import { Router } from "express";
+import { requireSharedAuth } from "../middlewares/shared-auth";
+import { createRateLimit } from "../middlewares/rate-limit";
 
 const router = Router();
 
 const PIXIAN_ENDPOINT = "https://api.pixian.ai/api/v2/remove-background";
 
-router.post("/pixian/remove-bg", async (req, res) => {
+// 30 requests per minute per IP. Pixian is a paid upstream so we
+// keep this conservative; bulk-of-12 fits comfortably and any real
+// user request stays well under the cap.
+const pixianRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
+
+// Soft cap on the decoded image bytes we forward upstream. Pixian
+// itself accepts up to ~30MB, but our client always re-encodes to
+// 1024x1024 PNG which is well under 4MB; anything larger is almost
+// certainly a misuse / accidental payload, so we reject early.
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+router.post("/pixian/remove-bg", requireSharedAuth, pixianRateLimit, async (req, res) => {
   const id = process.env.PIXIAN_API_ID;
   const secret = process.env.PIXIAN_API_SECRET;
   if (!id || !secret) {
@@ -36,6 +49,13 @@ router.post("/pixian/remove-bg", async (req, res) => {
     if (bytes.length === 0) throw new Error("empty");
   } catch {
     res.status(400).json({ error: "imageDataUri is not valid base64." });
+    return;
+  }
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    const mb = (bytes.length / (1024 * 1024)).toFixed(1);
+    res.status(413).json({
+      error: `Image too large (${mb} MB). Max ${MAX_IMAGE_BYTES / (1024 * 1024)} MB.`,
+    });
     return;
   }
 

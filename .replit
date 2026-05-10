@@ -102,3 +102,9 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["edit"]
+
+[userenv]
+
+[userenv.shared]
+API_SHARED_SECRET = "dc1027993336279328f2441c039d1d124afb40cf0868c21962187543217efd3c"
+EXPO_PUBLIC_API_SHARED_SECRET = "dc1027993336279328f2441c039d1d124afb40cf0868c21962187543217efd3c"
