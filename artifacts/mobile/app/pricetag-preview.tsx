@@ -1706,12 +1706,12 @@ const PDF_CSS_A = `
     display: flex; flex-direction: column;
   }
   /* Centered Sathyam-Super-Store logo watermark behind the tag content.
-     Sized to ~30% of the tag width and clamped to the card via the
-     parent's overflow:hidden. */
+     Sized to ~24% of the tag width and nudged right by 1/20 of the
+     tag width (left:55% with the -50%/-50% translate). */
   .tagA .watermark {
     position: absolute;
-    top: 50%; left: 50%;
-    width: 30%; height: auto;
+    top: 50%; left: 55%;
+    width: 24%; height: auto;
     transform: translate(-50%, -50%);
     opacity: 0.30;
     pointer-events: none;
@@ -1828,11 +1828,11 @@ const PDF_CSS_B = `
     page-break-inside: avoid;
     display: flex; flex-direction: column;
   }
-  /* Centered watermark, same treatment as Style A. */
+  /* Same sizing/offset treatment as Style A. */
   .tagB .watermark {
     position: absolute;
-    top: 50%; left: 50%;
-    width: 30%; height: auto;
+    top: 50%; left: 55%;
+    width: 24%; height: auto;
     transform: translate(-50%, -50%);
     opacity: 0.30;
     pointer-events: none;
@@ -2265,9 +2265,13 @@ const watermarkStyles = StyleSheet.create({
     justifyContent: "center",
   },
   image: {
-    width: "30%",
-    height: "30%",
+    width: "24%",
+    height: "24%",
     opacity: 0.30,
+    // Nudge right by 1/20 of the tag's width so the watermark sits a
+    // touch off-center, away from the price digits which dominate the
+    // left half of the card.
+    marginLeft: "5%",
   },
 });
 
