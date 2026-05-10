@@ -108,13 +108,13 @@ export default function AdmnHubScreen() {
         `Remove all ${n} user${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
     {
-      key: "promo",
-      label: "Promo",
-      count: promoEntries.length,
-      onConfirm: clearPromoBatch,
-      confirmTitle: "Delete All Promo Entries?",
+      key: "last-supply-date",
+      label: "LastSupplyDate",
+      count: lastSupplyDates.length,
+      onConfirm: clearLastSupplyDates,
+      confirmTitle: "Delete All Last Supply Dates?",
       confirmMessage: (n) =>
-        `Remove all ${n} promo entr${n === 1 ? "y" : "ies"}? This cannot be undone.`,
+        `Remove all ${n} last-supply-date row${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
     {
       key: "mrp",
@@ -127,7 +127,7 @@ export default function AdmnHubScreen() {
     },
     {
       key: "latest-purchases",
-      label: "Latest Purchases",
+      label: "LatestPurchases",
       count: latestPurchases.length,
       onConfirm: clearLatestPurchases,
       confirmTitle: "Delete All Latest Purchases?",
@@ -136,18 +136,36 @@ export default function AdmnHubScreen() {
     },
     {
       key: "orders",
-      label: "Place Order",
+      label: "Place Orders",
       count: orders.length,
       onConfirm: clearAllOrders,
       confirmTitle: "Delete All Orders?",
       confirmMessage: (n) =>
         `Remove all ${n} order${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
+    {
+      key: "promo",
+      label: "Promo",
+      count: promoEntries.length,
+      onConfirm: clearPromoBatch,
+      confirmTitle: "Delete All Promo Entries?",
+      confirmMessage: (n) =>
+        `Remove all ${n} promo entr${n === 1 ? "y" : "ies"}? This cannot be undone.`,
+    },
   ];
 
-  // Stack the 6 buttons into 2 rows of 3 so the grid stays balanced
-  // regardless of label length.
-  const rows: DangerButton[][] = [buttons.slice(0, 3), buttons.slice(3, 6)];
+  // Stack into 2-column rows. With 7 items the last row has a
+  // single button — render an invisible spacer so widths line up.
+  function chunk2<T>(arr: T[]): (T | null)[][] {
+    const out: (T | null)[][] = [];
+    for (let i = 0; i < arr.length; i += 2) {
+      const a = arr[i];
+      const b = i + 1 < arr.length ? arr[i + 1] : null;
+      out.push([a, b]);
+    }
+    return out;
+  }
+  const rows: (DangerButton | null)[][] = chunk2(buttons);
 
   // Excel Import shortcuts. Each button opens the exact same importer the
   // user would normally reach from its own tab — Suppliers / Users /
@@ -158,19 +176,21 @@ export default function AdmnHubScreen() {
   const importButtons: ImportButton[] = [
     { key: "suppliers", label: "Suppliers", route: "/supplier/import" },
     { key: "users", label: "Users", route: "/user/import" },
-    { key: "promo", label: "Promo", route: "/(tabs)/promo" },
+    {
+      key: "last-supply-date",
+      label: "LastSupplyDate",
+      route: "/(tabs)/last-supply-date",
+    },
     { key: "mrp", label: "MRP", route: "/(tabs)/mrp" },
     {
       key: "latest-purchases",
-      label: "Latest Purchases",
+      label: "LatestPurchases",
       route: "/(tabs)/latest-purchases",
     },
-    { key: "orders", label: "Place Order", route: "/order/import" },
+    { key: "orders", label: "Place Orders", route: "/order/import" },
+    { key: "promo", label: "Promo", route: "/(tabs)/promo" },
   ];
-  const importRows: ImportButton[][] = [
-    importButtons.slice(0, 3),
-    importButtons.slice(3, 6),
-  ];
+  const importRows: (ImportButton | null)[][] = chunk2(importButtons);
 
   return (
     <ScrollView
@@ -205,7 +225,10 @@ export default function AdmnHubScreen() {
         <View style={styles.grid}>
           {rows.map((row, ri) => (
             <View key={ri} style={styles.gridRow}>
-              {row.map((b) => {
+              {row.map((b, ci) => {
+                if (!b) {
+                  return <View key={`spacer-${ri}-${ci}`} style={styles.dangerBtnSpacer} />;
+                }
                 const disabled = b.count === 0;
                 return (
                   <TouchableOpacity
@@ -265,22 +288,27 @@ export default function AdmnHubScreen() {
         <View style={styles.grid}>
           {importRows.map((row, ri) => (
             <View key={ri} style={styles.gridRow}>
-              {row.map((b) => (
-                <TouchableOpacity
-                  key={b.key}
-                  style={styles.importBtn}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    router.push(b.route as any);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Feather name="upload" size={16} color={Colors.primary} />
-                  <Text style={styles.importBtnText} numberOfLines={1}>
-                    {b.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {row.map((b, ci) => {
+                if (!b) {
+                  return <View key={`spacer-${ri}-${ci}`} style={styles.dangerBtnSpacer} />;
+                }
+                return (
+                  <TouchableOpacity
+                    key={b.key}
+                    style={styles.importBtn}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push(b.route as any);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="upload" size={16} color={Colors.primary} />
+                    <Text style={styles.importBtnText} numberOfLines={1}>
+                      {b.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ))}
         </View>
@@ -349,6 +377,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   dangerBtnTextDisabled: { color: Colors.textMuted },
+  dangerBtnSpacer: { flex: 1 },
   importBtn: {
     flex: 1,
     flexDirection: "row",
