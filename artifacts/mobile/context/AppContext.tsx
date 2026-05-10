@@ -217,6 +217,11 @@ interface AppContextType {
   // user's last choice sticks across app restarts. Default: true.
   priceTagShowLogo: boolean;
   setPriceTagShowLogo: (show: boolean) => Promise<void>;
+  // Optional free-text title prepended to the PDF export filename
+  // ("Sathyam Super Store Promo - <title> DDMMYY HHMM.pdf"). Empty
+  // string means no title set. Persisted so it survives app restarts.
+  priceTagTitle: string;
+  setPriceTagTitle: (title: string) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -396,6 +401,9 @@ const PRICE_TAG_STYLE_KEY = "@priceTagStyle";
 // each price tag. Stored as the literal string "1" (show) or "0"
 // (hide); anything missing/unknown falls back to the default (show).
 const PRICE_TAG_SHOW_LOGO_KEY = "@priceTagShowLogo";
+// Optional free-text PDF export title. Stored as the raw user
+// string (trimmed); empty string == "no title set".
+const PRICE_TAG_TITLE_KEY = "@priceTagTitle";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -462,6 +470,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagItems, setPriceTagItems] = useState<PriceTagItem[]>([]);
   const [priceTagStyle, setPriceTagStyleState] = useState<PriceTagStyle>("A");
   const [priceTagShowLogo, setPriceTagShowLogoState] = useState<boolean>(true);
+  const [priceTagTitle, setPriceTagTitleState] = useState<string>("");
   // Mirror so the per-item helpers (image set, remove) can read the
   // latest list without depending on a possibly-stale closure.
   const priceTagItemsRef = useRef<PriceTagItem[]>([]);
@@ -477,7 +486,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -492,6 +501,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_KEY),
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
+        AsyncStorage.getItem(PRICE_TAG_TITLE_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -543,6 +553,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagShowLogoState(false);
       } else if (priceTagShowLogoData === "1") {
         setPriceTagShowLogoState(true);
+      }
+
+      // Optional PDF title. Cap at the same 256-char limit the UI
+      // enforces so a tampered storage value can't blow past it.
+      if (typeof priceTagTitleData === "string") {
+        setPriceTagTitleState(priceTagTitleData.slice(0, 256));
       }
 
       if (sessionData) {
@@ -961,6 +977,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagShowLogoState(show);
   }
 
+  async function setPriceTagTitle(title: string) {
+    const clean = title.slice(0, 256);
+    await AsyncStorage.setItem(PRICE_TAG_TITLE_KEY, clean);
+    setPriceTagTitleState(clean);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1041,6 +1063,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagStyle,
         priceTagShowLogo,
         setPriceTagShowLogo,
+        priceTagTitle,
+        setPriceTagTitle,
         hydrated,
       }}
     >

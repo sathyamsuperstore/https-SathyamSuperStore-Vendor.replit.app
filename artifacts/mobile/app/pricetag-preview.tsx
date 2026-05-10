@@ -269,7 +269,15 @@ export default function PriceTagPreviewScreen() {
     setPriceTagStyle,
     priceTagShowLogo,
     setPriceTagShowLogo,
+    priceTagTitle,
+    setPriceTagTitle,
   } = useApp();
+
+  // Title editor modal — opens via "Add Title" / "Modify Title".
+  // `titleDraft` holds the in-progress text so cancelling doesn't
+  // commit, matching the pattern used elsewhere on this screen.
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const [mode, setMode] = useState<Mode>("view");
   const [workingItems, setWorkingItems] = useState<PriceTagItem[]>(priceTagItems);
@@ -1003,15 +1011,50 @@ export default function PriceTagPreviewScreen() {
       const html = buildPdfHtml(itemsForPdf, priceTagStyle, priceTagShowLogo);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
+
+      // Build the export filename per spec:
+      //   "Sathyam Super Store Promo -" + <Title?> + "DDMMYY HHMM" + ".pdf"
+      // The title is optional. We strip filesystem-unsafe characters
+      // (slashes, colons, control chars, etc.) before splicing it
+      // in so the rename never trips on path separators.
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const stamp =
+        `${pad(d.getDate())}${pad(d.getMonth() + 1)}${String(d.getFullYear()).slice(-2)}` +
+        ` ${pad(d.getHours())}${pad(d.getMinutes())}`;
+      const safeTitle = priceTagTitle
+        .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+        .trim();
+      const filename = safeTitle
+        ? `Sathyam Super Store Promo -${safeTitle} ${stamp}.pdf`
+        : `Sathyam Super Store Promo - ${stamp}.pdf`;
+
+      // expo-print writes to a fixed temp uri; copy it to a new
+      // path with the desired filename so the share-sheet / saved
+      // file picks up the human-readable name. If the copy fails
+      // for any reason, fall through to sharing the original uri.
+      let shareUri = uri;
+      try {
+        const dir = FileSystem.cacheDirectory ?? "";
+        if (dir) {
+          const target = dir + filename;
+          await FileSystem.deleteAsync(target, { idempotent: true });
+          await FileSystem.copyAsync({ from: uri, to: target });
+          shareUri = target;
+        }
+      } catch {
+        // Use the unrenamed uri as a fallback.
+      }
+
       const can = await Sharing.isAvailableAsync();
       if (can) {
-        await Sharing.shareAsync(uri, {
+        await Sharing.shareAsync(shareUri, {
           mimeType: "application/pdf",
-          dialogTitle: "Price Tags PDF",
+          dialogTitle: filename,
           UTI: "com.adobe.pdf",
         });
       } else {
-        Alert.alert("PDF saved", uri);
+        Alert.alert("PDF saved", shareUri);
       }
     } catch (e: any) {
       Alert.alert("Export failed", e?.message ?? "Could not generate PDF");
@@ -1153,6 +1196,36 @@ export default function PriceTagPreviewScreen() {
           <Text style={styles.logoToggleHint}>
             {priceTagShowLogo ? "Watermark on (30%)" : "Watermark off"}
           </Text>
+        </View>
+
+        {/* Optional PDF title bar — feeds the export filename and
+            doubles as a quick-glance label of what this print run is
+            for. Empty by default; persists across sessions. */}
+        <View style={styles.titleBar}>
+          <Text style={styles.titleBarLabel}>Title</Text>
+          {priceTagTitle ? (
+            <Text style={styles.titleBarValue} numberOfLines={1}>
+              {priceTagTitle}
+            </Text>
+          ) : (
+            <Text style={styles.titleBarHint}>No title set (optional)</Text>
+          )}
+          <TouchableOpacity
+            style={[styles.modifyBtn, { marginLeft: "auto" }]}
+            onPress={() => {
+              setTitleDraft(priceTagTitle);
+              setShowTitleModal(true);
+            }}
+          >
+            <Feather
+              name={priceTagTitle ? "edit-3" : "plus"}
+              size={14}
+              color={Colors.text}
+            />
+            <Text style={styles.modifyBtnText}>
+              {priceTagTitle ? "Modify Title" : "Add Title"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Style picker */}
@@ -1314,6 +1387,65 @@ export default function PriceTagPreviewScreen() {
               </TouchableOpacity>
             </TouchableOpacity>
           </TouchableOpacity>
+        </Modal>
+
+        {/* Title editor modal — opens via Add/Modify Title. Persists
+            on Save to AppContext (AsyncStorage-backed) and feeds the
+            PDF export filename. Cap matches the storage cap (256). */}
+        <Modal
+          visible={showTitleModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowTitleModal(false)}
+        >
+          <View style={styles.modalScrim}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                {priceTagTitle ? "Modify Title" : "Add Title"}
+              </Text>
+              <TextInput
+                style={styles.titleInput}
+                value={titleDraft}
+                onChangeText={(t) => setTitleDraft(t.slice(0, 256))}
+                placeholder="Title for this print run (optional)"
+                placeholderTextColor={Colors.textMuted}
+                maxLength={256}
+                autoFocus
+                multiline
+              />
+              <Text style={styles.titleCharCount}>
+                {titleDraft.length} / 256
+              </Text>
+              <View style={styles.titleModalBtnRow}>
+                <TouchableOpacity
+                  style={styles.modifyBtn}
+                  onPress={() => setShowTitleModal(false)}
+                >
+                  <Text style={styles.modifyBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={async () => {
+                    try {
+                      await setPriceTagTitle(titleDraft.trim());
+                      setShowTitleModal(false);
+                      Haptics.notificationAsync(
+                        Haptics.NotificationFeedbackType.Success,
+                      );
+                    } catch (e: any) {
+                      Alert.alert(
+                        "Couldn't save",
+                        e?.message ?? "Storage error",
+                      );
+                    }
+                  }}
+                >
+                  <Feather name="check" size={14} color={Colors.textInverse} />
+                  <Text style={styles.saveBtnText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </Modal>
 
         {/* Drive URL modal */}
@@ -2303,6 +2435,37 @@ const styles = StyleSheet.create({
   },
   reorderBtnDisabled: {
     backgroundColor: Colors.border,
+  },
+  titleBar: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  titleBarLabel: {
+    fontSize: 12, fontWeight: "700",
+    color: Colors.textSecondary, letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  titleBarValue: {
+    flex: 1, fontSize: 13, fontWeight: "700",
+    color: Colors.text,
+  },
+  titleBarHint: {
+    flex: 1, fontSize: 12, color: Colors.textMuted, fontStyle: "italic",
+  },
+  titleInput: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8,
+    fontSize: 14, color: Colors.text, backgroundColor: Colors.background,
+    marginTop: 8, marginBottom: 6,
+  },
+  titleCharCount: {
+    fontSize: 11, color: Colors.textMuted, textAlign: "right",
+    marginBottom: 12,
+  },
+  titleModalBtnRow: {
+    flexDirection: "row", justifyContent: "flex-end", gap: 8,
   },
   noResults: {
     width: "100%", textAlign: "center",
