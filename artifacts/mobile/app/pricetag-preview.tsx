@@ -1547,7 +1547,7 @@ function StyleBTag({
         <View style={b.priceCol}>
           <View style={b.priceRow}>
             <Text style={b.rupee}>₹</Text>
-            <Text style={b.priceVal}>{value}</Text>
+            <Text style={b.priceVal}>{value}{minQtyB ? "*" : ""}</Text>
           </View>
           {off ? (
             <Text style={b.offText}>₹{off} OFF</Text>
@@ -1912,7 +1912,7 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
         <div class="imgWrapB">${img}</div>
         <div class="priceColB">
           <div class="priceRowB">
-            <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}</span>
+            <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}${minQtyB ? "*" : ""}</span>
           </div>
           ${off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`}
           ${minQtyB ? `<div class="minQtyB">* Minimum Purchase Qty: ${escapeHtml(minQtyB)}</div>` : ""}
