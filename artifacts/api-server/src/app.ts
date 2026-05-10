@@ -6,10 +6,13 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-// We sit behind Replit's reverse proxy. Trust it so req.ip reflects
-// the real client IP (X-Forwarded-For), making per-IP rate limiting
-// meaningful instead of collapsing every caller onto the proxy IP.
-app.set("trust proxy", true);
+// We sit behind exactly one trusted reverse-proxy hop (Replit's
+// edge proxy). Trust *only* that single hop when reading
+// X-Forwarded-For. Setting `true` would trust all hops and let any
+// client forge req.ip via X-Forwarded-For, defeating per-IP rate
+// limiting; setting `1` strips one hop from the right and uses the
+// IP the trusted proxy actually saw.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
