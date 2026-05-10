@@ -843,7 +843,34 @@ export default function PriceTagPreviewScreen() {
     if (priceTagItems.length === 0) return;
     setExporting(true);
     try {
-      const html = buildPdfHtml(priceTagItems, priceTagStyle);
+      // Inline every image as a `data:` URI before building the PDF
+      // HTML. expo-print's underlying WebView doesn't reliably load
+      // arbitrary `file://` URIs from the app's document directory
+      // when rendering to PDF (images come out blank), so we read
+      // each persisted file back as base64 and embed it directly.
+      const itemsForPdf = await Promise.all(
+        priceTagItems.map(async (it) => {
+          if (!it.imageUri) return it;
+          if (!it.imageUri.startsWith("file://")) return it;
+          try {
+            const lower = it.imageUri.toLowerCase().split(/[?#]/)[0] ?? "";
+            const mime =
+              lower.endsWith(".png") ? "image/png" :
+              lower.endsWith(".webp") ? "image/webp" :
+              lower.endsWith(".heic") || lower.endsWith(".heif") ? "image/heic" :
+              "image/jpeg";
+            const b64 = await FileSystem.readAsStringAsync(it.imageUri, {
+              encoding: "base64" as any,
+            });
+            return { ...it, imageUri: `data:${mime};base64,${b64}` };
+          } catch {
+            // If the file is missing for some reason, fall through
+            // with no image rather than aborting the whole export.
+            return { ...it, imageUri: undefined };
+          }
+        }),
+      );
+      const html = buildPdfHtml(itemsForPdf, priceTagStyle);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
       const can = await Sharing.isAvailableAsync();
