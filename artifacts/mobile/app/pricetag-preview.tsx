@@ -1710,7 +1710,7 @@ const PDF_CSS_A = `
      parent's overflow:hidden. */
   .tagA .watermark {
     position: absolute;
-    top: 50%; left: 60%;
+    top: 50%; left: 50%;
     width: 30%; height: auto;
     transform: translate(-50%, -50%);
     opacity: 0.30;
@@ -1831,7 +1831,7 @@ const PDF_CSS_B = `
   /* Centered watermark, same treatment as Style A. */
   .tagB .watermark {
     position: absolute;
-    top: 50%; left: 60%;
+    top: 50%; left: 50%;
     width: 30%; height: auto;
     transform: translate(-50%, -50%);
     opacity: 0.30;
@@ -2263,10 +2263,6 @@ const watermarkStyles = StyleSheet.create({
     top: 0, right: 0, bottom: 0, left: 0,
     alignItems: "center",
     justifyContent: "center",
-    // Shift the centered watermark right by 1/10 of the tag width.
-    // Padding-left of 20% leaves an 80%-wide centering area, whose
-    // midpoint sits at 60% of the card — i.e. 10% right of dead center.
-    paddingLeft: "20%",
   },
   image: {
     width: "30%",
