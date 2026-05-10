@@ -11,32 +11,29 @@ const PIXIAN_ENDPOINT = "https://api.pixian.ai/api/v2/remove-background";
 // follow-up "Move from a shared app secret to real user sign-in");
 // until that lands, we lean on rate limits + a hard byte cap.
 //
-// We rate-limit on (token + IP) so that even if one of the two is
-// rotated/spoofed, the other still throttles abuse. The token comes
-// from the Authorization header set by requireSession; if it's
-// missing we won't get this far anyway, but we fall back to "anon"
-// for safety.
-function tokenIpKey(req: import("express").Request): string {
+// We enforce per-IP and per-token limits *independently* so neither
+// dimension can be multiplied by varying the other (e.g. one stolen
+// token cycled across many IPs, or one IP cycling many tokens).
+// The token comes from the Authorization header set by
+// requireSession; if it's missing we won't get this far anyway, but
+// we fall back to "anon" for safety.
+function tokenKey(req: import("express").Request): string {
   const header = req.headers.authorization;
   const tok =
     typeof header === "string" && header.startsWith("Bearer ")
       ? header.slice(7).trim()
       : "anon";
-  return `${tok}|${req.ip ?? "unknown"}`;
+  return `tok:${tok}`;
 }
-// 20 req / minute / (token+IP) covers a normal bulk-of-12 plus retries.
-const pixianPerMinute = createRateLimit({
-  windowMs: 60_000,
-  max: 20,
-  key: tokenIpKey,
-});
-// 200 req / day / (token+IP) catches sustained abuse that stays
-// under the per-minute cap. ~17x what a heavy real user would do.
-const pixianPerDay = createRateLimit({
-  windowMs: 24 * 60 * 60 * 1000,
-  max: 200,
-  key: tokenIpKey,
-});
+function ipKey(req: import("express").Request): string {
+  return `ip:${req.ip ?? "unknown"}`;
+}
+// 20 req / minute covers a normal bulk-of-12 plus retries; 200 req /
+// day catches sustained abuse that stays under the per-minute cap.
+const pixianPerIpMinute = createRateLimit({ windowMs: 60_000, max: 20, key: ipKey });
+const pixianPerIpDay = createRateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 200, key: ipKey });
+const pixianPerTokenMinute = createRateLimit({ windowMs: 60_000, max: 20, key: tokenKey });
+const pixianPerTokenDay = createRateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 200, key: tokenKey });
 
 // Soft cap on the decoded image bytes we forward upstream. Pixian
 // itself accepts up to ~30MB, but our client always re-encodes to
@@ -44,7 +41,14 @@ const pixianPerDay = createRateLimit({
 // certainly a misuse / accidental payload, so we reject early.
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-router.post("/pixian/remove-bg", requireSession, pixianPerMinute, pixianPerDay, async (req, res) => {
+router.post(
+  "/pixian/remove-bg",
+  requireSession,
+  pixianPerIpMinute,
+  pixianPerIpDay,
+  pixianPerTokenMinute,
+  pixianPerTokenDay,
+  async (req, res) => {
   const id = process.env.PIXIAN_API_ID;
   const secret = process.env.PIXIAN_API_SECRET;
   if (!id || !secret) {
