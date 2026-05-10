@@ -212,6 +212,11 @@ interface AppContextType {
   // Persisted so the user's last choice sticks across app restarts.
   priceTagStyle: PriceTagStyle;
   setPriceTagStyle: (style: PriceTagStyle) => Promise<void>;
+  // Whether to overlay the Sathyam Super Store logo as a 30%-opacity
+  // watermark on every price tag (on-screen + PDF). Persisted so the
+  // user's last choice sticks across app restarts. Default: true.
+  priceTagShowLogo: boolean;
+  setPriceTagShowLogo: (show: boolean) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -364,6 +369,10 @@ const PRICE_TAG_KEY = "@priceTagItems";
 // (and export to PDF). Two options for now: "A" = Special-Offer card
 // (Protinex-style), "B" = Low-Prices banner (Aashirvaad-style).
 const PRICE_TAG_STYLE_KEY = "@priceTagStyle";
+// Persisted user choice for the optional centered logo watermark on
+// each price tag. Stored as the literal string "1" (show) or "0"
+// (hide); anything missing/unknown falls back to the default (show).
+const PRICE_TAG_SHOW_LOGO_KEY = "@priceTagShowLogo";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -429,6 +438,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [promoNewQty, setPromoNewQty] = useState<Record<string, number>>({});
   const [priceTagItems, setPriceTagItems] = useState<PriceTagItem[]>([]);
   const [priceTagStyle, setPriceTagStyleState] = useState<PriceTagStyle>("A");
+  const [priceTagShowLogo, setPriceTagShowLogoState] = useState<boolean>(true);
   // Mirror so the per-item helpers (image set, remove) can read the
   // latest list without depending on a possibly-stale closure.
   const priceTagItemsRef = useRef<PriceTagItem[]>([]);
@@ -444,7 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -458,6 +468,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
         AsyncStorage.getItem(PRICE_TAG_KEY),
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
+        AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -500,6 +511,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // default instead of bricking the screen.
       if (priceTagStyleData === "A" || priceTagStyleData === "B") {
         setPriceTagStyleState(priceTagStyleData);
+      }
+
+      // Watermark toggle — only override the default when an explicit
+      // "0" or "1" was previously written. Anything else (missing,
+      // legacy, garbled) falls through to the default-on state.
+      if (priceTagShowLogoData === "0") {
+        setPriceTagShowLogoState(false);
+      } else if (priceTagShowLogoData === "1") {
+        setPriceTagShowLogoState(true);
       }
 
       if (sessionData) {
@@ -913,6 +933,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagStyleState(style);
   }
 
+  async function setPriceTagShowLogo(show: boolean) {
+    await AsyncStorage.setItem(PRICE_TAG_SHOW_LOGO_KEY, show ? "1" : "0");
+    setPriceTagShowLogoState(show);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -991,6 +1016,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearPriceTagItems,
         priceTagStyle,
         setPriceTagStyle,
+        priceTagShowLogo,
+        setPriceTagShowLogo,
         hydrated,
       }}
     >

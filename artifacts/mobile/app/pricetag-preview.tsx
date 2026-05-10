@@ -25,6 +25,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
+import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { pickFont, hasTamil } from "@/constants/typography";
@@ -254,6 +255,8 @@ export default function PriceTagPreviewScreen() {
     clearPriceTagItems,
     priceTagStyle,
     setPriceTagStyle,
+    priceTagShowLogo,
+    setPriceTagShowLogo,
   } = useApp();
 
   const [mode, setMode] = useState<Mode>("view");
@@ -870,7 +873,7 @@ export default function PriceTagPreviewScreen() {
           }
         }),
       );
-      const html = buildPdfHtml(itemsForPdf, priceTagStyle);
+      const html = buildPdfHtml(itemsForPdf, priceTagStyle, priceTagShowLogo);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
       const can = await Sharing.isAvailableAsync();
@@ -982,6 +985,35 @@ export default function PriceTagPreviewScreen() {
           )}
         </View>
 
+        {/* Logo watermark toggle — sits above the style bar so the
+            user picks whether to brand the tags before choosing the
+            visual style. Drives both the on-screen preview and the
+            exported PDF. */}
+        <View style={styles.logoToggleBar}>
+          <Text style={styles.logoToggleLabel}>Show Logo</Text>
+          <TouchableOpacity
+            style={[
+              styles.logoToggleSwitch,
+              priceTagShowLogo && styles.logoToggleSwitchOn,
+            ]}
+            onPress={() => setPriceTagShowLogo(!priceTagShowLogo)}
+            activeOpacity={0.85}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: priceTagShowLogo }}
+            accessibilityLabel="Show Sathyam Super Store logo watermark on price tags"
+          >
+            <View
+              style={[
+                styles.logoToggleKnob,
+                priceTagShowLogo && styles.logoToggleKnobOn,
+              ]}
+            />
+          </TouchableOpacity>
+          <Text style={styles.logoToggleHint}>
+            {priceTagShowLogo ? "Watermark on (30%)" : "Watermark off"}
+          </Text>
+        </View>
+
         {/* Style picker */}
         <View style={styles.styleBar}>
           <Text style={styles.styleBarLabel}>Style</Text>
@@ -1032,6 +1064,7 @@ export default function PriceTagPreviewScreen() {
                 <TagComponent
                   item={it}
                   busy={isBusy}
+                  showLogo={priceTagShowLogo}
                   onAddImage={() => handleAddImage(it.key)}
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
@@ -1330,10 +1363,11 @@ export default function PriceTagPreviewScreen() {
 // tile size, so we stack instead and keep heights bounded.
 
 function StyleATag({
-  item, busy, onAddImage, onRemoveImage, onRemoveBackground,
+  item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
 }: {
   item: PriceTagItem;
   busy: boolean;
+  showLogo: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
@@ -1344,6 +1378,18 @@ function StyleATag({
 
   return (
     <View style={a.card}>
+      {/* Logo watermark — rendered FIRST so subsequent in-flow children
+          paint on top of it. pointerEvents="none" lets taps fall through
+          to the price/image controls underneath. */}
+      {showLogo && (
+        <View pointerEvents="none" style={watermarkStyles.layer}>
+          <Image
+            source={{ uri: LOGO_BASE64 }}
+            style={watermarkStyles.image}
+            resizeMode="contain"
+          />
+        </View>
+      )}
       {/* Row 1 — description, full width, in the same red as MRP */}
       <Text
         style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
@@ -1405,10 +1451,11 @@ function StyleATag({
 // banner.
 
 function StyleBTag({
-  item, busy, onAddImage, onRemoveImage, onRemoveBackground,
+  item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
 }: {
   item: PriceTagItem;
   busy: boolean;
+  showLogo: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
@@ -1418,6 +1465,17 @@ function StyleBTag({
 
   return (
     <View style={b.card}>
+      {/* Logo watermark — see note in StyleATag. Rendered first so the
+          banners and price text overlay it. */}
+      {showLogo && (
+        <View pointerEvents="none" style={watermarkStyles.layer}>
+          <Image
+            source={{ uri: LOGO_BASE64 }}
+            style={watermarkStyles.image}
+            resizeMode="contain"
+          />
+        </View>
+      )}
       <View style={b.topBanner}>
         <Text style={b.bannerText}>LOW PRICES</Text>
       </View>
@@ -1543,9 +1601,13 @@ function StyleChip({
 // matches whatever the user is previewing on screen.
 // ============================================================
 
-function buildPdfHtml(items: PriceTagItem[], style: PriceTagStyle): string {
+function buildPdfHtml(
+  items: PriceTagItem[],
+  style: PriceTagStyle,
+  showLogo: boolean,
+): string {
   const tagsHtml = items
-    .map((it) => (style === "B" ? renderTagBHtml(it) : renderTagAHtml(it)))
+    .map((it) => (style === "B" ? renderTagBHtml(it, showLogo) : renderTagAHtml(it, showLogo)))
     .join("");
 
   const styleCss = style === "B" ? PDF_CSS_B : PDF_CSS_A;
@@ -1577,7 +1639,7 @@ function buildPdfHtml(items: PriceTagItem[], style: PriceTagStyle): string {
 
 // ----- Style A HTML / CSS -----
 
-function renderTagAHtml(it: PriceTagItem): string {
+function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
   const off = offAmount(it);
@@ -1596,8 +1658,13 @@ function renderTagAHtml(it: PriceTagItem): string {
   const labelLine1 = escapeHtml(labelParts[0] || "");
   const labelLine2 = escapeHtml(labelParts[1] || "");
 
+  const watermark = showLogo
+    ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
+    : "";
+
   return `
     <div class="tagA">
+      ${watermark}
       <div class="descA">${descSpan}</div>
       <div class="bodyRowA">
         <div class="bodyLeftA">
@@ -1638,6 +1705,19 @@ const PDF_CSS_A = `
     overflow: hidden;
     display: flex; flex-direction: column;
   }
+  /* Centered Sathyam-Super-Store logo watermark behind the tag content.
+     Sized to ~60% of the tag width and clamped to the card via the
+     parent's overflow:hidden. */
+  .tagA .watermark {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 60%; height: auto;
+    transform: translate(-50%, -50%);
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagA > *:not(.watermark) { position: relative; z-index: 1; }
   .descA {
     font-size: 13px; font-weight: 800; color: ${DEEP_RED};
     line-height: 1.25; margin-bottom: 8px;
@@ -1703,7 +1783,7 @@ const PDF_CSS_A = `
 
 // ----- Style B HTML / CSS -----
 
-function renderTagBHtml(it: PriceTagItem): string {
+function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
   const { value } = priceFor(it);
   const off = offAmount(it);
   const desc = it.description || "";
@@ -1715,8 +1795,13 @@ function renderTagBHtml(it: PriceTagItem): string {
     ? `<img src="${it.imageUri}" />`
     : `<div class="img-placeholder">No&nbsp;Image</div>`;
 
+  const watermark = showLogo
+    ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
+    : "";
+
   return `
     <div class="tagB">
+      ${watermark}
       <div class="topBannerB">LOW PRICES</div>
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
@@ -1735,6 +1820,7 @@ function renderTagBHtml(it: PriceTagItem): string {
 
 const PDF_CSS_B = `
   .tagB {
+    position: relative;
     background: #FFF;
     border: 1.5px solid ${RED};
     border-radius: 6px;
@@ -1742,6 +1828,17 @@ const PDF_CSS_B = `
     page-break-inside: avoid;
     display: flex; flex-direction: column;
   }
+  /* Centered watermark, same treatment as Style A. */
+  .tagB .watermark {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 60%; height: auto;
+    transform: translate(-50%, -50%);
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagB > *:not(.watermark) { position: relative; z-index: 1; }
   .topBannerB {
     background: ${RED}; color: #FFF;
     text-align: center;
@@ -1842,6 +1939,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.success,
   },
   saveBtnText: { color: Colors.textInverse, fontWeight: "800", fontSize: 13 },
+  logoToggleBar: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  logoToggleLabel: {
+    fontSize: 12, fontWeight: "700",
+    color: Colors.textSecondary, letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  // Custom switch so we don't pull in another RN core component just
+  // for one toggle. Width / knob sizes mirror the RN Switch defaults.
+  logoToggleSwitch: {
+    width: 40, height: 22, borderRadius: 11,
+    backgroundColor: Colors.border,
+    padding: 2, justifyContent: "center",
+  },
+  logoToggleSwitchOn: { backgroundColor: Colors.primary },
+  logoToggleKnob: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: "#FFF",
+    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  logoToggleKnobOn: { alignSelf: "flex-end" },
+  logoToggleHint: {
+    fontSize: 11, color: Colors.textMuted, fontWeight: "600",
+    marginLeft: "auto",
+  },
   styleBar: {
     flexDirection: "row", alignItems: "center", gap: 8,
     paddingHorizontal: 12, paddingVertical: 8,
@@ -2123,6 +2250,24 @@ const b = StyleSheet.create({
     textAlign: "center",
     fontSize: 9, color: Colors.textMuted, fontWeight: "600",
     paddingVertical: 4, backgroundColor: "#FFF",
+  },
+});
+
+// Logo watermark layer. An absolutely-positioned, centered image at
+// 30% opacity that spans the whole tag card. Rendered as the first
+// child of each tag so subsequent in-flow children paint on top of it
+// (RN paints children in declared order when zIndex isn't set).
+const watermarkStyles = StyleSheet.create({
+  layer: {
+    position: "absolute",
+    top: 0, right: 0, bottom: 0, left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  image: {
+    width: "60%",
+    height: "60%",
+    opacity: 0.30,
   },
 });
 
