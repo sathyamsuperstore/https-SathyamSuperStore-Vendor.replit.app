@@ -32,11 +32,13 @@ import { LOGO_BASE64 } from "@/constants/LogoBase64";
 // noise in the Changed list.
 const CHANGED_FIELDS = [
   "PromotionPrice",
+  "EligibleQty",
   "PromotionToDate",
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
   PromotionPrice: "Promo",
+  EligibleQty: "Elig Qty",
   PromotionToDate: "Valid Till",
 };
 
@@ -176,7 +178,7 @@ export default function PromoCompareScreen() {
     try {
       setExporting(true);
       const wb = XLSX.utils.book_new();
-      const cols = ["Item No", "BatchNo", "Brand", "VendorName", "Item Description", "MRP", "SP", "PromotionPrice", "PromotionToDate"];
+      const cols = ["Item No", "BatchNo", "Brand", "VendorName", "Item Description", "MRP", "SP", "PromotionPrice", "EligibleQty", "PromotionToDate"];
       function sheetFromRows(rows: PromoEntry[], extraChangesCol = false) {
         const headers = extraChangesCol ? [...cols, "Changes"] : cols;
         const data: (string | number)[][] = [headers];
@@ -263,7 +265,7 @@ export default function PromoCompareScreen() {
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
       }
-      const baseHeaders = ["Item No", "BatchNo", "Description", "MRP", "SP", "Promo", "Valid Till"];
+      const baseHeaders = ["Item No", "BatchNo", "Description", "MRP", "SP", "Promo", "Elig Qty", "Valid Till"];
       const addedRows = added.map((r) => [
         esc(r["Item No"]),
         esc(r["BatchNo"]),
@@ -271,6 +273,7 @@ export default function PromoCompareScreen() {
         esc(fmtVal(r["MRP"])),
         esc(fmtVal(r["SP"])),
         esc(fmtVal(r["PromotionPrice"])),
+        esc(fmtVal(r["EligibleQty"])),
         esc(fmtVal(r["PromotionToDate"])),
       ]);
       const removedRows = removed.map((r) => [
@@ -280,6 +283,7 @@ export default function PromoCompareScreen() {
         esc(fmtVal(r["MRP"])),
         esc(fmtVal(r["SP"])),
         esc(fmtVal(r["PromotionPrice"])),
+        esc(fmtVal(r["EligibleQty"])),
         esc(fmtVal(r["PromotionToDate"])),
       ]);
       const changedHeaders = ["Item No", "BatchNo", "Description", "Changes"];
@@ -413,7 +417,7 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
                       {String(r["Item Description"] ?? "")}
                     </Text>
                     <Text style={styles.rowMeta}>
-                      MRP {fmtVal(r["MRP"])} · SP {fmtVal(r["SP"])} · Promo {fmtVal(r["PromotionPrice"])} · Valid {fmtVal(r["PromotionToDate"])}
+                      MRP {fmtVal(r["MRP"])} · SP {fmtVal(r["SP"])} · Promo {fmtVal(r["PromotionPrice"])} · Elig {fmtVal(r["EligibleQty"])} · Valid {fmtVal(r["PromotionToDate"])}
                     </Text>
                   </View>
                 ))
@@ -432,7 +436,7 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
                       {String(r["Item Description"] ?? "")}
                     </Text>
                     <Text style={styles.rowMeta}>
-                      MRP {fmtVal(r["MRP"])} · SP {fmtVal(r["SP"])} · Promo {fmtVal(r["PromotionPrice"])} · Valid {fmtVal(r["PromotionToDate"])}
+                      MRP {fmtVal(r["MRP"])} · SP {fmtVal(r["SP"])} · Promo {fmtVal(r["PromotionPrice"])} · Elig {fmtVal(r["EligibleQty"])} · Valid {fmtVal(r["PromotionToDate"])}
                     </Text>
                   </View>
                 ))

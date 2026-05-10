@@ -522,6 +522,7 @@ function StockUpdCard({
                     { label: "MRP", value: fmtPromoNum(p["MRP"]) },
                     { label: "SP", value: fmtPromoNum(p["SP"]) },
                     { label: "Promo", value: fmtPromoNum(p["PromotionPrice"]) },
+                    { label: "Elig Qty", value: fmtPromoNum(p["EligibleQty"]) },
                     { label: "Valid Till", value: String(p["PromotionToDate"] ?? "") },
                     { label: "OH Qty", value: fmtPromoNum(p["OH Qty"]) },
                   ];

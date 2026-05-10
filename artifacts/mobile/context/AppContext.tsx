@@ -281,6 +281,11 @@ export const PROMO_FIELDS = [
   "SP",
   "SoldQty",
   "PromotionPrice",
+  // Quantity of this batch eligible for the promotional price. Stored
+  // as a decimal so fractional units of measure (kg, ltr) survive the
+  // round trip through Excel. Optional — existing imports without
+  // this column hydrate with the cell blank.
+  "EligibleQty",
   "Latest MRP",
   "MRP",
   "BatchNo",
@@ -315,6 +320,10 @@ export interface PriceTagItem {
   description: string;
   mrp: string | number;
   promotionPrice: string | number;
+  // EligibleQty from the source Promo row — quantity of this batch
+  // eligible for the promotional price. Optional so legacy items
+  // pre-dating this field still load.
+  eligibleQty?: string | number;
   // SP (regular shelf price) — used as a fallback when promotionPrice
   // is empty so the printed tag always has a price line.
   sp: string | number;

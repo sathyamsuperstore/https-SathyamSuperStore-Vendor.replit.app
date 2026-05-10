@@ -40,6 +40,9 @@ const NUMERIC_FIELDS = new Set<string>([
   "SP",
   "SoldQty",
   "PromotionPrice",
+  // Eligible Qty for the promotional price. Decimal so fractional
+  // units (kg, ltr) round-trip cleanly through Excel.
+  "EligibleQty",
   "Latest MRP",
   "MRP",
   // On-hand stock quantity. Stored as Double so it survives fractional
@@ -68,7 +71,7 @@ const INTEGER_FIELDS = new Set<string>(["NoofBatches"]);
 // the underlying value is a whole number (e.g. Cost of 12 displays as
 // "12.00"). Other numeric fields keep the existing behaviour where
 // integers render without trailing zeros.
-const DECIMAL_FIELDS = new Set<string>(["Cost"]);
+const DECIMAL_FIELDS = new Set<string>(["Cost", "EligibleQty"]);
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -158,6 +161,7 @@ const COL_WIDTHS: Record<string, number> = {
   SP: 56,
   SoldQty: 64,
   PromotionPrice: 72,
+  EligibleQty: 78,
   "New Qty": 64,
   "Promo CR Date": 86,
   "Latest MRP": 76,
@@ -191,6 +195,7 @@ const CARD_LINE_3: readonly string[] = [
   "SP",
   "Cost",
   "PromotionPrice",
+  "EligibleQty",
   "OH Qty",
   "New Qty",
   "PromotionToDate",
@@ -209,6 +214,7 @@ const NEW_QTY_FIELD = "New Qty";
 const CARD_FIELD_LABEL: Record<string, string> = {
   PromotionPrice: "Promo",
   PromotionToDate: "Valid Till",
+  EligibleQty: "Elig Qty",
 };
 
 function cardLabel(field: string): string {

@@ -241,6 +241,7 @@ export default function PromoPrintScreen() {
         description: s(r["Item Description"]),
         mrp: s(r["MRP"]),
         promotionPrice: s(r["PromotionPrice"]),
+        eligibleQty: s(r["EligibleQty"]) || undefined,
         sp: s(r["SP"]),
         brand: s(r["Brand"]) || undefined,
         category: s(r["Category"]) || undefined,
@@ -417,6 +418,7 @@ export default function PromoPrintScreen() {
           const promo = formatPrice(r["PromotionPrice"]);
           const sp = formatPrice(r["SP"]);
           const mrp = formatPrice(r["MRP"]);
+          const eligQty = formatPrice(r["EligibleQty"]);
           const priceLabel = promo ? "Promo" : "SP";
           const priceVal = promo || sp || "—";
           return (
@@ -448,6 +450,9 @@ export default function PromoPrintScreen() {
                 <Text style={styles.priceVal}>
                   {priceLabel} {priceVal}
                 </Text>
+                {eligQty ? (
+                  <Text style={styles.mrpText}>Elig {eligQty}</Text>
+                ) : null}
               </View>
             </TouchableOpacity>
           );

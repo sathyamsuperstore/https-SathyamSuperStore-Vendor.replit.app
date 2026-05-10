@@ -1456,7 +1456,10 @@ function StyleATag({
         </View>
       </View>
 
-      <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+      <Text style={a.itemNoFooter}>
+        Item No: {item.itemNo || "—"}
+        {item.eligibleQty !== undefined && item.eligibleQty !== "" ? `   ·   Elig Qty: ${fmt0(item.eligibleQty)}` : ""}
+      </Text>
 
       {/* Valid Till — vertical rail on the right edge. Rendered last
           so it paints on top of the watermark and any overflow. */}
@@ -1543,7 +1546,10 @@ function StyleBTag({
         </Text>
       </View>
 
-      <Text style={b.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
+      <Text style={b.itemNoFooter}>
+        Item No: {item.itemNo || "—"}
+        {item.eligibleQty !== undefined && item.eligibleQty !== "" ? `   ·   Elig Qty: ${fmt0(item.eligibleQty)}` : ""}
+      </Text>
 
       {/* Valid Till — vertical rail on the right edge. */}
       {item.promotionToDate ? (
@@ -1732,7 +1738,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
           <div class="imgPanelA">${img}</div>
         </div>
       </div>
-      <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}</div>
+      <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}</div>
     </div>
   `;
 }
@@ -1882,7 +1888,7 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
         </div>
       </div>
       <div class="bottomBannerB">${descSpan}</div>
-      <div class="itemFooterB">Item No: ${escapeHtml(it.itemNo || "—")}</div>
+      <div class="itemFooterB">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}</div>
     </div>
   `;
 }
