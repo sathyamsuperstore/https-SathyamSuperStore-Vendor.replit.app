@@ -242,6 +242,7 @@ export default function PromoPrintScreen() {
         mrp: s(r["MRP"]),
         promotionPrice: s(r["PromotionPrice"]),
         eligibleQty: s(r["EligibleQty"]) || undefined,
+        promoSortCode: s(r["PromoSortCode"]) || undefined,
         sp: s(r["SP"]),
         brand: s(r["Brand"]) || undefined,
         category: s(r["Category"]) || undefined,
@@ -440,7 +441,7 @@ export default function PromoPrintScreen() {
                   {desc || "(no description)"}
                 </Text>
                 <Text style={styles.itemMeta} numberOfLines={1}>
-                  {[s(r["Brand"]), s(r["Category"]), s(r["VendorName"]), beatFor(r)]
+                  {[s(r["Brand"]), s(r["Category"]), s(r["VendorName"]), beatFor(r), s(r["PromoSortCode"]) ? `Sort ${s(r["PromoSortCode"])}` : ""]
                     .filter(Boolean)
                     .join("  ·  ")}
                 </Text>

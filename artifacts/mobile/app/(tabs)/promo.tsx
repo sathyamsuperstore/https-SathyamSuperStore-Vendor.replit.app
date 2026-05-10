@@ -162,6 +162,7 @@ const COL_WIDTHS: Record<string, number> = {
   SoldQty: 64,
   PromotionPrice: 72,
   EligibleQty: 78,
+  PromoSortCode: 96,
   "New Qty": 64,
   "Promo CR Date": 86,
   "Latest MRP": 76,
@@ -196,6 +197,7 @@ const CARD_LINE_3: readonly string[] = [
   "Cost",
   "PromotionPrice",
   "EligibleQty",
+  "PromoSortCode",
   "OH Qty",
   "New Qty",
   "PromotionToDate",
@@ -215,6 +217,7 @@ const CARD_FIELD_LABEL: Record<string, string> = {
   PromotionPrice: "Promo",
   PromotionToDate: "Valid Till",
   EligibleQty: "Elig Qty",
+  PromoSortCode: "Sort Code",
 };
 
 function cardLabel(field: string): string {
@@ -232,6 +235,7 @@ const SEARCH_FIELDS = [
   "Item Description",
   "VendorCode",
   "VendorName",
+  "PromoSortCode",
 ];
 
 // Human-readable snapshot timestamp for the PromoPrev header banner

@@ -286,6 +286,11 @@ export const PROMO_FIELDS = [
   // round trip through Excel. Optional — existing imports without
   // this column hydrate with the cell blank.
   "EligibleQty",
+  // Optional free-text sort/grouping code from upstream. Used to
+  // order or bucket promo rows in print runs and exports. Stored as
+  // a string so leading zeros, alpha prefixes (e.g. "A01") and
+  // dashes survive the Excel round trip.
+  "PromoSortCode",
   "Latest MRP",
   "MRP",
   "BatchNo",
@@ -324,6 +329,10 @@ export interface PriceTagItem {
   // eligible for the promotional price. Optional so legacy items
   // pre-dating this field still load.
   eligibleQty?: string | number;
+  // Optional free-text sort/grouping code from the source Promo row.
+  // Carried through so the printed tag and the picker can show it
+  // without re-querying the Promo entries.
+  promoSortCode?: string;
   // SP (regular shelf price) — used as a fallback when promotionPrice
   // is empty so the printed tag always has a price line.
   sp: string | number;

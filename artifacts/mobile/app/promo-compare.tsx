@@ -178,7 +178,7 @@ export default function PromoCompareScreen() {
     try {
       setExporting(true);
       const wb = XLSX.utils.book_new();
-      const cols = ["Item No", "BatchNo", "Brand", "VendorName", "Item Description", "MRP", "SP", "PromotionPrice", "EligibleQty", "PromotionToDate"];
+      const cols = ["Item No", "BatchNo", "Brand", "VendorName", "Item Description", "MRP", "SP", "PromotionPrice", "EligibleQty", "PromoSortCode", "PromotionToDate"];
       function sheetFromRows(rows: PromoEntry[], extraChangesCol = false) {
         const headers = extraChangesCol ? [...cols, "Changes"] : cols;
         const data: (string | number)[][] = [headers];
