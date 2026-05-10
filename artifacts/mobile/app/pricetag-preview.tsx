@@ -1908,17 +1908,18 @@ const PDF_CSS_B = `
     z-index: 0;
   }
   .tagB > *:not(.watermark) { position: relative; z-index: 1; }
-  /* Vertical "Valid Till" rail — same treatment as Style A. */
+  /* "Valid Till" rail for Style B — moved to the LEFT edge and
+     rotated 180deg per user request (reads upside-down). */
   .tagB .validTillB {
     position: absolute;
-    top: 0; right: 2px; bottom: 0;
+    top: 0; left: 2px; bottom: 0;
     width: 14px;
     display: flex; align-items: center; justify-content: center;
     z-index: 2; pointer-events: none;
   }
   .tagB .validTillB span {
     display: inline-block;
-    transform: rotate(90deg);
+    transform: rotate(180deg);
     white-space: nowrap;
     font-size: 9px; color: #6B7280; font-weight: 600;
     letter-spacing: 0.3px;
@@ -2357,9 +2358,11 @@ const validTillStyles = StyleSheet.create({
     width: 200,
     textAlign: "center",
   },
+  // Style B: rail on the LEFT edge with the text flipped 180deg
+  // (per user request — reads upside-down horizontally).
   railB: {
     position: "absolute",
-    top: 0, bottom: 0, right: 2,
+    top: 0, bottom: 0, left: 2,
     width: 14,
     alignItems: "center",
     justifyContent: "center",
@@ -2367,7 +2370,7 @@ const validTillStyles = StyleSheet.create({
   textB: {
     fontSize: 9, color: Colors.textMuted, fontWeight: "600",
     letterSpacing: 0.3,
-    transform: [{ rotate: "90deg" }],
+    transform: [{ rotate: "180deg" }],
     width: 200,
     textAlign: "center",
   },
