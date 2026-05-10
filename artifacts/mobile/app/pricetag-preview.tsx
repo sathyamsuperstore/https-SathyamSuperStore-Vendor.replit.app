@@ -1665,7 +1665,7 @@ function buildPdfHtml(
     font-size: 12px; color: #64748B; margin: 0 0 10px;
     font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
   }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; row-gap: 30px; column-gap: 10px; }
   .tamil { font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif; }
   @media print { @page { margin: 8mm; } }
   ${styleCss}
@@ -2087,7 +2087,7 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row", flexWrap: "wrap",
     paddingHorizontal: 8, paddingTop: 10,
-    columnGap: 8, rowGap: 12,
+    columnGap: 8, rowGap: 36,
   },
   tagSlot: { width: "48.5%", position: "relative" },
   removeBtn: {
