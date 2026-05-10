@@ -1,15 +1,20 @@
 import { Router } from "express";
-import { requireSharedAuth } from "../middlewares/shared-auth";
 import { createRateLimit } from "../middlewares/rate-limit";
 
 const router = Router();
 
 const PIXIAN_ENDPOINT = "https://api.pixian.ai/api/v2/remove-background";
 
-// 30 requests per minute per IP. Pixian is a paid upstream so we
-// keep this conservative; bulk-of-12 fits comfortably and any real
-// user request stays well under the cap.
-const pixianRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
+// Defense in depth against cost-runaway on this paid upstream.
+// Real per-user auth needs an authenticated mobile client (see
+// follow-up "Move from a shared app secret to real user sign-in");
+// until that lands, we lean on rate limits + a hard byte cap.
+//
+// 20 req / minute / IP covers a normal bulk-of-12 plus retries.
+const pixianPerMinute = createRateLimit({ windowMs: 60_000, max: 20 });
+// 200 req / day / IP catches sustained abuse that stays under the
+// per-minute cap. ~17x what a heavy real user would do in a day.
+const pixianPerDay = createRateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 200 });
 
 // Soft cap on the decoded image bytes we forward upstream. Pixian
 // itself accepts up to ~30MB, but our client always re-encodes to
@@ -17,7 +22,7 @@ const pixianRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
 // certainly a misuse / accidental payload, so we reject early.
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-router.post("/pixian/remove-bg", requireSharedAuth, pixianRateLimit, async (req, res) => {
+router.post("/pixian/remove-bg", pixianPerMinute, pixianPerDay, async (req, res) => {
   const id = process.env.PIXIAN_API_ID;
   const secret = process.env.PIXIAN_API_SECRET;
   if (!id || !secret) {

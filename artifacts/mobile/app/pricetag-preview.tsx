@@ -575,13 +575,9 @@ export default function PriceTagPreviewScreen() {
     if (!item?.imageUri) return false;
     setBusyKey(key);
     try {
-      const sharedSecret = process.env.EXPO_PUBLIC_API_SHARED_SECRET ?? "";
       const resp = await fetch(apiUrl("/api/pixian/remove-bg"), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(sharedSecret ? { Authorization: `Bearer ${sharedSecret}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageDataUri: item.imageUri }),
       });
       const text = await resp.text();
