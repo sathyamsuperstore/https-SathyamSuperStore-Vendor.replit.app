@@ -241,12 +241,25 @@ export default function PriceTagPreviewScreen() {
     return true;
   }
   async function applyAsset(key: string, asset: ImagePicker.ImagePickerAsset) {
-    const longerEdge = Math.max(asset.width ?? 0, asset.height ?? 0);
-    const ratio = longerEdge > 1024 ? 1024 / longerEdge : 1;
-    const resizeActions = ratio < 1
-      ? [{ resize: { width: Math.round((asset.width ?? 0) * ratio) } }]
-      : [];
-    const m = await ImageManipulator.manipulateAsync(asset.uri, resizeActions, {
+    // Force the saved image to a 1024x1024 square. If the source isn't
+    // already square (e.g. user skipped the editor or picked something
+    // weird) center-crop it first, then downscale to 1024.
+    const w = asset.width ?? 0;
+    const h = asset.height ?? 0;
+    const actions: ImageManipulator.Action[] = [];
+    if (w > 0 && h > 0 && w !== h) {
+      const side = Math.min(w, h);
+      actions.push({
+        crop: {
+          originX: Math.round((w - side) / 2),
+          originY: Math.round((h - side) / 2),
+          width: side,
+          height: side,
+        },
+      });
+    }
+    actions.push({ resize: { width: 1024, height: 1024 } });
+    const m = await ImageManipulator.manipulateAsync(asset.uri, actions, {
       compress: 0.6,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
@@ -265,7 +278,10 @@ export default function PriceTagPreviewScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
+        // Open the OS crop/rotate editor so the user can square-up
+        // a non-square photo before we downscale it to 1024x1024.
+        allowsEditing: true,
+        aspect: [1, 1],
         quality: 0.6,
         base64: true,
       });
@@ -293,9 +309,28 @@ export default function PriceTagPreviewScreen() {
       const asset = result.assets[0];
       if (!asset?.uri) throw new Error("No file returned by picker");
 
-      // Run through ImageManipulator to normalise as JPEG and get
-      // base64 — mirrors how applyAsset() handles ImagePicker assets.
-      const m = await ImageManipulator.manipulateAsync(asset.uri, [], {
+      // First pass: probe the image dimensions (no actions, no base64).
+      // DocumentPicker can't open the OS crop editor, so we center-crop
+      // non-square sources programmatically and downscale to 1024x1024.
+      const probe = await ImageManipulator.manipulateAsync(asset.uri, [], {
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
+      const w = probe.width ?? 0;
+      const h = probe.height ?? 0;
+      const actions: ImageManipulator.Action[] = [];
+      if (w > 0 && h > 0 && w !== h) {
+        const side = Math.min(w, h);
+        actions.push({
+          crop: {
+            originX: Math.round((w - side) / 2),
+            originY: Math.round((h - side) / 2),
+            width: side,
+            height: side,
+          },
+        });
+      }
+      actions.push({ resize: { width: 1024, height: 1024 } });
+      const m = await ImageManipulator.manipulateAsync(asset.uri, actions, {
         compress: 0.6,
         format: ImageManipulator.SaveFormat.JPEG,
         base64: true,
@@ -303,7 +338,7 @@ export default function PriceTagPreviewScreen() {
       let b64 = m.base64;
       if (!b64 && Platform.OS !== "web") {
         // Fallback: read the cached file directly.
-        b64 = await FileSystem.readAsStringAsync(asset.uri, {
+        b64 = await FileSystem.readAsStringAsync(m.uri, {
           encoding: "base64" as any,
         });
       }
@@ -326,10 +361,10 @@ export default function PriceTagPreviewScreen() {
     try {
       const result = await ImagePicker.launchCameraAsync({
         // Hand the captured photo to the phone's built-in editor
-        // (crop, rotate, etc.) before returning. The user can still
-        // tap "Use Photo" / "Save" without changes if they want to
-        // keep the original.
+        // (crop, rotate, etc.) before returning, locked to a 1:1
+        // aspect so the saved tile image is always square.
         allowsEditing: true,
+        aspect: [1, 1],
         quality: 0.6,
         base64: true,
       });
@@ -988,18 +1023,7 @@ function StyleATag({
 
   return (
     <View style={a.card}>
-      {/* Image panel on top */}
-      <View style={a.imgPanel}>
-        <ImageSlot
-          item={item}
-          busy={busy}
-          onAddImage={onAddImage}
-          onRemoveImage={onRemoveImage}
-          tone="dark"
-        />
-      </View>
-
-      {/* Description */}
+      {/* Row 1 — description, full width, in the same red as MRP */}
       <Text
         style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
         numberOfLines={2}
@@ -1007,32 +1031,42 @@ function StyleATag({
         {item.description || "(no description)"}
       </Text>
 
-      {/* MRP strikethrough */}
-      {mrp && (
-        <View style={a.mrpRow}>
-          <Text style={a.rupeeSm}>₹</Text>
-          <Text style={a.mrpVal}>{mrp}</Text>
-          <Text style={a.mrpLabel}>MRP</Text>
-          <View style={a.strike} />
+      {/* Row 2 — prices on the left, square image on the right */}
+      <View style={a.bodyRow}>
+        <View style={a.bodyLeft}>
+          {mrp && (
+            <View style={a.mrpRow}>
+              <Text style={a.rupeeSm}>₹</Text>
+              <Text style={a.mrpVal}>{mrp}</Text>
+              <Text style={a.mrpLabel}>MRP</Text>
+            </View>
+          )}
+          <View style={a.priceRow}>
+            <Text style={a.rupeeBig}>₹</Text>
+            <Text style={a.priceVal}>{value}</Text>
+            <View style={a.priceLabelCol}>
+              <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[0]}</Text>
+              <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[1] || ""}</Text>
+            </View>
+          </View>
+          {off && (
+            <View style={a.footerRow}>
+              <Text style={a.offText}>SAVE ₹{off}</Text>
+            </View>
+          )}
         </View>
-      )}
-
-      {/* Big offer price */}
-      <View style={a.priceRow}>
-        <Text style={a.rupeeBig}>₹</Text>
-        <Text style={a.priceVal}>{value}</Text>
-        <View style={a.priceLabelCol}>
-          <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[0]}</Text>
-          <Text style={a.priceLabel}>{label.toUpperCase().split(" ")[1] || ""}</Text>
+        <View style={a.bodyRight}>
+          <View style={a.imgPanel}>
+            <ImageSlot
+              item={item}
+              busy={busy}
+              onAddImage={onAddImage}
+              onRemoveImage={onRemoveImage}
+              tone="light"
+            />
+          </View>
         </View>
       </View>
-
-      {/* Savings row */}
-      {off && (
-        <View style={a.footerRow}>
-          <Text style={a.offText}>SAVE ₹{off}</Text>
-        </View>
-      )}
 
       <Text style={a.itemNoFooter}>Item No: {item.itemNo || "—"}</Text>
     </View>
@@ -1219,83 +1253,102 @@ function renderTagAHtml(it: PriceTagItem): string {
     ? `<img src="${it.imageUri}" />`
     : `<div class="img-placeholder">No&nbsp;Image</div>`;
 
+  // Split the price label across two lines (e.g. "OFFER" / "PRICE")
+  // so the PDF matches the two-line on-screen layout.
+  const labelParts = label.toUpperCase().split(" ");
+  const labelLine1 = escapeHtml(labelParts[0] || "");
+  const labelLine2 = escapeHtml(labelParts[1] || "");
+
   return `
     <div class="tagA">
-      <div class="imgPanelA">
-        ${img}
-      </div>
       <div class="descA">${descSpan}</div>
-      ${mrp ? `
-        <div class="mrpRowA">
-          <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
-          <span class="mrpLabelA">MRP</span>
-          <div class="strikeA"></div>
-        </div>` : ""}
-      <div class="priceRowA">
-        <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
-        <span class="priceLabelA">${escapeHtml(label.toUpperCase())}</span>
+      <div class="bodyRowA">
+        <div class="bodyLeftA">
+          ${mrp ? `
+            <div class="mrpRowA">
+              <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
+              <span class="mrpLabelA">MRP</span>
+            </div>` : ""}
+          <div class="priceRowA">
+            <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}</span>
+            <span class="priceLabelColA">
+              <span class="priceLabelA">${labelLine1}</span>
+              <span class="priceLabelA">${labelLine2}</span>
+            </span>
+          </div>
+          ${off ? `<div class="footerA"><span class="offA">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
+        </div>
+        <div class="bodyRightA">
+          <div class="imgPanelA">${img}</div>
+        </div>
       </div>
-      ${off ? `<div class="footerA"><span class="offA">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}</div>
     </div>
   `;
 }
 
+// Printer-friendly: white background, no large solid color fills
+// (the maroon image panel and red savings pill are the only colored
+// fills, and the savings pill is small enough to keep ink usage low).
 const PDF_CSS_A = `
   .tagA {
     position: relative;
-    background: ${CREAM};
-    border: 2px solid ${DEEP_RED};
+    background: #FFFFFF;
+    border: 1.5px solid ${DEEP_RED};
     border-radius: 8px;
     padding: 10px;
     page-break-inside: avoid;
     overflow: hidden;
     display: flex; flex-direction: column;
   }
+  .descA {
+    font-size: 13px; font-weight: 800; color: ${DEEP_RED};
+    line-height: 1.25; margin-bottom: 8px;
+  }
+  .bodyRowA {
+    display: flex; flex-direction: row; align-items: center;
+    gap: 10px;
+  }
+  .bodyLeftA { flex: 1; min-width: 0; }
+  .bodyRightA { width: 120px; flex-shrink: 0; }
   .imgPanelA {
     position: relative;
-    width: 100%; height: 130px;
-    background: ${DEEP_RED};
-    border-radius: 6px; padding: 5px;
+    width: 120px; height: 120px;
+    background: transparent;
+    border-radius: 6px; padding: 0;
     display: flex; align-items: center; justify-content: center;
     overflow: hidden;
-    margin-bottom: 8px;
   }
-  .imgPanelA img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .img-placeholder { color: #F4D9DC; font-size: 11px; }
-  .badgeA {
-    position: absolute; top: -6px; right: -6px;
-    width: 54px; height: 54px; border-radius: 50%;
-    background: ${DEEP_RED}; color: #FFF;
-    font-size: 9px; font-weight: 800; text-align: center;
+  .imgPanelA img { width: 100%; height: 100%; object-fit: contain; }
+  .img-placeholder {
+    color: ${DEEP_RED}; font-size: 11px;
+    border: 1px dashed ${DEEP_RED}; border-radius: 6px;
+    width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
-    border: 2px dashed ${GOLD};
-    line-height: 11px;
-  }
-  .descA {
-    font-size: 13px; font-weight: 800; color: #0F172A;
-    line-height: 1.2; margin-bottom: 6px;
   }
   .mrpRowA {
-    position: relative; display: inline-flex; align-items: baseline;
+    display: inline-flex; align-items: baseline;
     gap: 3px; padding: 1px 4px; margin-bottom: 4px;
   }
   .rupeeSm { font-size: 11px; color: ${DEEP_RED}; font-weight: 800; }
   .mrpValA { font-size: 18px; color: ${DEEP_RED}; font-weight: 800; line-height: 1; }
   .mrpLabelA { font-size: 10px; color: ${DEEP_RED}; font-weight: 700; margin-left: 3px; letter-spacing: 0.5px; }
-  .strikeA {
-    position: absolute; left: 0; right: 0; top: 55%;
-    height: 1.5px; background: ${DEEP_RED}; transform: rotate(-6deg);
+  .priceRowA {
+    display: flex; align-items: center; gap: 4px; margin-top: 2px;
   }
-  .priceRowA { display: flex; align-items: baseline; gap: 4px; margin-top: 2px; }
-  .rupeeBigA { font-size: 18px; color: ${GOLD}; font-weight: 800; }
+  .rupeeBigA { font-size: 18px; color: ${GOLD}; font-weight: 800; line-height: 1; }
   .priceValA { font-size: 36px; color: ${GOLD}; font-weight: 900; line-height: 1; }
+  .priceLabelColA {
+    display: inline-flex; flex-direction: column;
+    justify-content: center; align-items: flex-start;
+    margin-left: 5px; line-height: 1;
+  }
   .priceLabelA {
     font-size: 11px; color: ${GOLD}; font-weight: 800;
-    letter-spacing: 0.8px; margin-left: 4px;
+    letter-spacing: 0.8px; line-height: 1.1;
   }
   .footerA {
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: flex-start; align-items: center;
     margin-top: 6px;
   }
   .offA {
@@ -1304,12 +1357,8 @@ const PDF_CSS_A = `
     font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
     padding: 2px 8px; border-radius: 4px;
   }
-  .brandA {
-    font-size: 11px; font-weight: 800;
-    color: ${DEEP_RED}; letter-spacing: 0.5px;
-  }
   .itemFooterA {
-    margin-top: 6px; padding-top: 4px;
+    margin-top: 8px; padding-top: 4px;
     border-top: 1px dashed #C8B89F;
     font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
   }
@@ -1613,12 +1662,17 @@ const a = StyleSheet.create({
     borderRadius: 8, padding: 8,
     overflow: "hidden",
   },
+  bodyRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+  },
+  bodyLeft: { flex: 1, justifyContent: "center" },
+  bodyRight: { width: 92 },
   imgPanel: {
-    width: "100%", height: 90,
-    backgroundColor: DEEP_RED,
-    borderRadius: 6, padding: 3,
-    marginBottom: 6,
+    width: "100%", aspectRatio: 1,
+    backgroundColor: "transparent",
+    borderRadius: 6, padding: 0,
     position: "relative",
+    overflow: "hidden",
   },
   badge: {
     position: "absolute", top: -6, right: -6, zIndex: 3,
@@ -1632,13 +1686,13 @@ const a = StyleSheet.create({
     textAlign: "center", lineHeight: 9,
   },
   desc: {
-    fontSize: 11, fontWeight: "800", color: "#0F172A",
-    lineHeight: 13, marginBottom: 4, minHeight: 26,
+    fontSize: 12, fontWeight: "800", color: DEEP_RED,
+    lineHeight: 14, marginBottom: 6, minHeight: 28,
   },
   mrpRow: {
     flexDirection: "row", alignItems: "baseline",
     alignSelf: "flex-start", marginBottom: 2,
-    position: "relative", paddingHorizontal: 2,
+    paddingHorizontal: 2,
   },
   rupeeSm: { fontSize: 9, color: DEEP_RED, fontWeight: "800" },
   mrpVal: { fontSize: 14, color: DEEP_RED, fontWeight: "800", marginLeft: 1 },
@@ -1646,24 +1700,20 @@ const a = StyleSheet.create({
     fontSize: 8, color: DEEP_RED, fontWeight: "700",
     marginLeft: 3, letterSpacing: 0.4,
   },
-  strike: {
-    position: "absolute", left: 0, right: 0, top: "55%",
-    height: 1.2, backgroundColor: DEEP_RED, transform: [{ rotate: "-6deg" }],
-  },
   priceRow: {
-    flexDirection: "row", alignItems: "baseline", marginTop: 2,
+    flexDirection: "row", alignItems: "center", marginTop: 2,
   },
   rupeeBig: { fontSize: 14, color: GOLD, fontWeight: "800" },
   priceVal: { fontSize: 26, color: GOLD, fontWeight: "900", lineHeight: 28 },
   priceLabelCol: {
-    marginLeft: 4, justifyContent: "center",
+    marginLeft: 4, justifyContent: "center", alignItems: "flex-start",
   },
   priceLabel: {
-    fontSize: 8, color: GOLD, fontWeight: "800",
-    letterSpacing: 0.6, lineHeight: 10,
+    fontSize: 9, color: GOLD, fontWeight: "800",
+    letterSpacing: 0.6, lineHeight: 11,
   },
   footerRow: {
-    flexDirection: "row", justifyContent: "space-between",
+    flexDirection: "row", justifyContent: "flex-start",
     alignItems: "center", marginTop: 4, minHeight: 16,
   },
   offText: {
