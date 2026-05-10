@@ -173,6 +173,7 @@ export default function PriceTagPreviewScreen() {
   const [mode, setMode] = useState<Mode>("view");
   const [workingItems, setWorkingItems] = useState<PriceTagItem[]>(priceTagItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [bgAllRunning, setBgAllRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
@@ -561,6 +562,101 @@ export default function PriceTagPreviewScreen() {
     }
   }
 
+  // -------- Background removal (Pixian) --------
+  // Sends the current image to our /api/pixian/remove-bg proxy
+  // (which calls Pixian.ai with our credentials) and replaces the
+  // tile image with the returned transparent PNG. We then re-square
+  // it to 1024x1024 so storage stays consistent.
+  async function removeBackgroundFor(
+    key: string,
+    opts: { silent?: boolean } = {},
+  ): Promise<boolean> {
+    const item = workingItems.find((i) => i.key === key);
+    if (!item?.imageUri) return false;
+    setBusyKey(key);
+    try {
+      const resp = await fetch(apiUrl("/api/pixian/remove-bg"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUri: item.imageUri }),
+      });
+      const text = await resp.text();
+      if (!resp.ok) {
+        let msg = `Background removal failed (${resp.status})`;
+        try {
+          const j = JSON.parse(text);
+          if (j?.error) msg = String(j.error);
+        } catch {}
+        throw new Error(msg);
+      }
+      const json = text ? JSON.parse(text) : {};
+      const outDataUri: string | undefined = json?.imageDataUri;
+      if (!outDataUri) throw new Error("Pixian returned no image.");
+
+      // Re-encode through ImageManipulator to keep the 1024x1024
+      // square contract. PNG is preserved (transparent background).
+      const m = await ImageManipulator.manipulateAsync(
+        outDataUri,
+        [{ resize: { width: 1024, height: 1024 } }],
+        {
+          compress: 1,
+          format: ImageManipulator.SaveFormat.PNG,
+          base64: true,
+        },
+      );
+      const finalUri = m.base64
+        ? `data:image/png;base64,${m.base64}`
+        : outDataUri;
+      await setPriceTagImage(key, finalUri);
+      setWorkingItems((prev) =>
+        prev.map((i) => (i.key === key ? { ...i, imageUri: finalUri } : i))
+      );
+      return true;
+    } catch (e: any) {
+      if (!opts.silent) {
+        Alert.alert("Couldn't remove background", e?.message ?? "Unknown error");
+      }
+      return false;
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function removeBackgroundForAll() {
+    const targets = workingItems.filter((i) => !!i.imageUri);
+    if (targets.length === 0) {
+      Alert.alert("No images", "Add at least one image before removing backgrounds.");
+      return;
+    }
+    Alert.alert(
+      "Remove background for all?",
+      `This will process ${targets.length} image${targets.length === 1 ? "" : "s"} through Pixian and may take a few seconds each.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: async () => {
+            setBgAllRunning(true);
+            let ok = 0;
+            let fail = 0;
+            for (const it of targets) {
+              const success = await removeBackgroundFor(it.key, { silent: true });
+              if (success) ok++;
+              else fail++;
+            }
+            setBgAllRunning(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert(
+              "Background removal complete",
+              `Processed ${ok} image${ok === 1 ? "" : "s"}` +
+                (fail > 0 ? `, ${fail} failed.` : "."),
+            );
+          },
+        },
+      ],
+    );
+  }
+
   // -------- PDF export --------
   async function exportPdf() {
     if (priceTagItems.length === 0) return;
@@ -691,13 +787,28 @@ export default function PriceTagPreviewScreen() {
             active={priceTagStyle === "B"}
             onPress={() => setPriceTagStyle("B")}
           />
+          <TouchableOpacity
+            style={[styles.bgAllBtn, bgAllRunning && styles.bgAllBtnBusy]}
+            onPress={removeBackgroundForAll}
+            disabled={bgAllRunning}
+            activeOpacity={0.85}
+          >
+            {bgAllRunning ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Feather name="scissors" size={13} color={Colors.primary} />
+            )}
+            <Text style={styles.bgAllBtnText}>
+              {bgAllRunning ? "Removing…" : "Remove BG (all)"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <ScrollView
           contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 24 }]}
         >
           {items.map((it) => {
-            const isBusy = busyKey === it.key;
+            const isBusy = busyKey === it.key || bgAllRunning;
             const TagComponent = priceTagStyle === "B" ? StyleBTag : StyleATag;
             return (
               <View key={it.key} style={styles.tagSlot}>
@@ -715,6 +826,7 @@ export default function PriceTagPreviewScreen() {
                   busy={isBusy}
                   onAddImage={() => handleAddImage(it.key)}
                   onRemoveImage={() => removeImage(it.key)}
+                  onRemoveBackground={() => removeBackgroundFor(it.key)}
                 />
               </View>
             );
@@ -1010,12 +1122,13 @@ export default function PriceTagPreviewScreen() {
 // tile size, so we stack instead and keep heights bounded.
 
 function StyleATag({
-  item, busy, onAddImage, onRemoveImage,
+  item, busy, onAddImage, onRemoveImage, onRemoveBackground,
 }: {
   item: PriceTagItem;
   busy: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
+  onRemoveBackground: () => void;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
@@ -1062,6 +1175,7 @@ function StyleATag({
               busy={busy}
               onAddImage={onAddImage}
               onRemoveImage={onRemoveImage}
+              onRemoveBackground={onRemoveBackground}
               tone="light"
             />
           </View>
@@ -1083,12 +1197,13 @@ function StyleATag({
 // banner.
 
 function StyleBTag({
-  item, busy, onAddImage, onRemoveImage,
+  item, busy, onAddImage, onRemoveImage, onRemoveBackground,
 }: {
   item: PriceTagItem;
   busy: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
+  onRemoveBackground: () => void;
 }) {
   const { value } = priceFor(item);
   const off = offAmount(item);
@@ -1106,6 +1221,7 @@ function StyleBTag({
             busy={busy}
             onAddImage={onAddImage}
             onRemoveImage={onRemoveImage}
+            onRemoveBackground={onRemoveBackground}
             tone="light"
           />
         </View>
@@ -1139,12 +1255,13 @@ function StyleBTag({
 // ----------- Image slot (shared between styles) -----------
 
 function ImageSlot({
-  item, busy, onAddImage, onRemoveImage, tone,
+  item, busy, onAddImage, onRemoveImage, onRemoveBackground, tone,
 }: {
   item: PriceTagItem;
   busy: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
+  onRemoveBackground: () => void;
   tone: "dark" | "light";
 }) {
   const slotStyle = tone === "dark" ? imgs.slotDark : imgs.slotLight;
@@ -1155,12 +1272,24 @@ function ImageSlot({
     return (
       <View style={[imgs.slot, slotStyle]}>
         <Image source={{ uri: item.imageUri }} style={imgs.img} resizeMode="contain" />
+        {busy && (
+          <View style={imgs.busyOverlay}>
+            <ActivityIndicator size="small" color="#FFF" />
+          </View>
+        )}
         <View style={imgs.actions}>
-          <TouchableOpacity style={imgs.actionChip} onPress={onAddImage}>
-            <Feather name="refresh-cw" size={11} color={Colors.text} />
-            <Text style={imgs.actionText}>Replace</Text>
+          <TouchableOpacity
+            style={imgs.actionChip}
+            onPress={onRemoveBackground}
+            disabled={busy}
+          >
+            <Feather name="scissors" size={11} color={Colors.primary} />
+            <Text style={imgs.actionText}>BG</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={imgs.actionChip} onPress={onRemoveImage}>
+          <TouchableOpacity style={imgs.actionChip} onPress={onAddImage} disabled={busy}>
+            <Feather name="refresh-cw" size={11} color={Colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={imgs.actionChip} onPress={onRemoveImage} disabled={busy}>
             <Feather name="trash" size={11} color={Colors.danger} />
           </TouchableOpacity>
         </View>
@@ -1526,6 +1655,15 @@ const styles = StyleSheet.create({
   },
   styleChipText: { color: Colors.textSecondary, fontSize: 12, fontWeight: "700" },
   styleChipTextActive: { color: Colors.textInverse },
+  bgAllBtn: {
+    marginLeft: "auto",
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 999, borderWidth: 1, borderColor: Colors.primary,
+    backgroundColor: Colors.primary + "12",
+  },
+  bgAllBtnBusy: { opacity: 0.7 },
+  bgAllBtnText: { color: Colors.primary, fontSize: 12, fontWeight: "700" },
   grid: {
     flexDirection: "row", flexWrap: "wrap",
     paddingHorizontal: 8, paddingTop: 10,
@@ -1809,4 +1947,10 @@ const imgs = StyleSheet.create({
     paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
   },
   actionText: { color: Colors.text, fontSize: 9, fontWeight: "700" },
+  busyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center", justifyContent: "center",
+    borderRadius: 6,
+  },
 });
