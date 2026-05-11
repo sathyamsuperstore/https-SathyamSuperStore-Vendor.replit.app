@@ -1228,24 +1228,35 @@ export default function PriceTagPreviewScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Style picker */}
+        {/* Style picker — chips scroll horizontally so the row stays
+            compact as more styles are added; the Style label and the
+            Remove-BG-all button are pinned outside the scroll view so
+            they stay reachable with one tap regardless of scroll
+            position. */}
         <View style={styles.styleBar}>
           <Text style={styles.styleBarLabel}>Style</Text>
-          <StyleChip
-            label="A · Special Offer"
-            active={priceTagStyle === "A"}
-            onPress={() => setPriceTagStyle("A")}
-          />
-          <StyleChip
-            label="B · Low Prices"
-            active={priceTagStyle === "B"}
-            onPress={() => setPriceTagStyle("B")}
-          />
-          <StyleChip
-            label="C · Buy 1 Get 1"
-            active={priceTagStyle === "C"}
-            onPress={() => setPriceTagStyle("C")}
-          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.styleChipsRow}
+            style={styles.styleChipsScroll}
+          >
+            <StyleChip
+              label="A · Special Offer"
+              active={priceTagStyle === "A"}
+              onPress={() => setPriceTagStyle("A")}
+            />
+            <StyleChip
+              label="B · Low Prices"
+              active={priceTagStyle === "B"}
+              onPress={() => setPriceTagStyle("B")}
+            />
+            <StyleChip
+              label="C · Buy 1 Get 1"
+              active={priceTagStyle === "C"}
+              onPress={() => setPriceTagStyle("C")}
+            />
+          </ScrollView>
           <TouchableOpacity
             style={[styles.bgAllBtn, bgAllRunning && styles.bgAllBtnBusy]}
             onPress={removeBackgroundForAll}
@@ -2422,6 +2433,13 @@ const styles = StyleSheet.create({
   },
   styleChipText: { color: Colors.textSecondary, fontSize: 12, fontWeight: "700" },
   styleChipTextActive: { color: Colors.textInverse },
+  styleChipsScroll: {
+    flex: 1,
+  },
+  styleChipsRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingRight: 8,
+  },
   bgAllBtn: {
     marginLeft: "auto",
     flexDirection: "row", alignItems: "center", gap: 5,
