@@ -1360,7 +1360,7 @@ export default function PriceTagPreviewScreen() {
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
                   bannerLabel={bannerLabel}
                   showPriceRow={priceTagStyle !== "D"}
-                  showOffBadge={priceTagStyle !== "D"}
+                  showOffBadge={priceTagStyle !== "D" && priceTagStyle !== "C"}
                   showStyleAMrpRow={priceTagStyle === "D"}
                   showStyleAPriceRow={priceTagStyle === "D"}
                 />
@@ -2041,7 +2041,7 @@ function buildPdfHtml(
       style === "B"
         ? renderTagBHtml(it, showLogo, "LOW PRICES")
         : style === "C"
-          ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free")
+          ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free", true, false)
           : style === "D"
             ? renderTagBHtml(
                 it,
