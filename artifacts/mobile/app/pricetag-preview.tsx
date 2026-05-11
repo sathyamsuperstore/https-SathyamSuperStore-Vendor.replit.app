@@ -1256,6 +1256,11 @@ export default function PriceTagPreviewScreen() {
               active={priceTagStyle === "C"}
               onPress={() => setPriceTagStyle("C")}
             />
+            <StyleChip
+              label="D · RED Tag Sale"
+              active={priceTagStyle === "D"}
+              onPress={() => setPriceTagStyle("D")}
+            />
           </ScrollView>
           <TouchableOpacity
             style={[styles.bgAllBtn, bgAllRunning && styles.bgAllBtnBusy]}
@@ -1280,11 +1285,17 @@ export default function PriceTagPreviewScreen() {
           {items.map((it, idx) => {
             const isBusy = busyKey === it.key || bgAllRunning;
             const TagComponent =
-              priceTagStyle === "B" || priceTagStyle === "C"
+              priceTagStyle === "B" ||
+              priceTagStyle === "C" ||
+              priceTagStyle === "D"
                 ? StyleBTag
                 : StyleATag;
             const bannerLabel =
-              priceTagStyle === "C" ? "Buy 1 Get 1 Free" : "LOW PRICES";
+              priceTagStyle === "C"
+                ? "Buy 1 Get 1 Free"
+                : priceTagStyle === "D"
+                  ? "RED Tag Sale"
+                  : "LOW PRICES";
             return (
               <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
@@ -1991,11 +2002,14 @@ function buildPdfHtml(
         ? renderTagBHtml(it, showLogo, "LOW PRICES")
         : style === "C"
           ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free")
-          : renderTagAHtml(it, showLogo),
+          : style === "D"
+            ? renderTagBHtml(it, showLogo, "RED Tag Sale")
+            : renderTagAHtml(it, showLogo),
     )
     .join("");
 
-  const styleCss = style === "B" || style === "C" ? PDF_CSS_B : PDF_CSS_A;
+  const styleCss =
+    style === "B" || style === "C" || style === "D" ? PDF_CSS_B : PDF_CSS_A;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />

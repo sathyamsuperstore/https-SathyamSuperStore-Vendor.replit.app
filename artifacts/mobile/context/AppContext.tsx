@@ -359,7 +359,7 @@ export interface PriceTagItem {
 // Available visual styles for the printed price tag. Kept open as a
 // string union so adding a new layout later only requires touching
 // the renderer + this type.
-export type PriceTagStyle = "A" | "B" | "C";
+export type PriceTagStyle = "A" | "B" | "C" | "D";
 
 // One row in the Last Supply Date table. The date is stored as a
 // "DD/MM/YYYY" string (normalised at import time) so it is safe to
@@ -545,7 +545,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (
         priceTagStyleData === "A" ||
         priceTagStyleData === "B" ||
-        priceTagStyleData === "C"
+        priceTagStyleData === "C" ||
+        priceTagStyleData === "D"
       ) {
         setPriceTagStyleState(priceTagStyleData);
       }
