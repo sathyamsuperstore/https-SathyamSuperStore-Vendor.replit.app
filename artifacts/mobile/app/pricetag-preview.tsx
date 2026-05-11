@@ -1363,6 +1363,7 @@ export default function PriceTagPreviewScreen() {
                   showOffBadge={priceTagStyle !== "D" && priceTagStyle !== "C"}
                   showStyleAMrpRow={priceTagStyle === "D"}
                   showStyleAPriceRow={priceTagStyle === "D"}
+                  validTillTopLeft={priceTagStyle === "C" || priceTagStyle === "D"}
                 />
               </View>
             );
@@ -1832,6 +1833,7 @@ function StyleBTag({
   showOffBadge = true,
   showStyleAMrpRow = false,
   showStyleAPriceRow = false,
+  validTillTopLeft = false,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -1849,6 +1851,9 @@ function StyleBTag({
   // off so B and C are unaffected.
   showStyleAMrpRow?: boolean;
   showStyleAPriceRow?: boolean;
+  // Styles C/D render Valid Till as a horizontal gray line under the
+  // top banner instead of the rotated left-edge rail used by Style B.
+  validTillTopLeft?: boolean;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
@@ -1872,6 +1877,12 @@ function StyleBTag({
       <View style={b.topBanner}>
         <Text style={b.bannerText}>{bannerLabel}</Text>
       </View>
+
+      {validTillTopLeft && item.promotionToDate ? (
+        <Text style={b.validTillTopLeft}>
+          Valid Till: {formatValidTill(item.promotionToDate)}
+        </Text>
+      ) : null}
 
       <View style={b.middle}>
         <View style={b.imgWrap}>
@@ -1936,8 +1947,10 @@ function StyleBTag({
         {item.promoSortCode ? `   ·   Sort: ${item.promoSortCode}` : ""}
       </Text>
 
-      {/* Valid Till — vertical rail on the right edge. */}
-      {item.promotionToDate ? (
+      {/* Valid Till — vertical rail on the left edge (Style B only).
+          Styles C/D render the date as a horizontal line under the
+          banner instead, so we suppress the rail here. */}
+      {!validTillTopLeft && item.promotionToDate ? (
         <View pointerEvents="none" style={validTillStyles.railB}>
           <Text style={validTillStyles.textB}>
             Valid Till: {formatValidTill(item.promotionToDate)}
@@ -2041,7 +2054,16 @@ function buildPdfHtml(
       style === "B"
         ? renderTagBHtml(it, showLogo, "LOW PRICES")
         : style === "C"
-          ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free", true, false)
+          ? renderTagBHtml(
+              it,
+              showLogo,
+              "Buy 1 Get 1 Free",
+              true,  // showPriceRow
+              false, // showOffBadge
+              false, // showStyleAMrpRow
+              false, // showStyleAPriceRow
+              true,  // validTillTopLeft
+            )
           : style === "D"
             ? renderTagBHtml(
                 it,
@@ -2051,6 +2073,7 @@ function buildPdfHtml(
                 false, // showOffBadge
                 true,  // showStyleAMrpRow
                 true,  // showStyleAPriceRow
+                true,  // validTillTopLeft
               )
             : renderTagAHtml(it, showLogo),
     )
@@ -2276,6 +2299,9 @@ function renderTagBHtml(
   // Style D borrows Style A's MRP row + GOLD price row.
   showStyleAMrpRow: boolean = false,
   showStyleAPriceRow: boolean = false,
+  // Styles C/D show Valid Till as a horizontal gray line below the
+  // top banner instead of the rotated left-edge rail.
+  validTillTopLeft: boolean = false,
 ): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -2295,17 +2321,26 @@ function renderTagBHtml(
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
     : "";
 
-  const validTill = it.promotionToDate
-    ? `<div class="validTillB"><span>Valid Till: ${escapeHtml(
+  const validTillText = it.promotionToDate
+    ? `Valid Till: ${escapeHtml(
         (it.promotionToDate || "").trim().replace(/\//g, "-"),
-      )}</span></div>`
+      )}`
     : "";
+  const validTillRail =
+    !validTillTopLeft && validTillText
+      ? `<div class="validTillB"><span>${validTillText}</span></div>`
+      : "";
+  const validTillTop =
+    validTillTopLeft && validTillText
+      ? `<div class="validTillTopB">${validTillText}</div>`
+      : "";
 
   return `
     <div class="tagB">
       ${watermark}
-      ${validTill}
+      ${validTillRail}
       <div class="topBannerB">${escapeHtml(bannerLabel)}</div>
+      ${validTillTop}
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
         <div class="priceColB">
@@ -2370,6 +2405,14 @@ const PDF_CSS_B = `
     display: inline-block;
     transform: rotate(-90deg);
     white-space: nowrap;
+    font-size: 9px; color: #6B7280; font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  /* Horizontal Valid Till line for Styles C/D — pinned to the top-left
+     edge directly under the red top banner, no rotation, gray. */
+  .tagB .validTillTopB {
+    align-self: flex-start;
+    padding: 2px 6px;
     font-size: 9px; color: #6B7280; font-weight: 600;
     letter-spacing: 0.3px;
   }
@@ -2848,6 +2891,14 @@ const b = StyleSheet.create({
     textAlign: "center",
     fontSize: 9, color: Colors.textMuted, fontWeight: "600",
     paddingVertical: 4, backgroundColor: "#FFF",
+  },
+  // Horizontal Valid Till line for Styles C/D — sits flush against
+  // the top-left edge directly below the red top banner.
+  validTillTopLeft: {
+    alignSelf: "flex-start",
+    fontSize: 9, color: Colors.textMuted, fontWeight: "600",
+    letterSpacing: 0.3,
+    paddingHorizontal: 6, paddingVertical: 2,
   },
 });
 
