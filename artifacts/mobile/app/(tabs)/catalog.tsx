@@ -3,6 +3,8 @@ import { HubTab } from "@/components/HubTab";
 import PromoScreen from "./promo";
 import BrandReviewScreen from "./brand-review";
 import PromoPrintScreen from "./promoprint";
+import PriceTagPreviewScreen from "../pricetag-preview";
+import PriceTagReviewScreen from "../pricetag-review";
 
 export default function CatalogHubScreen() {
   return (
@@ -19,6 +21,16 @@ export default function CatalogHubScreen() {
           key: "promoPrint",
           label: "PromoPrint",
           render: () => <PromoPrintScreen />,
+        },
+        {
+          key: "priceTagPreview",
+          label: "PriceTag Preview",
+          render: () => <PriceTagPreviewScreen />,
+        },
+        {
+          key: "priceTagReview",
+          label: "PriceTag Review",
+          render: () => <PriceTagReviewScreen />,
         },
         {
           key: "brand",

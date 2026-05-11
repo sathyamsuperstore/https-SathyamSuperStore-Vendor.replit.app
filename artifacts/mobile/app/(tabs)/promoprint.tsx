@@ -50,7 +50,14 @@ function formatPrice(v: string | number | undefined): string {
 export default function PromoPrintScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { promoEntries, suppliers, savePriceTagItems, priceTagItems } = useApp();
+  const {
+    promoEntries,
+    suppliers,
+    savePriceTagItems,
+    priceTagItems,
+    savePriceTagReviewItems,
+    priceTagReviewItems,
+  } = useApp();
 
   // Map VendorCode -> supplier.category so we can synthesise a "Beat"
   // facet for Promo rows that don't have one of their own.
@@ -259,8 +266,20 @@ export default function PromoPrintScreen() {
       });
     }
     const merged = [...priceTagItems, ...additions];
+    // PriceTag Review is an independent clone of the Preview list — same
+    // additions get appended to its own state with its own de-dup pass
+    // so the user can fork the lists at save time and edit them
+    // separately later. We compute Review's additions against its own
+    // existing keys so re-saving the same Promo row doesn't duplicate
+    // it on the Review side either.
+    const existingReviewByKey = new Map(priceTagReviewItems.map((i) => [i.key, i]));
+    const reviewAdditions = additions.filter((a) => !existingReviewByKey.has(a.key));
+    const mergedReview = [...priceTagReviewItems, ...reviewAdditions];
     try {
-      await savePriceTagItems(merged);
+      await Promise.all([
+        savePriceTagItems(merged),
+        savePriceTagReviewItems(mergedReview),
+      ]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.push("/pricetag-preview");
     } catch (e: any) {

@@ -222,6 +222,20 @@ interface AppContextType {
   // string means no title set. Persisted so it survives app restarts.
   priceTagTitle: string;
   setPriceTagTitle: (title: string) => Promise<void>;
+  // PriceTag Review — independent clone of the PriceTag Preview state.
+  // Same shape, different storage so the user can fork the preview at
+  // save time and edit the two lists separately later.
+  priceTagReviewItems: PriceTagItem[];
+  savePriceTagReviewItems: (items: PriceTagItem[]) => Promise<void>;
+  removePriceTagReviewItem: (key: string) => Promise<void>;
+  setPriceTagReviewImage: (key: string, imageUri: string | null) => Promise<void>;
+  clearPriceTagReviewItems: () => Promise<void>;
+  priceTagReviewStyle: PriceTagStyle;
+  setPriceTagReviewStyle: (style: PriceTagStyle) => Promise<void>;
+  priceTagReviewShowLogo: boolean;
+  setPriceTagReviewShowLogo: (show: boolean) => Promise<void>;
+  priceTagReviewTitle: string;
+  setPriceTagReviewTitle: (title: string) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -404,6 +418,11 @@ const PRICE_TAG_SHOW_LOGO_KEY = "@priceTagShowLogo";
 // Optional free-text PDF export title. Stored as the raw user
 // string (trimmed); empty string == "no title set".
 const PRICE_TAG_TITLE_KEY = "@priceTagTitle";
+// PriceTag Review — parallel storage namespace for the cloned screen.
+const PRICE_TAG_REVIEW_KEY = "@priceTagReviewItems";
+const PRICE_TAG_REVIEW_STYLE_KEY = "@priceTagReviewStyle";
+const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
+const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -477,6 +496,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     priceTagItemsRef.current = priceTagItems;
   }, [priceTagItems]);
+  // PriceTag Review — clone state with its own storage.
+  const [priceTagReviewItems, setPriceTagReviewItems] = useState<PriceTagItem[]>([]);
+  const [priceTagReviewStyle, setPriceTagReviewStyleState] = useState<PriceTagStyle>("A");
+  const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
+  const [priceTagReviewTitle, setPriceTagReviewTitleState] = useState<string>("");
+  const priceTagReviewItemsRef = useRef<PriceTagItem[]>([]);
+  useEffect(() => {
+    priceTagReviewItemsRef.current = priceTagReviewItems;
+  }, [priceTagReviewItems]);
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -486,7 +514,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -502,6 +530,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
         AsyncStorage.getItem(PRICE_TAG_TITLE_KEY),
+        AsyncStorage.getItem(PRICE_TAG_REVIEW_KEY),
+        AsyncStorage.getItem(PRICE_TAG_REVIEW_STYLE_KEY),
+        AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
+        AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -564,6 +596,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // enforces so a tampered storage value can't blow past it.
       if (typeof priceTagTitleData === "string") {
         setPriceTagTitleState(priceTagTitleData.slice(0, 256));
+      }
+
+      // ----- PriceTag Review (clone) hydration -----
+      const loadedPriceTagReviewItems: PriceTagItem[] = priceTagReviewData
+        ? JSON.parse(priceTagReviewData)
+        : [];
+      setPriceTagReviewItems(loadedPriceTagReviewItems);
+      if (
+        priceTagReviewStyleData === "A" ||
+        priceTagReviewStyleData === "B" ||
+        priceTagReviewStyleData === "C" ||
+        priceTagReviewStyleData === "D"
+      ) {
+        setPriceTagReviewStyleState(priceTagReviewStyleData);
+      }
+      if (priceTagReviewShowLogoData === "0") {
+        setPriceTagReviewShowLogoState(false);
+      } else if (priceTagReviewShowLogoData === "1") {
+        setPriceTagReviewShowLogoState(true);
+      }
+      if (typeof priceTagReviewTitleData === "string") {
+        setPriceTagReviewTitleState(priceTagReviewTitleData.slice(0, 256));
       }
 
       if (sessionData) {
@@ -988,6 +1042,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagTitleState(clean);
   }
 
+  // ----- PriceTag Review helpers (clone) -----
+  async function savePriceTagReviewItems(items: PriceTagItem[]) {
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_KEY, JSON.stringify(items));
+    setPriceTagReviewItems(items);
+  }
+
+  async function removePriceTagReviewItem(key: string) {
+    const next = priceTagReviewItemsRef.current.filter((i) => i.key !== key);
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_KEY, JSON.stringify(next));
+    setPriceTagReviewItems(next);
+  }
+
+  async function setPriceTagReviewImage(key: string, imageUri: string | null) {
+    const next = priceTagReviewItemsRef.current.map((i) =>
+      i.key === key
+        ? imageUri == null
+          ? (() => { const { imageUri: _drop, ...rest } = i; return rest as PriceTagItem; })()
+          : { ...i, imageUri }
+        : i
+    );
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_KEY, JSON.stringify(next));
+    setPriceTagReviewItems(next);
+  }
+
+  async function clearPriceTagReviewItems() {
+    await AsyncStorage.removeItem(PRICE_TAG_REVIEW_KEY);
+    setPriceTagReviewItems([]);
+  }
+
+  async function setPriceTagReviewStyle(style: PriceTagStyle) {
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_STYLE_KEY, style);
+    setPriceTagReviewStyleState(style);
+  }
+
+  async function setPriceTagReviewShowLogo(show: boolean) {
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY, show ? "1" : "0");
+    setPriceTagReviewShowLogoState(show);
+  }
+
+  async function setPriceTagReviewTitle(title: string) {
+    const clean = title.slice(0, 256);
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_TITLE_KEY, clean);
+    setPriceTagReviewTitleState(clean);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1070,6 +1169,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagShowLogo,
         priceTagTitle,
         setPriceTagTitle,
+        priceTagReviewItems,
+        savePriceTagReviewItems,
+        removePriceTagReviewItem,
+        setPriceTagReviewImage,
+        clearPriceTagReviewItems,
+        priceTagReviewStyle,
+        setPriceTagReviewStyle,
+        priceTagReviewShowLogo,
+        setPriceTagReviewShowLogo,
+        priceTagReviewTitle,
+        setPriceTagReviewTitle,
         hydrated,
       }}
     >
