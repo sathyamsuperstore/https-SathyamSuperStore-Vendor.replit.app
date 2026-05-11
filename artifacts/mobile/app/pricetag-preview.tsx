@@ -1241,6 +1241,11 @@ export default function PriceTagPreviewScreen() {
             active={priceTagStyle === "B"}
             onPress={() => setPriceTagStyle("B")}
           />
+          <StyleChip
+            label="C · Buy 1 Get 1"
+            active={priceTagStyle === "C"}
+            onPress={() => setPriceTagStyle("C")}
+          />
           <TouchableOpacity
             style={[styles.bgAllBtn, bgAllRunning && styles.bgAllBtnBusy]}
             onPress={removeBackgroundForAll}
@@ -1263,7 +1268,12 @@ export default function PriceTagPreviewScreen() {
         >
           {items.map((it, idx) => {
             const isBusy = busyKey === it.key || bgAllRunning;
-            const TagComponent = priceTagStyle === "B" ? StyleBTag : StyleATag;
+            const TagComponent =
+              priceTagStyle === "B" || priceTagStyle === "C"
+                ? StyleBTag
+                : StyleATag;
+            const bannerLabel =
+              priceTagStyle === "C" ? "Buy 1 Get 1 Free" : "LOW PRICES";
             return (
               <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
@@ -1326,6 +1336,7 @@ export default function PriceTagPreviewScreen() {
                   onAddImage={() => handleAddImage(it.key)}
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
+                  bannerLabel={bannerLabel}
                 />
               </View>
             );
@@ -1790,6 +1801,7 @@ function StyleATag({
 
 function StyleBTag({
   item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
+  bannerLabel = "LOW PRICES",
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -1797,6 +1809,7 @@ function StyleBTag({
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
+  bannerLabel?: string;
 }) {
   const { value } = priceFor(item);
   const off = offAmount(item);
@@ -1816,7 +1829,7 @@ function StyleBTag({
         </View>
       )}
       <View style={b.topBanner}>
-        <Text style={b.bannerText}>LOW PRICES</Text>
+        <Text style={b.bannerText}>{bannerLabel}</Text>
       </View>
 
       <View style={b.middle}>
@@ -1962,10 +1975,16 @@ function buildPdfHtml(
   showLogo: boolean,
 ): string {
   const tagsHtml = items
-    .map((it) => (style === "B" ? renderTagBHtml(it, showLogo) : renderTagAHtml(it, showLogo)))
+    .map((it) =>
+      style === "B"
+        ? renderTagBHtml(it, showLogo, "LOW PRICES")
+        : style === "C"
+          ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free")
+          : renderTagAHtml(it, showLogo),
+    )
     .join("");
 
-  const styleCss = style === "B" ? PDF_CSS_B : PDF_CSS_A;
+  const styleCss = style === "B" || style === "C" ? PDF_CSS_B : PDF_CSS_A;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -2165,7 +2184,11 @@ const PDF_CSS_A = `
 
 // ----- Style B HTML / CSS -----
 
-function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
+function renderTagBHtml(
+  it: PriceTagItem,
+  showLogo: boolean,
+  bannerLabel: string = "LOW PRICES",
+): string {
   const { value } = priceFor(it);
   const off = offAmount(it);
   const minQtyB = minPurchaseQty(it);
@@ -2190,7 +2213,7 @@ function renderTagBHtml(it: PriceTagItem, showLogo: boolean): string {
     <div class="tagB">
       ${watermark}
       ${validTill}
-      <div class="topBannerB">LOW PRICES</div>
+      <div class="topBannerB">${escapeHtml(bannerLabel)}</div>
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
         <div class="priceColB">
