@@ -353,6 +353,15 @@ export default function PriceTagReviewScreen() {
     setWorkingItems((prev) => prev.filter((i) => i.key !== key));
   }
 
+  // Per-item style override used by the chips rendered under each tag
+  // in Modify mode. Writes the chosen style onto the working copy of
+  // this item only; persists when the user taps Save (commitModify).
+  function setItemStyle(key: string, style: PriceTagStyle) {
+    setWorkingItems((prev) =>
+      prev.map((i) => (i.key === key ? { ...i, style } : i)),
+    );
+  }
+
   // Manual reorder used by the up/down chevrons rendered on each tile
   // while Modify mode is on. Swaps the tile with its previous (`-1`)
   // or next (`+1`) neighbour. Order is committed to storage when the
@@ -1008,6 +1017,10 @@ export default function PriceTagReviewScreen() {
           }
         }),
       );
+      // PriceTag Review honours per-item style overrides on export:
+      // each item rendered with `it.style ?? priceTagReviewStyle`. The
+      // PDF builder reads `it.style` directly so we just pass the
+      // screen-wide style as the fallback.
       const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
@@ -1284,16 +1297,21 @@ export default function PriceTagReviewScreen() {
         >
           {items.map((it, idx) => {
             const isBusy = busyKey === it.key || bgAllRunning;
+            // PriceTag Review supports per-item style overrides: each
+            // tag may carry its own `style` (set in Modify mode) and
+            // we fall back to the screen-wide `priceTagReviewStyle`
+            // when no override is set. Every prop derived from the
+            // style below uses this effective value so per-item
+            // overrides flow through to the on-screen render.
+            const effStyle: PriceTagStyle = it.style ?? priceTagReviewStyle;
             const TagComponent =
-              priceTagReviewStyle === "B" ||
-              priceTagReviewStyle === "C" ||
-              priceTagReviewStyle === "D"
+              effStyle === "B" || effStyle === "C" || effStyle === "D"
                 ? StyleBTag
                 : StyleATag;
             const bannerLabel =
-              priceTagReviewStyle === "C"
+              effStyle === "C"
                 ? "Buy 1 Get 1 Free"
-                : priceTagReviewStyle === "D"
+                : effStyle === "D"
                   ? "RED Tag Sale"
                   : "LOW PRICES";
             return (
@@ -1359,12 +1377,46 @@ export default function PriceTagReviewScreen() {
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
                   bannerLabel={bannerLabel}
-                  showPriceRow={priceTagReviewStyle !== "D"}
-                  showOffBadge={priceTagReviewStyle !== "D" && priceTagReviewStyle !== "C"}
-                  showStyleAMrpRow={priceTagReviewStyle === "D"}
-                  showStyleAPriceRow={priceTagReviewStyle === "D"}
-                  validTillTopLeft={priceTagReviewStyle === "C" || priceTagReviewStyle === "D"}
+                  showPriceRow={effStyle !== "D"}
+                  showOffBadge={effStyle !== "D" && effStyle !== "C"}
+                  showStyleAMrpRow={effStyle === "D"}
+                  showStyleAPriceRow={effStyle === "D"}
+                  validTillTopLeft={effStyle === "C" || effStyle === "D"}
                 />
+                {mode === "modify" && (
+                  // Per-item style chips. Tapping a chip writes the
+                  // chosen style onto this single working item only,
+                  // so the user can mix A/B/C/D within one list.
+                  // Saved on Save tap together with the rest of the
+                  // working state.
+                  <View style={styles.perItemStyleRow}>
+                    {(["A", "B", "C", "D"] as PriceTagStyle[]).map((s) => {
+                      const active = effStyle === s;
+                      return (
+                        <TouchableOpacity
+                          key={s}
+                          style={[
+                            styles.perItemStyleChip,
+                            active && styles.perItemStyleChipActive,
+                          ]}
+                          onPress={() => setItemStyle(it.key, s)}
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Set style ${s} for this item`}
+                        >
+                          <Text
+                            style={[
+                              styles.perItemStyleChipText,
+                              active && styles.perItemStyleChipTextActive,
+                            ]}
+                          >
+                            {s}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             );
           })}
@@ -2044,49 +2096,72 @@ function StyleChip({
 // matches whatever the user is previewing on screen.
 // ============================================================
 
+// Renders a single tag's HTML using the requested style. Factored out
+// so the PriceTag Review export can dispatch per-item — each item may
+// carry its own `style` override — instead of forcing one style across
+// the whole document.
+function renderTagHtmlForStyle(
+  it: PriceTagItem,
+  style: PriceTagStyle,
+  showLogo: boolean,
+): string {
+  if (style === "B") {
+    return renderTagBHtml(it, showLogo, "LOW PRICES");
+  }
+  if (style === "C") {
+    return renderTagBHtml(
+      it,
+      showLogo,
+      "Buy 1 Get 1 Free",
+      true,  // showPriceRow
+      false, // showOffBadge
+      false, // showStyleAMrpRow
+      false, // showStyleAPriceRow
+      true,  // validTillTopLeft
+    );
+  }
+  if (style === "D") {
+    return renderTagBHtml(
+      it,
+      showLogo,
+      "RED Tag Sale",
+      false, // showPriceRow (Style B price)
+      false, // showOffBadge
+      true,  // showStyleAMrpRow
+      true,  // showStyleAPriceRow
+      true,  // validTillTopLeft
+    );
+  }
+  return renderTagAHtml(it, showLogo);
+}
+
 function buildPdfHtml(
   items: PriceTagItem[],
   style: PriceTagStyle,
   showLogo: boolean,
 ): string {
+  // Per-item style support (PriceTag Review): each item can carry its
+  // own `style` override. Items without an override fall back to the
+  // screen-wide `style` parameter.
+  const effStyleFor = (it: PriceTagItem): PriceTagStyle => it.style ?? style;
   const tagsHtml = items
-    .map((it) =>
-      style === "B"
-        ? renderTagBHtml(it, showLogo, "LOW PRICES")
-        : style === "C"
-          ? renderTagBHtml(
-              it,
-              showLogo,
-              "Buy 1 Get 1 Free",
-              true,  // showPriceRow
-              false, // showOffBadge
-              false, // showStyleAMrpRow
-              false, // showStyleAPriceRow
-              true,  // validTillTopLeft
-            )
-          : style === "D"
-            ? renderTagBHtml(
-                it,
-                showLogo,
-                "RED Tag Sale",
-                false, // showPriceRow (Style B price)
-                false, // showOffBadge
-                true,  // showStyleAMrpRow
-                true,  // showStyleAPriceRow
-                true,  // validTillTopLeft
-              )
-            : renderTagAHtml(it, showLogo),
-    )
+    .map((it) => renderTagHtmlForStyle(it, effStyleFor(it), showLogo))
     .join("");
 
-  // Style D reuses Style B's tag chrome but borrows Style A's MRP +
-  // GOLD price classes (.mrpRowA, .priceRowA, .priceLabelColA, etc.),
-  // so include both stylesheets when rendering D. The selectors are
-  // scoped (.tagA / .tagB) so concatenating them is safe.
+  // CSS bundling — work out which stylesheets the document actually
+  // needs from the styles in use. Style A needs PDF_CSS_A; styles B/C
+  // need PDF_CSS_B; style D needs both (it reuses Style B's chrome but
+  // borrows Style A's MRP + GOLD price classes). The .tagA / .tagB
+  // selectors are scoped, so concatenating both is safe.
+  const stylesInUse = new Set<PriceTagStyle>(items.map(effStyleFor));
+  if (items.length === 0) stylesInUse.add(style);
+  const needsA = stylesInUse.has("A") || stylesInUse.has("D");
+  const needsB =
+    stylesInUse.has("B") || stylesInUse.has("C") || stylesInUse.has("D");
   const styleCss =
-    style === "D"
+    needsA && needsB
       ? `${PDF_CSS_A}\n${PDF_CSS_B}`
-      : style === "B" || style === "C"
+      : needsB
         ? PDF_CSS_B
         : PDF_CSS_A;
 
@@ -2593,6 +2668,34 @@ const styles = StyleSheet.create({
     columnGap: 8, rowGap: 36,
   },
   tagSlot: { width: "48.5%", position: "relative" },
+  // Per-item style chip strip rendered under each tag in Modify mode.
+  // Compact A/B/C/D chips so all four fit comfortably under the
+  // narrow 48.5%-wide tag tile.
+  perItemStyleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  perItemStyleChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  perItemStyleChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  perItemStyleChipText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  perItemStyleChipTextActive: { color: Colors.textInverse },
   removeBtn: {
     position: "absolute", top: -8, right: -8, zIndex: 5,
     width: 24, height: 24, borderRadius: 12,

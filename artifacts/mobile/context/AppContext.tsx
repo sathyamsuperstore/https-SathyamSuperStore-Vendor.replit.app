@@ -367,6 +367,13 @@ export interface PriceTagItem {
   // PriceTag Preview formatter swaps "/" for "-" before rendering.
   // Optional so legacy items pre-dating this field still load.
   promotionToDate?: string;
+  // Optional per-item visual style override. Used by PriceTag Review to
+  // let the user assign a different style (A/B/C/D) to each individual
+  // tag instead of applying one style to the whole list. PriceTag
+  // Preview ignores this field — it always renders every item with its
+  // single global `priceTagStyle`. Undefined means "fall back to the
+  // screen's currently selected style".
+  style?: PriceTagStyle;
   addedAt: number;
 }
 
