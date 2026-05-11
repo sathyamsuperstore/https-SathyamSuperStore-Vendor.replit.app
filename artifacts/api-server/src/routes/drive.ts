@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { createRateLimit } from "../middlewares/rate-limit";
+import { requireSession } from "../middlewares/require-session";
 
 const router = Router();
 const connectors = new ReplitConnectors();
@@ -7,6 +9,27 @@ const connectors = new ReplitConnectors();
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const GSHEET_MIME = "application/vnd.google-apps.spreadsheet";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+// Same defense-in-depth posture as /pixian: per-IP and per-token
+// independently, so a stolen token cycled across IPs (or vice versa)
+// can't multiply the cap. Drive traffic is heavier than pixian
+// (folder browsing, thumbnails) but still cheap, so 60/min is a
+// reasonable ceiling for normal interactive use.
+function tokenKey(req: import("express").Request): string {
+  const header = req.headers.authorization;
+  const tok =
+    typeof header === "string" && header.startsWith("Bearer ")
+      ? header.slice(7).trim()
+      : "anon";
+  return `tok:${tok}`;
+}
+function ipKey(req: import("express").Request): string {
+  return `ip:${req.ip ?? "unknown"}`;
+}
+const drivePerIpMinute = createRateLimit({ windowMs: 60_000, max: 60, key: ipKey });
+const drivePerTokenMinute = createRateLimit({ windowMs: 60_000, max: 60, key: tokenKey });
+
+router.use("/drive", requireSession, drivePerIpMinute, drivePerTokenMinute);
 
 // MIME filter clauses by `kind` query param. Default keeps the
 // historical behaviour (spreadsheets) so existing callers don't

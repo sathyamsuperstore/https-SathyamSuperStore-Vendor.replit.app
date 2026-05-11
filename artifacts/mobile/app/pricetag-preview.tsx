@@ -724,7 +724,9 @@ export default function PriceTagPreviewScreen() {
       const qs = new URLSearchParams({ kind: "images" });
       if (search.trim()) qs.set("search", search.trim());
       if (folderId) qs.set("folderId", folderId);
-      const resp = await fetch(apiUrl(`/api/drive/files?${qs.toString()}`));
+      const resp = await fetch(apiUrl(`/api/drive/files?${qs.toString()}`), {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
       const text = await resp.text();
       if (!resp.ok) {
         let msg = `Drive list failed (${resp.status})`;
@@ -742,7 +744,7 @@ export default function PriceTagPreviewScreen() {
     } finally {
       setDriveListLoading(false);
     }
-  }, []);
+  }, [authToken]);
 
   function openDrivePicker(
     key: string,
@@ -787,7 +789,9 @@ export default function PriceTagPreviewScreen() {
       const url = apiUrl(
         `/api/drive/file/${encodeURIComponent(file.id)}?mimeType=${encodeURIComponent(file.mimeType)}`
       );
-      const resp = await fetch(url);
+      const resp = await fetch(url, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
       if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
       const blob = await resp.blob();
       const dataUri = await blobToDataUri(blob);
