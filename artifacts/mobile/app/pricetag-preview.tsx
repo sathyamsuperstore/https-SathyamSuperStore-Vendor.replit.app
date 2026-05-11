@@ -1359,6 +1359,8 @@ export default function PriceTagPreviewScreen() {
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
                   bannerLabel={bannerLabel}
+                  showPriceRow={priceTagStyle !== "D"}
+                  showOffBadge={priceTagStyle !== "D"}
                 />
               </View>
             );
@@ -1824,6 +1826,8 @@ function StyleATag({
 function StyleBTag({
   item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
   bannerLabel = "LOW PRICES",
+  showPriceRow = true,
+  showOffBadge = true,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -1832,6 +1836,10 @@ function StyleBTag({
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
   bannerLabel?: string;
+  // Style D drops the big ₹ price row and the ₹XX OFF / OFFER PRICE
+  // badge entirely. Defaulting both to true keeps B and C unchanged.
+  showPriceRow?: boolean;
+  showOffBadge?: boolean;
 }) {
   const { value } = priceFor(item);
   const off = offAmount(item);
@@ -1866,15 +1874,19 @@ function StyleBTag({
           />
         </View>
         <View style={b.priceCol}>
-          <View style={b.priceRow}>
-            <Text style={b.rupee}>₹</Text>
-            <Text style={b.priceVal}>{value}{minQtyB ? "*" : ""}</Text>
-          </View>
-          {off ? (
-            <Text style={b.offText}>₹{off} OFF</Text>
-          ) : (
-            <Text style={b.offTextMuted}>OFFER PRICE</Text>
-          )}
+          {showPriceRow ? (
+            <View style={b.priceRow}>
+              <Text style={b.rupee}>₹</Text>
+              <Text style={b.priceVal}>{value}{minQtyB ? "*" : ""}</Text>
+            </View>
+          ) : null}
+          {showOffBadge ? (
+            off ? (
+              <Text style={b.offText}>₹{off} OFF</Text>
+            ) : (
+              <Text style={b.offTextMuted}>OFFER PRICE</Text>
+            )
+          ) : null}
           {minQtyB ? (
             <Text style={b.minQty}>* Minimum Purchase Qty: {minQtyB}</Text>
           ) : null}
@@ -2003,7 +2015,7 @@ function buildPdfHtml(
         : style === "C"
           ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free")
           : style === "D"
-            ? renderTagBHtml(it, showLogo, "RED Tag Sale")
+            ? renderTagBHtml(it, showLogo, "RED Tag Sale", false, false)
             : renderTagAHtml(it, showLogo),
     )
     .join("");
@@ -2213,6 +2225,10 @@ function renderTagBHtml(
   it: PriceTagItem,
   showLogo: boolean,
   bannerLabel: string = "LOW PRICES",
+  // Style D drops the big ₹ price row and the ₹XX OFF / OFFER PRICE
+  // badge. Defaults keep B and C output unchanged.
+  showPriceRow: boolean = true,
+  showOffBadge: boolean = true,
 ): string {
   const { value } = priceFor(it);
   const off = offAmount(it);
@@ -2242,10 +2258,11 @@ function renderTagBHtml(
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
         <div class="priceColB">
+          ${showPriceRow ? `
           <div class="priceRowB">
             <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}${minQtyB ? "*" : ""}</span>
-          </div>
-          ${off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`}
+          </div>` : ""}
+          ${showOffBadge ? (off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`) : ""}
           ${minQtyB ? `<div class="minQtyB">* Minimum Purchase Qty: ${escapeHtml(minQtyB)}</div>` : ""}
         </div>
       </div>
