@@ -1361,6 +1361,8 @@ export default function PriceTagPreviewScreen() {
                   bannerLabel={bannerLabel}
                   showPriceRow={priceTagStyle !== "D"}
                   showOffBadge={priceTagStyle !== "D"}
+                  showStyleAMrpRow={priceTagStyle === "D"}
+                  showStyleAPriceRow={priceTagStyle === "D"}
                 />
               </View>
             );
@@ -1828,6 +1830,8 @@ function StyleBTag({
   bannerLabel = "LOW PRICES",
   showPriceRow = true,
   showOffBadge = true,
+  showStyleAMrpRow = false,
+  showStyleAPriceRow = false,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -1840,10 +1844,17 @@ function StyleBTag({
   // badge entirely. Defaulting both to true keeps B and C unchanged.
   showPriceRow?: boolean;
   showOffBadge?: boolean;
+  // Style D borrows Style A's compact MRP row (DEEP_RED) and the
+  // GOLD price row with the two-line OFFER / PRICE label. Default
+  // off so B and C are unaffected.
+  showStyleAMrpRow?: boolean;
+  showStyleAPriceRow?: boolean;
 }) {
-  const { value } = priceFor(item);
+  const { label, value } = priceFor(item);
+  const mrp = fmt0(item.mrp);
   const off = offAmount(item);
   const minQtyB = minPurchaseQty(item);
+  const labelParts = label.toUpperCase().split(" ");
 
   return (
     <View style={b.card}>
@@ -1874,6 +1885,23 @@ function StyleBTag({
           />
         </View>
         <View style={b.priceCol}>
+          {showStyleAMrpRow && mrp ? (
+            <View style={a.mrpRow}>
+              <Text style={a.rupeeSm}>₹</Text>
+              <Text style={a.mrpVal}>{mrp}</Text>
+              <Text style={a.mrpLabel}>MRP</Text>
+            </View>
+          ) : null}
+          {showStyleAPriceRow ? (
+            <View style={a.priceRow}>
+              <Text style={a.rupeeBig}>₹</Text>
+              <Text style={a.priceVal}>{value}{minQtyB ? "*" : ""}</Text>
+              <View style={a.priceLabelCol}>
+                <Text style={a.priceLabel}>{labelParts[0] || ""}</Text>
+                <Text style={a.priceLabel}>{labelParts[1] || ""}</Text>
+              </View>
+            </View>
+          ) : null}
           {showPriceRow ? (
             <View style={b.priceRow}>
               <Text style={b.rupee}>₹</Text>
@@ -2015,13 +2043,29 @@ function buildPdfHtml(
         : style === "C"
           ? renderTagBHtml(it, showLogo, "Buy 1 Get 1 Free")
           : style === "D"
-            ? renderTagBHtml(it, showLogo, "RED Tag Sale", false, false)
+            ? renderTagBHtml(
+                it,
+                showLogo,
+                "RED Tag Sale",
+                false, // showPriceRow (Style B price)
+                false, // showOffBadge
+                true,  // showStyleAMrpRow
+                true,  // showStyleAPriceRow
+              )
             : renderTagAHtml(it, showLogo),
     )
     .join("");
 
+  // Style D reuses Style B's tag chrome but borrows Style A's MRP +
+  // GOLD price classes (.mrpRowA, .priceRowA, .priceLabelColA, etc.),
+  // so include both stylesheets when rendering D. The selectors are
+  // scoped (.tagA / .tagB) so concatenating them is safe.
   const styleCss =
-    style === "B" || style === "C" || style === "D" ? PDF_CSS_B : PDF_CSS_A;
+    style === "D"
+      ? `${PDF_CSS_A}\n${PDF_CSS_B}`
+      : style === "B" || style === "C"
+        ? PDF_CSS_B
+        : PDF_CSS_A;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -2229,10 +2273,17 @@ function renderTagBHtml(
   // badge. Defaults keep B and C output unchanged.
   showPriceRow: boolean = true,
   showOffBadge: boolean = true,
+  // Style D borrows Style A's MRP row + GOLD price row.
+  showStyleAMrpRow: boolean = false,
+  showStyleAPriceRow: boolean = false,
 ): string {
-  const { value } = priceFor(it);
+  const { label, value } = priceFor(it);
+  const mrp = fmt0(it.mrp);
   const off = offAmount(it);
   const minQtyB = minPurchaseQty(it);
+  const labelParts = label.toUpperCase().split(" ");
+  const labelLine1 = escapeHtml(labelParts[0] || "");
+  const labelLine2 = escapeHtml(labelParts[1] || "");
   const desc = it.description || "";
   const tamil = hasTamil(desc);
   const descSpan = tamil
@@ -2258,6 +2309,19 @@ function renderTagBHtml(
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
         <div class="priceColB">
+          ${showStyleAMrpRow && mrp ? `
+          <div class="mrpRowA">
+            <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
+            <span class="mrpLabelA">MRP</span>
+          </div>` : ""}
+          ${showStyleAPriceRow ? `
+          <div class="priceRowA">
+            <span class="rupeeBigA">₹</span><span class="priceValA">${escapeHtml(value)}${minQtyB ? "*" : ""}</span>
+            <span class="priceLabelColA">
+              <span class="priceLabelA">${labelLine1}</span>
+              <span class="priceLabelA">${labelLine2}</span>
+            </span>
+          </div>` : ""}
           ${showPriceRow ? `
           <div class="priceRowB">
             <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}${minQtyB ? "*" : ""}</span>
