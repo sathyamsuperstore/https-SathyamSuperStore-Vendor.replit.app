@@ -1367,6 +1367,7 @@ export default function PriceTagPreviewScreen() {
                   showOffBadge={priceTagStyle !== "D" && priceTagStyle !== "C"}
                   showStyleAMrpRow={priceTagStyle === "D"}
                   showStyleAPriceRow={priceTagStyle === "D"}
+                  showStyleASaveBadge={priceTagStyle === "D"}
                   validTillTopLeft={priceTagStyle === "C" || priceTagStyle === "D"}
                 />
               </View>
@@ -1837,6 +1838,7 @@ function StyleBTag({
   showOffBadge = true,
   showStyleAMrpRow = false,
   showStyleAPriceRow = false,
+  showStyleASaveBadge = false,
   validTillTopLeft = false,
 }: {
   item: PriceTagItem;
@@ -1855,6 +1857,10 @@ function StyleBTag({
   // off so B and C are unaffected.
   showStyleAMrpRow?: boolean;
   showStyleAPriceRow?: boolean;
+  // Style D's "SAVE ₹XX" call-out: re-uses Style A's filled
+  // DEEP_RED rectangle pill (a.footerRow + a.offText). Off when
+  // false so B/C aren't affected.
+  showStyleASaveBadge?: boolean;
   // Styles C/D render Valid Till as a horizontal gray line under the
   // top banner instead of the rotated left-edge rail used by Style B.
   validTillTopLeft?: boolean;
@@ -1929,6 +1935,15 @@ function StyleBTag({
             ) : (
               <Text style={b.offTextMuted}>OFFER PRICE</Text>
             )
+          ) : null}
+          {showStyleASaveBadge && off ? (
+            // Style D SAVE badge — same filled DEEP_RED pill as Style
+            // A's footer (a.offText). The wrapper view shrinks to its
+            // content, so within Style B's right-aligned price column
+            // it visually aligns under the price.
+            <View style={b.saveBadgeRow}>
+              <Text style={a.offText}>SAVE ₹{off}</Text>
+            </View>
           ) : null}
           {minQtyB ? (
             <Text style={b.minQty}>* Minimum Purchase Qty: {minQtyB}</Text>
@@ -2078,6 +2093,7 @@ function buildPdfHtml(
                 true,  // showStyleAMrpRow
                 true,  // showStyleAPriceRow
                 true,  // validTillTopLeft
+                true,  // showStyleASaveBadge
               )
             : renderTagAHtml(it, showLogo),
     )
@@ -2306,6 +2322,9 @@ function renderTagBHtml(
   // Styles C/D show Valid Till as a horizontal gray line below the
   // top banner instead of the rotated left-edge rail.
   validTillTopLeft: boolean = false,
+  // Style D "SAVE ₹XX" pill — re-uses Style A's filled DEEP_RED
+  // .offA badge. Off by default so B/C output is unchanged.
+  showStyleASaveBadge: boolean = false,
 ): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -2366,6 +2385,7 @@ function renderTagBHtml(
             <span class="rupeeB">₹</span><span class="priceValB">${escapeHtml(value)}${minQtyB ? "*" : ""}</span>
           </div>` : ""}
           ${showOffBadge ? (off ? `<div class="offB">₹${escapeHtml(off)} OFF</div>` : `<div class="offBmuted">OFFER PRICE</div>`) : ""}
+          ${showStyleASaveBadge && off ? `<div class="saveBadgeRowB"><span class="offA">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
           ${minQtyB ? `<div class="minQtyB">* Minimum Purchase Qty: ${escapeHtml(minQtyB)}</div>` : ""}
         </div>
       </div>
@@ -2439,6 +2459,10 @@ const PDF_CSS_B = `
   .imgWrapB img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .img-placeholder { color: #94A3B8; font-size: 10px; }
   .priceColB { flex: 1; text-align: right; }
+  /* Style D SAVE pill wrapper — sits in the right-aligned priceColB,
+     so the inline-block .offA pill naturally aligns to the right
+     under the GOLD price. Margin matches the on-screen 6px gap. */
+  .saveBadgeRowB { margin-top: 6px; text-align: right; }
   .priceRowB { display: flex; justify-content: flex-end; align-items: baseline; gap: 2px; }
   .rupeeB { font-size: 22px; color: #000; font-weight: 800; }
   .priceValB { font-size: 48px; color: #000; font-weight: 900; line-height: 1; }
@@ -2904,6 +2928,10 @@ const b = StyleSheet.create({
     letterSpacing: 0.3,
     paddingHorizontal: 6, paddingVertical: 2,
   },
+  // Wrapper for the Style D "SAVE ₹XX" pill so it sits with a small
+  // gap below the GOLD price row. Empty row that just provides the
+  // top margin; the pill itself is rendered with Style A's a.offText.
+  saveBadgeRow: { marginTop: 6 },
 });
 
 // "Valid Till" vertical rail. A narrow, full-height column pinned to
