@@ -1739,11 +1739,11 @@ function StyleATag({
 
   return (
     <View style={a.card}>
-      {/* Logo watermark — rendered FIRST so subsequent in-flow children
-          paint on top of it. pointerEvents="none" lets taps fall through
-          to the price/image controls underneath. */}
+      {/* Logo watermark — top-right corner. pointerEvents="none" lets
+          taps fall through to the price/image controls underneath.
+          Style A uses layerA (no top banner to clear). */}
       {showLogo && (
-        <View pointerEvents="none" style={watermarkStyles.layer}>
+        <View pointerEvents="none" style={watermarkStyles.layerA}>
           <Image
             source={{ uri: LOGO_BASE64 }}
             style={watermarkStyles.image}
@@ -1873,10 +1873,11 @@ function StyleBTag({
 
   return (
     <View style={b.card}>
-      {/* Logo watermark — see note in StyleATag. Rendered first so the
-          banners and price text overlay it. */}
+      {/* Logo watermark — see note in StyleATag. Styles B/C/D use
+          layerB so the logo sits just under the red top banner
+          rather than overlapping it. */}
       {showLogo && (
-        <View pointerEvents="none" style={watermarkStyles.layer}>
+        <View pointerEvents="none" style={watermarkStyles.layerB}>
           <Image
             source={{ uri: LOGO_BASE64 }}
             style={watermarkStyles.image}
@@ -2210,17 +2211,16 @@ const PDF_CSS_A = `
     overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* Centered Sathyam-Super-Store logo watermark behind the tag content.
-     Sized to ~24% of the tag width and nudged right by 1/20 of the
-     tag width (left:55% with the -50%/-50% translate). */
+  /* Sathyam-Super-Store logo — pinned to the top-right of the tag.
+     Style A has no top banner, so we use a small inset directly at
+     the corner. Width reduced to 6% (~25% of the previous 24%). */
   .tagA .watermark {
     position: absolute;
-    top: 50%; left: 55%;
-    width: 24%; height: auto;
-    transform: translate(-50%, -50%);
-    opacity: 0.30;
+    top: 4px; right: 4px;
+    width: 6%; height: auto;
+    opacity: 0.45;
     pointer-events: none;
-    z-index: 0;
+    z-index: 2;
   }
   .tagA > *:not(.watermark) { position: relative; z-index: 1; }
   /* Vertical "Valid Till" rail — narrow column on the right edge
@@ -2405,15 +2405,15 @@ const PDF_CSS_B = `
     page-break-inside: avoid;
     display: flex; flex-direction: column;
   }
-  /* Same sizing/offset treatment as Style A. */
+  /* Logo for Styles B/C/D — top-right corner, offset down so it
+     sits just under the red top banner without overlapping it. */
   .tagB .watermark {
     position: absolute;
-    top: 50%; left: 55%;
-    width: 24%; height: auto;
-    transform: translate(-50%, -50%);
-    opacity: 0.30;
+    top: 44px; right: 4px;
+    width: 6%; height: auto;
+    opacity: 0.45;
     pointer-events: none;
-    z-index: 0;
+    z-index: 2;
   }
   .tagB > *:not(.watermark) { position: relative; z-index: 1; }
   /* "Valid Till" rail for Style B — left edge, rotated -90deg so
@@ -2984,25 +2984,32 @@ function formatValidTill(raw: string): string {
   return trimmed.replace(/\//g, "-");
 }
 
-// Logo watermark layer. An absolutely-positioned, centered image at
-// 30% opacity that spans the whole tag card. Rendered as the first
-// child of each tag so subsequent in-flow children paint on top of it
-// (RN paints children in declared order when zIndex isn't set).
+// Logo watermark layer. Absolutely-positioned, pinned to the
+// top-right of each tag card so it sits just under the red banner
+// without colliding with the price digits or the product image.
+// Two variants:
+//   - layerA: Style A has no top banner, so the logo tucks into the
+//     top-right corner with a tiny inset.
+//   - layerB: Styles B/C/D have a red banner across the top, so the
+//     logo is offset down to clear it.
+// Width was reduced to 6% (~25% of the previous 24%) per design.
 const watermarkStyles = StyleSheet.create({
-  layer: {
+  layerA: {
     position: "absolute",
-    top: 0, right: 0, bottom: 0, left: 0,
-    alignItems: "center",
-    justifyContent: "center",
+    top: 4, right: 4,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+  },
+  layerB: {
+    position: "absolute",
+    top: 32, right: 4,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
   },
   image: {
-    width: "24%",
-    height: "24%",
-    opacity: 0.30,
-    // Nudge right by 1/20 of the tag's width so the watermark sits a
-    // touch off-center, away from the price digits which dominate the
-    // left half of the card.
-    marginLeft: "5%",
+    width: 28,
+    height: 28,
+    opacity: 0.45,
   },
 });
 
