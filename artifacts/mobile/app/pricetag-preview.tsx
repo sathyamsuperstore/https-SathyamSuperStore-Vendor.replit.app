@@ -1368,7 +1368,7 @@ export default function PriceTagPreviewScreen() {
                   showStyleAMrpRow={priceTagStyle === "D"}
                   showStyleAPriceRow={priceTagStyle === "D"}
                   showStyleASaveBadge={priceTagStyle === "D"}
-                  validTillTopLeft={priceTagStyle === "C" || priceTagStyle === "D"}
+                  validTillTopLeft={priceTagStyle === "B" || priceTagStyle === "C" || priceTagStyle === "D"}
                 />
               </View>
             );
@@ -1908,7 +1908,10 @@ function StyleBTag({
         </View>
         <View style={b.priceCol}>
           {showStyleAMrpRow && mrp ? (
-            <View style={a.mrpRow}>
+            // Override a.mrpRow's alignSelf:flex-start so the MRP row
+            // right-aligns inside the flex-end priceCol, lining its
+            // right edge up with the GOLD price and SAVE pill.
+            <View style={[a.mrpRow, { alignSelf: "flex-end" }]}>
               <Text style={a.rupeeSm}>₹</Text>
               <Text style={a.mrpVal}>{mrp}</Text>
               <Text style={a.mrpLabel}>MRP</Text>
@@ -2072,7 +2075,16 @@ function buildPdfHtml(
   const tagsHtml = items
     .map((it) =>
       style === "B"
-        ? renderTagBHtml(it, showLogo, "LOW PRICES")
+        ? renderTagBHtml(
+            it,
+            showLogo,
+            "LOW PRICES",
+            true,  // showPriceRow
+            true,  // showOffBadge
+            false, // showStyleAMrpRow
+            false, // showStyleAPriceRow
+            true,  // validTillTopLeft — match Style C orientation
+          )
         : style === "C"
           ? renderTagBHtml(
               it,
@@ -2459,6 +2471,13 @@ const PDF_CSS_B = `
   .imgWrapB img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .img-placeholder { color: #94A3B8; font-size: 10px; }
   .priceColB { flex: 1; text-align: right; }
+  /* Style D — when the Style A MRP/Price rows are reused inside the
+     right-aligned Style B price column, force them to right-align so
+     the MRP row, GOLD price row and SAVE pill share a clean right
+     edge. (.mrpRowA is inline-flex, so text-align:right on .priceColB
+     handles it; .priceRowA is block-level flex, so it needs its own
+     justify-content override here.) */
+  .priceColB .priceRowA { justify-content: flex-end; }
   /* Style D SAVE pill wrapper — sits in the right-aligned priceColB,
      so the inline-block .offA pill naturally aligns to the right
      under the GOLD price. Margin matches the on-screen 6px gap. */
