@@ -477,7 +477,6 @@ export default function PromoPrintScreen() {
                 <Text style={styles.itemNo}>#{s(r["Item No"]) || "—"}</Text>
                 <Text
                   style={[styles.itemDesc, { fontFamily: pickFont(desc, "semibold") }]}
-                  numberOfLines={2}
                 >
                   {desc || "(no description)"}
                 </Text>
