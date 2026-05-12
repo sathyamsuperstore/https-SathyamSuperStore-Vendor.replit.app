@@ -463,6 +463,17 @@ export default function PromoPrintScreen() {
           const eligQty = formatPrice(r["EligibleQty"]);
           const priceLabel = promo ? "Promo" : "SP";
           const priceVal = promo || sp || "—";
+          // "SAVE ₹XX" — MRP minus PromotionPrice, rounded to whole
+          // rupees. Only shown when both numbers parse and the
+          // saving is positive, so SP-only rows or rows where the
+          // promo isn't actually cheaper don't get a misleading line.
+          const mrpNum = Number(r["MRP"]);
+          const promoNum = Number(r["PromotionPrice"]);
+          const saveAmt =
+            Number.isFinite(mrpNum) && Number.isFinite(promoNum)
+              ? Math.round(mrpNum - promoNum)
+              : 0;
+          const saveText = saveAmt > 0 ? `SAVE ₹${saveAmt}` : "";
           return (
             <TouchableOpacity
               key={k}
@@ -491,6 +502,9 @@ export default function PromoPrintScreen() {
                 <Text style={styles.priceVal}>
                   {priceLabel} {priceVal}
                 </Text>
+                {saveText ? (
+                  <Text style={styles.saveText}>{saveText}</Text>
+                ) : null}
                 {eligQty ? (
                   <Text style={styles.mrpText}>Elig {eligQty}</Text>
                 ) : null}
@@ -684,6 +698,15 @@ const styles = StyleSheet.create({
   itemMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 },
   priceCol: { alignItems: "flex-end", minWidth: 80 },
   mrpText: { fontSize: 11, color: Colors.textMuted, fontWeight: "700" },
+  // "SAVE ₹XX" call-out under the Promo/SP price. Uses the success
+  // green so the savings stand out without competing with the
+  // primary-coloured price line above it.
+  saveText: {
+    fontSize: 12,
+    color: Colors.success,
+    fontWeight: "800",
+    marginTop: 2,
+  },
   priceVal: {
     fontSize: 14,
     color: Colors.primary,
