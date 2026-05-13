@@ -5,6 +5,7 @@ import BrandReviewScreen from "./brand-review";
 import PromoPrintScreen from "./promoprint";
 import PriceTagPreviewScreen from "../pricetag-preview";
 import PriceTagReviewScreen from "../pricetag-review";
+import TitleListScreen from "../title-list";
 
 export default function CatalogHubScreen() {
   return (
@@ -31,6 +32,11 @@ export default function CatalogHubScreen() {
           key: "priceTagReview",
           label: "PriceTag Review",
           render: () => <PriceTagReviewScreen />,
+        },
+        {
+          key: "titleList",
+          label: "TitleList",
+          render: () => <TitleListScreen />,
         },
         {
           key: "brand",

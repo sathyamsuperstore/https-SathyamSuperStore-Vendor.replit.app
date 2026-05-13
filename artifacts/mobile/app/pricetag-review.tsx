@@ -1309,7 +1309,10 @@ export default function PriceTagReviewScreen() {
             // overrides flow through to the on-screen render.
             const effStyle: PriceTagStyle = it.style ?? priceTagReviewStyle;
             const TagComponent =
-              effStyle === "B" || effStyle === "C" || effStyle === "D"
+              effStyle === "B" ||
+              effStyle === "C" ||
+              effStyle === "D" ||
+              effStyle === "E"
                 ? StyleBTag
                 : StyleATag;
             const bannerLabel =
@@ -1317,7 +1320,9 @@ export default function PriceTagReviewScreen() {
                 ? "Buy 1 Get 1 Free"
                 : effStyle === "D"
                   ? "RED Tag Sale"
-                  : "LOW PRICES";
+                  : effStyle === "E"
+                    ? "Edit Title"
+                    : "LOW PRICES";
             return (
               <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
@@ -1381,11 +1386,12 @@ export default function PriceTagReviewScreen() {
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
                   bannerLabel={bannerLabel}
-                  showPriceRow={effStyle !== "D"}
-                  showOffBadge={effStyle !== "D" && effStyle !== "C"}
-                  showStyleAMrpRow={effStyle === "D"}
-                  showStyleAPriceRow={effStyle === "D"}
-                  validTillTopLeft={effStyle === "B" || effStyle === "C" || effStyle === "D"}
+                  showPriceRow={effStyle !== "D" && effStyle !== "E"}
+                  showOffBadge={effStyle !== "D" && effStyle !== "C" && effStyle !== "E"}
+                  showStyleAMrpRow={effStyle === "D" || effStyle === "E"}
+                  showStyleAPriceRow={effStyle === "D" || effStyle === "E"}
+                  showStyleASaveBadge={effStyle === "D" || effStyle === "E"}
+                  validTillTopLeft={effStyle === "B" || effStyle === "C" || effStyle === "D" || effStyle === "E"}
                 />
                 {mode === "modify" && (
                   // Per-item style chips. Tapping a chip writes the
@@ -1394,7 +1400,7 @@ export default function PriceTagReviewScreen() {
                   // Saved on Save tap together with the rest of the
                   // working state.
                   <View style={styles.perItemStyleRow}>
-                    {(["A", "B", "C", "D"] as PriceTagStyle[]).map((s) => {
+                    {(["A", "B", "C", "D", "E"] as PriceTagStyle[]).map((s) => {
                       const active = effStyle === s;
                       return (
                         <TouchableOpacity
@@ -2171,6 +2177,19 @@ function renderTagHtmlForStyle(
       true,  // showStyleASaveBadge
     );
   }
+  if (style === "E") {
+    return renderTagBHtml(
+      it,
+      showLogo,
+      "Edit Title",
+      false, // showPriceRow
+      false, // showOffBadge
+      true,  // showStyleAMrpRow
+      true,  // showStyleAPriceRow
+      true,  // validTillTopLeft
+      true,  // showStyleASaveBadge
+    );
+  }
   return renderTagAHtml(it, showLogo);
 }
 
@@ -2194,9 +2213,13 @@ function buildPdfHtml(
   // selectors are scoped, so concatenating both is safe.
   const stylesInUse = new Set<PriceTagStyle>(items.map(effStyleFor));
   if (items.length === 0) stylesInUse.add(style);
-  const needsA = stylesInUse.has("A") || stylesInUse.has("D");
+  const needsA =
+    stylesInUse.has("A") || stylesInUse.has("D") || stylesInUse.has("E");
   const needsB =
-    stylesInUse.has("B") || stylesInUse.has("C") || stylesInUse.has("D");
+    stylesInUse.has("B") ||
+    stylesInUse.has("C") ||
+    stylesInUse.has("D") ||
+    stylesInUse.has("E");
   const styleCss =
     needsA && needsB
       ? `${PDF_CSS_A}\n${PDF_CSS_B}`

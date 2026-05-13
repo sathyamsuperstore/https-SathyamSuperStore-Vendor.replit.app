@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DEFAULT_TITLES } from "@/data/defaultTitles";
 import { Alert, Platform } from "react-native";
 
 const SESSION_KEY = "@currentUserId";
@@ -236,6 +237,14 @@ interface AppContextType {
   setPriceTagReviewShowLogo: (show: boolean) => Promise<void>;
   priceTagReviewTitle: string;
   setPriceTagReviewTitle: (title: string) => Promise<void>;
+  // User-managed catalogue of punchy banner titles, surfaced on the
+  // TitleList tab. Seeded with ~400 defaults on first launch and then
+  // freely editable (add / edit / delete + Excel import / export).
+  titleList: TitleListItem[];
+  saveTitleList: (items: TitleListItem[]) => Promise<void>;
+  addTitle: (title: string, category?: string) => Promise<void>;
+  updateTitle: (id: string, title: string, category?: string) => Promise<void>;
+  deleteTitle: (id: string) => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -380,7 +389,17 @@ export interface PriceTagItem {
 // Available visual styles for the printed price tag. Kept open as a
 // string union so adding a new layout later only requires touching
 // the renderer + this type.
-export type PriceTagStyle = "A" | "B" | "C" | "D";
+export type PriceTagStyle = "A" | "B" | "C" | "D" | "E";
+
+// One row in the user-managed banner-title catalogue (the "TitleList"
+// tab). Lives in AsyncStorage and seeded with ~400 punchy defaults
+// on first launch via `DEFAULT_TITLES`. Exported so the screen and
+// helpers can share the shape.
+export interface TitleListItem {
+  id: string;
+  title: string;
+  category: string;
+}
 
 // One row in the Last Supply Date table. The date is stored as a
 // "DD/MM/YYYY" string (normalised at import time) so it is safe to
@@ -430,6 +449,13 @@ const PRICE_TAG_REVIEW_KEY = "@priceTagReviewItems";
 const PRICE_TAG_REVIEW_STYLE_KEY = "@priceTagReviewStyle";
 const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
 const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
+// Persisted user-managed banner-title catalogue. Seeded once with the
+// 400 defaults; after that the user owns the list (add / edit /
+// delete / Excel import). A separate "@titleListSeeded" flag stops
+// us from re-seeding (and clobbering the user's edits) on every
+// launch — we only seed when both keys are missing.
+const TITLE_LIST_KEY = "@titleList";
+const TITLE_LIST_SEEDED_KEY = "@titleListSeeded";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -508,6 +534,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagReviewStyle, setPriceTagReviewStyleState] = useState<PriceTagStyle>("A");
   const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
   const [priceTagReviewTitle, setPriceTagReviewTitleState] = useState<string>("");
+  const [titleList, setTitleListState] = useState<TitleListItem[]>([]);
+  const titleListRef = useRef<TitleListItem[]>([]);
+  useEffect(() => {
+    titleListRef.current = titleList;
+  }, [titleList]);
   const priceTagReviewItemsRef = useRef<PriceTagItem[]>([]);
   useEffect(() => {
     priceTagReviewItemsRef.current = priceTagReviewItems;
@@ -521,7 +552,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -541,6 +572,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_REVIEW_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
         AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
+        AsyncStorage.getItem(TITLE_LIST_KEY),
+        AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -585,7 +618,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         priceTagStyleData === "A" ||
         priceTagStyleData === "B" ||
         priceTagStyleData === "C" ||
-        priceTagStyleData === "D"
+        priceTagStyleData === "D" ||
+        priceTagStyleData === "E"
       ) {
         setPriceTagStyleState(priceTagStyleData);
       }
@@ -614,10 +648,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
         priceTagReviewStyleData === "A" ||
         priceTagReviewStyleData === "B" ||
         priceTagReviewStyleData === "C" ||
-        priceTagReviewStyleData === "D"
+        priceTagReviewStyleData === "D" ||
+        priceTagReviewStyleData === "E"
       ) {
         setPriceTagReviewStyleState(priceTagReviewStyleData);
       }
+
+      // ----- TitleList hydration / first-launch seeding -----
+      // We only seed the 400 defaults when the seeded flag is missing
+      // AND the existing list is empty, so a user who deletes every
+      // entry on purpose isn't re-flooded with defaults next launch.
+      let loadedTitles: TitleListItem[] = [];
+      if (titleListData) {
+        try {
+          const parsed = JSON.parse(titleListData);
+          if (Array.isArray(parsed)) {
+            loadedTitles = parsed.filter(
+              (t: unknown): t is TitleListItem =>
+                !!t &&
+                typeof (t as TitleListItem).id === "string" &&
+                typeof (t as TitleListItem).title === "string",
+            );
+          }
+        } catch {
+          loadedTitles = [];
+        }
+      }
+      if (!titleListSeededData && loadedTitles.length === 0) {
+        loadedTitles = DEFAULT_TITLES.map((t, idx) => ({
+          id: `seed-${idx}-${t.title.replace(/[^A-Za-z0-9]+/g, "_").slice(0, 24)}`,
+          title: t.title,
+          category: t.category,
+        }));
+        try {
+          await AsyncStorage.setItem(TITLE_LIST_KEY, JSON.stringify(loadedTitles));
+          await AsyncStorage.setItem(TITLE_LIST_SEEDED_KEY, "1");
+        } catch {
+          // Non-fatal: the user just won't see defaults this launch.
+        }
+      }
+      setTitleListState(loadedTitles);
       if (priceTagReviewShowLogoData === "0") {
         setPriceTagReviewShowLogoState(false);
       } else if (priceTagReviewShowLogoData === "1") {
@@ -1094,6 +1164,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagReviewTitleState(clean);
   }
 
+  // ----- TitleList helpers -----
+  async function saveTitleList(items: TitleListItem[]) {
+    await AsyncStorage.setItem(TITLE_LIST_KEY, JSON.stringify(items));
+    await AsyncStorage.setItem(TITLE_LIST_SEEDED_KEY, "1");
+    setTitleListState(items);
+  }
+
+  async function addTitle(title: string, category: string = "Custom") {
+    const clean = title.trim().slice(0, 120);
+    if (!clean) return;
+    const next: TitleListItem = {
+      id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: clean,
+      category: category.trim().slice(0, 60) || "Custom",
+    };
+    await saveTitleList([next, ...titleListRef.current]);
+  }
+
+  async function updateTitle(id: string, title: string, category?: string) {
+    const clean = title.trim().slice(0, 120);
+    if (!clean) return;
+    const next = titleListRef.current.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            title: clean,
+            ...(category !== undefined
+              ? { category: category.trim().slice(0, 60) || "Custom" }
+              : {}),
+          }
+        : t,
+    );
+    await saveTitleList(next);
+  }
+
+  async function deleteTitle(id: string) {
+    await saveTitleList(titleListRef.current.filter((t) => t.id !== id));
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1187,6 +1296,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagReviewShowLogo,
         priceTagReviewTitle,
         setPriceTagReviewTitle,
+        titleList,
+        saveTitleList,
+        addTitle,
+        updateTitle,
+        deleteTitle,
         hydrated,
       }}
     >

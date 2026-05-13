@@ -1265,6 +1265,11 @@ export default function PriceTagPreviewScreen() {
               active={priceTagStyle === "D"}
               onPress={() => setPriceTagStyle("D")}
             />
+            <StyleChip
+              label="E · Customize Me"
+              active={priceTagStyle === "E"}
+              onPress={() => setPriceTagStyle("E")}
+            />
           </ScrollView>
           <TouchableOpacity
             style={[styles.bgAllBtn, bgAllRunning && styles.bgAllBtnBusy]}
@@ -1291,7 +1296,8 @@ export default function PriceTagPreviewScreen() {
             const TagComponent =
               priceTagStyle === "B" ||
               priceTagStyle === "C" ||
-              priceTagStyle === "D"
+              priceTagStyle === "D" ||
+              priceTagStyle === "E"
                 ? StyleBTag
                 : StyleATag;
             const bannerLabel =
@@ -1299,7 +1305,9 @@ export default function PriceTagPreviewScreen() {
                 ? "Buy 1 Get 1 Free"
                 : priceTagStyle === "D"
                   ? "RED Tag Sale"
-                  : "LOW PRICES";
+                  : priceTagStyle === "E"
+                    ? "Edit Title"
+                    : "LOW PRICES";
             return (
               <View key={it.key} style={styles.tagSlot}>
                 {mode === "modify" && (
@@ -1363,12 +1371,12 @@ export default function PriceTagPreviewScreen() {
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
                   bannerLabel={bannerLabel}
-                  showPriceRow={priceTagStyle !== "D"}
-                  showOffBadge={priceTagStyle !== "D" && priceTagStyle !== "C"}
-                  showStyleAMrpRow={priceTagStyle === "D"}
-                  showStyleAPriceRow={priceTagStyle === "D"}
-                  showStyleASaveBadge={priceTagStyle === "D"}
-                  validTillTopLeft={priceTagStyle === "B" || priceTagStyle === "C" || priceTagStyle === "D"}
+                  showPriceRow={priceTagStyle !== "D" && priceTagStyle !== "E"}
+                  showOffBadge={priceTagStyle !== "D" && priceTagStyle !== "C" && priceTagStyle !== "E"}
+                  showStyleAMrpRow={priceTagStyle === "D" || priceTagStyle === "E"}
+                  showStyleAPriceRow={priceTagStyle === "D" || priceTagStyle === "E"}
+                  showStyleASaveBadge={priceTagStyle === "D" || priceTagStyle === "E"}
+                  validTillTopLeft={priceTagStyle === "B" || priceTagStyle === "C" || priceTagStyle === "D" || priceTagStyle === "E"}
                 />
               </View>
             );
@@ -2115,7 +2123,19 @@ function buildPdfHtml(
                 true,  // validTillTopLeft
                 true,  // showStyleASaveBadge
               )
-            : renderTagAHtml(it, showLogo),
+            : style === "E"
+              ? renderTagBHtml(
+                  it,
+                  showLogo,
+                  "Edit Title",
+                  false, // showPriceRow
+                  false, // showOffBadge
+                  true,  // showStyleAMrpRow
+                  true,  // showStyleAPriceRow
+                  true,  // validTillTopLeft
+                  true,  // showStyleASaveBadge
+                )
+              : renderTagAHtml(it, showLogo),
     )
     .join("");
 
@@ -2124,7 +2144,7 @@ function buildPdfHtml(
   // so include both stylesheets when rendering D. The selectors are
   // scoped (.tagA / .tagB) so concatenating them is safe.
   const styleCss =
-    style === "D"
+    style === "D" || style === "E"
       ? `${PDF_CSS_A}\n${PDF_CSS_B}`
       : style === "B" || style === "C"
         ? PDF_CSS_B
