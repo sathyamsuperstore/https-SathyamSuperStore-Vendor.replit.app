@@ -96,7 +96,15 @@ export default function RodeoItemsScreen() {
               activeOpacity={0.85}
             >
               <Feather name="upload" size={16} color={Colors.primary} />
-              <Text style={styles.iconBtnText}>Import</Text>
+              <Text style={styles.iconBtnText}>Excel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => router.push("/rodeo/import?format=csv")}
+              activeOpacity={0.85}
+            >
+              <Feather name="file-text" size={16} color={Colors.primary} />
+              <Text style={styles.iconBtnText}>CSV</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
@@ -145,14 +153,24 @@ export default function RodeoItemsScreen() {
             <Text style={styles.emptyHint}>
               Import an Excel sheet to populate the table.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => router.push("/rodeo/import")}
-              activeOpacity={0.85}
-            >
-              <Feather name="upload" size={16} color={Colors.textInverse} />
-              <Text style={styles.primaryBtnText}>Choose Excel File</Text>
-            </TouchableOpacity>
+            <View style={styles.emptyActions}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => router.push("/rodeo/import")}
+                activeOpacity={0.85}
+              >
+                <Feather name="upload" size={16} color={Colors.textInverse} />
+                <Text style={styles.primaryBtnText}>Import Excel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => router.push("/rodeo/import?format=csv")}
+                activeOpacity={0.85}
+              >
+                <Feather name="file-text" size={16} color={Colors.primary} />
+                <Text style={styles.secondaryBtnText}>Import CSV</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <>
@@ -405,6 +423,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
+  emptyActions: { flexDirection: "row", gap: 10 },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -418,6 +437,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: Colors.textInverse,
+  },
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + "12",
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  secondaryBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.primary,
   },
   searchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   searchWrap: {

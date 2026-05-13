@@ -9,7 +9,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { useRouter, Stack } from "expo-router";
+import { useRouter, Stack, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -162,6 +162,12 @@ export default function ImportRodeoItemsScreen() {
   const { rodeoItems, saveRodeoItemsBatch } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // `format` may be "csv" to restrict the picker to CSVs and label
+  // the screen accordingly. Anything else (including missing) falls
+  // back to the original Excel-first behaviour, which still accepts
+  // CSVs detected by extension on parse.
+  const params = useLocalSearchParams<{ format?: string }>();
+  const csvMode = String(params.format ?? "").toLowerCase() === "csv";
 
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -175,12 +181,17 @@ export default function ImportRodeoItemsScreen() {
       setParsed([]);
       setFileName(null);
 
+      const pickerTypes = csvMode
+        ? ["text/csv", "text/comma-separated-values", "*/*"]
+        : [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+            "*/*",
+          ];
+
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-excel",
-          "*/*",
-        ],
+        type: pickerTypes,
         copyToCacheDirectory: true,
       });
       if (result.canceled) {
@@ -190,6 +201,16 @@ export default function ImportRodeoItemsScreen() {
 
       const asset = result.assets[0];
       setFileName(asset.name);
+
+      // CSVs are read as plain UTF-8 text; XLSX (binary) workbooks need
+      // the array/base64 path. Detection prefers the file extension
+      // (most reliable across pickers) and falls back to the MIME type.
+      const lowerName = asset.name.toLowerCase();
+      const lowerMime = String(asset.mimeType ?? "").toLowerCase();
+      const isCsv =
+        lowerName.endsWith(".csv") ||
+        lowerMime.includes("csv") ||
+        lowerMime === "text/plain";
 
       let workbook: XLSX.WorkBook;
       if (Platform.OS === "web") {
@@ -202,15 +223,27 @@ export default function ImportRodeoItemsScreen() {
             fetch(asset.uri).then((r) => r.arrayBuffer()).then(resolve).catch(reject);
           xhr.send();
         });
-        workbook = XLSX.read(new Uint8Array(arrayBuffer), {
-          type: "array",
-          cellDates: true,
-        });
+        if (isCsv) {
+          const text = new TextDecoder("utf-8").decode(arrayBuffer);
+          workbook = XLSX.read(text, { type: "string", cellDates: true });
+        } else {
+          workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+            type: "array",
+            cellDates: true,
+          });
+        }
       } else {
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: "base64" as any,
-        });
-        workbook = XLSX.read(base64, { type: "base64", cellDates: true });
+        if (isCsv) {
+          const text = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: "utf8" as any,
+          });
+          workbook = XLSX.read(text, { type: "string", cellDates: true });
+        } else {
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: "base64" as any,
+          });
+          workbook = XLSX.read(base64, { type: "base64", cellDates: true });
+        }
       }
 
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -325,7 +358,10 @@ export default function ImportRodeoItemsScreen() {
   return (
     <>
       <Stack.Screen
-        options={{ title: "Import RodeoItems", headerBackTitle: "Back" }}
+        options={{
+          title: csvMode ? "Import RodeoItems (CSV)" : "Import RodeoItems",
+          headerBackTitle: "Back",
+        }}
       />
       <View
         style={[
@@ -358,9 +394,15 @@ export default function ImportRodeoItemsScreen() {
                 <View style={styles.fileIconWrap}>
                   <Feather name="upload" size={28} color={Colors.primary} />
                 </View>
-                <Text style={styles.dropTitle}>Tap to select Excel file</Text>
+                <Text style={styles.dropTitle}>
+                  {csvMode
+                    ? "Tap to select CSV file"
+                    : "Tap to select Excel file"}
+                </Text>
                 <Text style={styles.dropHint}>
-                  Imports RodeoItems from .xlsx or .xls
+                  {csvMode
+                    ? "Imports RodeoItems from .csv"
+                    : "Imports RodeoItems from .xlsx, .xls or .csv"}
                 </Text>
                 <View style={styles.colList}>
                   {ALL_COLS.map((c) => {

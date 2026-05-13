@@ -5,6 +5,7 @@ import UsersScreen from "./users";
 import MrpScreen from "./mrp";
 import LastSupplyDateScreen from "./last-supply-date";
 import LatestPurchasesScreen from "./latest-purchases";
+import RodeoItemsScreen from "./rodeo-items";
 
 export default function DirectoryHubScreen() {
   return (
@@ -39,6 +40,11 @@ export default function DirectoryHubScreen() {
           key: "purchases",
           label: "Latest Purchases",
           render: () => <LatestPurchasesScreen />,
+        },
+        {
+          key: "rodeo-items",
+          label: "RodeoItems",
+          render: () => <RodeoItemsScreen />,
         },
       ]}
     />
