@@ -106,6 +106,52 @@ function parseDDMMYYYY(s: string): Date | null {
   return d;
 }
 
+// Robust row-side coercion for the Promo CR Date column. The value
+// stored on a row can be:
+//   - a "DD/MM/YYYY" string (the canonical form coerceDate produces
+//     for fresh imports),
+//   - a JS Date (older snapshots that escaped normalisation),
+//   - an Excel numeric serial (raw number cell, no date format),
+//   - an ISO string like "2026-05-13" or "2026-05-13T00:00:00.000Z"
+//     (round-tripped through JSON.stringify in AsyncStorage),
+//   - or "DD/MM/YYYY HH:MM[:SS]" when an old export bundled time.
+// We collapse all of these to a local-midnight Date so the inclusive
+// range comparison in the filter is a stable numeric check.
+function parsePromoCrCell(v: unknown): Date | null {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // Excel serial date: days since 1899-12-30. Anything below ~year
+    // 1954 is almost certainly NOT a date — bail out.
+    if (v < 20000) return null;
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    // Try DD/MM/YYYY (with or without trailing time) first — it's the
+    // canonical stored form and would be misparsed by Date.parse on
+    // most browsers.
+    const headDate = s.split(/[ T]/, 1)[0];
+    const dm = parseDDMMYYYY(headDate);
+    if (dm) return dm;
+    // ISO and other Date-parseable strings.
+    const t = Date.parse(s);
+    if (Number.isFinite(t)) {
+      const d = new Date(t);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    return null;
+  }
+  return null;
+}
+
 // Coerce a raw Excel date cell into a stable "DD/MM/YYYY" display
 // string. Same logic used by the Latest Purchases tab — anything we
 // can't parse falls through to its original string so we never
@@ -471,51 +517,127 @@ export default function PromoScreen({
     headerScrollRef.current?.scrollTo({ x, animated: false });
   };
 
-  // Vendor list = every distinct VendorName seen in the data, sorted
-  // case-insensitively.
+  // Cross-filter scoping: every picker (Vendor / Brand / Category)
+  // shows only the values that actually exist under the OTHER active
+  // filters, including the Promo CR Date range. The picker for
+  // dimension X intentionally ignores X's own selection so users can
+  // still see and toggle off whatever they had picked. This mirrors
+  // the way Excel slicers and pivot filters cross-talk: pick a
+  // Brand and the Vendor list collapses to the vendors that carry
+  // that brand within the chosen date range.
+  const promoCrFromTs = useMemo(
+    () => (promoCrFrom ? startOfDay(promoCrFrom).getTime() : null),
+    [promoCrFrom]
+  );
+  const promoCrToTs = useMemo(
+    () => (promoCrTo ? startOfDay(promoCrTo).getTime() : null),
+    [promoCrTo]
+  );
+
+  const matchesDateRange = React.useCallback(
+    (r: PromoEntry): boolean => {
+      if (promoCrFromTs === null && promoCrToTs === null) return true;
+      const d = parsePromoCrCell(r["Promo CR Date"]);
+      if (!d) return false;
+      const ts = d.getTime();
+      if (promoCrFromTs !== null && ts < promoCrFromTs) return false;
+      if (promoCrToTs !== null && ts > promoCrToTs) return false;
+      return true;
+    },
+    [promoCrFromTs, promoCrToTs]
+  );
+
+  // Generic helper used by every picker scope below. `skip` names the
+  // dimension we're sourcing options for, so its own current
+  // selection isn't applied (otherwise the option list would only
+  // ever surface what the user already picked).
+  const scopedFor = React.useCallback(
+    (skip: "vendor" | "brand" | "category"): PromoEntry[] => {
+      const vendorSet =
+        skip !== "vendor" && activeVendors.length > 0
+          ? new Set(activeVendors)
+          : null;
+      const brandSet =
+        skip !== "brand" && activeBrands.length > 0
+          ? new Set(activeBrands)
+          : null;
+      const categorySet =
+        skip !== "category" && activeCategories.length > 0
+          ? new Set(activeCategories)
+          : null;
+      if (
+        !vendorSet &&
+        !brandSet &&
+        !categorySet &&
+        promoCrFromTs === null &&
+        promoCrToTs === null
+      ) {
+        return promoEntries;
+      }
+      return promoEntries.filter((r) => {
+        if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim()))
+          return false;
+        if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim()))
+          return false;
+        if (
+          categorySet &&
+          !categorySet.has(String(r["Category"] ?? "").trim())
+        )
+          return false;
+        if (!matchesDateRange(r)) return false;
+        return true;
+      });
+    },
+    [
+      promoEntries,
+      activeVendors,
+      activeBrands,
+      activeCategories,
+      promoCrFromTs,
+      promoCrToTs,
+      matchesDateRange,
+    ]
+  );
+
+  const vendorScopeEntries = useMemo(() => scopedFor("vendor"), [scopedFor]);
+  const brandScopeEntries = useMemo(() => scopedFor("brand"), [scopedFor]);
+  const categoryScopeEntries = useMemo(
+    () => scopedFor("category"),
+    [scopedFor]
+  );
+
   const allVendors = useMemo(() => {
     const set = new Set<string>();
-    for (const r of promoEntries) {
+    for (const r of vendorScopeEntries) {
       const v = String(r["VendorName"] ?? "").trim();
       if (v) set.add(v);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [promoEntries]);
-
-  // Rows that survive the vendor filter — used to scope the brand
-  // picker so users only see brands that actually exist for the
-  // selected vendor(s). With no vendor selected, this is the full
-  // dataset.
-  const vendorScopedEntries = useMemo(() => {
-    if (activeVendors.length === 0) return promoEntries;
-    const set = new Set(activeVendors);
-    return promoEntries.filter(
-      (r) => set.has(String(r["VendorName"] ?? "").trim())
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-  }, [promoEntries, activeVendors]);
+  }, [vendorScopeEntries]);
 
   const allBrands = useMemo(() => {
     const set = new Set<string>();
-    for (const r of vendorScopedEntries) {
+    for (const r of brandScopeEntries) {
       const v = String(r["Brand"] ?? "").trim();
       if (v) set.add(v);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [vendorScopedEntries]);
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [brandScopeEntries]);
 
-  // Categories are scoped by both vendor and brand, so picking a brand
-  // only offers categories that actually have rows under that brand
-  // (and vendor, if one is selected).
   const allCategories = useMemo(() => {
     const set = new Set<string>();
-    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
-    for (const r of vendorScopedEntries) {
-      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) continue;
+    for (const r of categoryScopeEntries) {
       const v = String(r["Category"] ?? "").trim();
       if (v) set.add(v);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [vendorScopedEntries, activeBrands]);
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [categoryScopeEntries]);
 
   // If the underlying data changes (e.g. a re-import) such that a
   // previously-selected vendor / brand / category no longer exists,
@@ -558,28 +680,29 @@ export default function PromoScreen({
     );
   }
 
-  // Per-row counts shown next to each option in the picker. Vendor
-  // counts are over the full dataset; brand counts respect the vendor
-  // filter; category counts respect both vendor + brand.
+  // Per-row counts shown next to each option in the picker. Each
+  // count is computed against the same cross-filtered scope as the
+  // option list itself (i.e. ignoring the dimension's own selection
+  // but applying every other filter, including the Promo CR Date
+  // range), so the numbers always match what the user would actually
+  // see if they picked that single value in isolation.
   function vendorRowCount(name: string): number {
     let n = 0;
-    for (const r of promoEntries) {
+    for (const r of vendorScopeEntries) {
       if (String(r["VendorName"] ?? "").trim() === name) n++;
     }
     return n;
   }
   function brandRowCount(brand: string): number {
     let n = 0;
-    for (const r of vendorScopedEntries) {
+    for (const r of brandScopeEntries) {
       if (String(r["Brand"] ?? "").trim() === brand) n++;
     }
     return n;
   }
   function categoryRowCount(category: string): number {
-    const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     let n = 0;
-    for (const r of vendorScopedEntries) {
-      if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) continue;
+    for (const r of categoryScopeEntries) {
       if (String(r["Category"] ?? "").trim() === category) n++;
     }
     return n;
@@ -646,37 +769,18 @@ export default function PromoScreen({
     const brandSet = activeBrands.length > 0 ? new Set(activeBrands) : null;
     const categorySet = activeCategories.length > 0 ? new Set(activeCategories) : null;
     const q = search.trim().toLowerCase();
-    // Normalise the Promo CR Date bounds to local-midnight timestamps
-    // once so the per-row check is a cheap numeric comparison. Both
-    // bounds are inclusive: a row dated exactly on `from` or `to`
-    // passes the filter.
-    const fromTs = promoCrFrom
-      ? new Date(
-          promoCrFrom.getFullYear(),
-          promoCrFrom.getMonth(),
-          promoCrFrom.getDate()
-        ).getTime()
-      : null;
-    const toTs = promoCrTo
-      ? new Date(
-          promoCrTo.getFullYear(),
-          promoCrTo.getMonth(),
-          promoCrTo.getDate()
-        ).getTime()
-      : null;
+    // Promo CR Date range — both bounds are inclusive and either may
+    // be null (open-ended). The row-side parser (parsePromoCrCell)
+    // accepts the canonical "DD/MM/YYYY" string AND the legacy shapes
+    // (Date object, Excel serial number, ISO string, "DD/MM/YYYY
+    // HH:MM" with time) so previously-imported snapshots still
+    // filter correctly instead of silently dropping every row.
     let base = promoEntries.filter((r) => {
       if (vendorSet && !vendorSet.has(String(r["VendorName"] ?? "").trim())) return false;
       if (brandSet && !brandSet.has(String(r["Brand"] ?? "").trim())) return false;
       if (categorySet && !categorySet.has(String(r["Category"] ?? "").trim())) return false;
       if (q && !SEARCH_FIELDS.some((f) => String(r[f] ?? "").toLowerCase().includes(q))) return false;
-      if (fromTs !== null || toTs !== null) {
-        const raw = r["Promo CR Date"];
-        const parsed = typeof raw === "string" ? parseDDMMYYYY(raw) : null;
-        if (!parsed) return false;
-        const ts = parsed.getTime();
-        if (fromTs !== null && ts < fromTs) return false;
-        if (toTs !== null && ts > toTs) return false;
-      }
+      if (!matchesDateRange(r)) return false;
       return true;
     });
 
@@ -740,6 +844,7 @@ export default function PromoScreen({
     missingPromo,
     hasSortCodeOnly,
     missingPromoItemSet,
+    matchesDateRange,
   ]);
 
   // Group the filtered rows three levels deep:
@@ -2133,10 +2238,13 @@ export default function PromoScreen({
         searchValue={vendorSearch}
         onChangeSearch={setVendorSearch}
         items={allVendors}
+        // (allCount below is now scoped to vendorScopeEntries so the
+        // total reflects the same Brand / Category / Date filters as
+        // the option list itself.)
         active={activeVendors}
         countLabel={(v) => `${vendorRowCount(v)} row${vendorRowCount(v) !== 1 ? "s" : ""}`}
         allLabel="All Vendors"
-        allCount={`${promoEntries.length} rows`}
+        allCount={`${vendorScopeEntries.length} rows`}
         onToggle={toggleVendor}
         onClear={() => setActiveVendors([])}
         onClose={() => setShowVendorModal(false)}
@@ -2157,7 +2265,7 @@ export default function PromoScreen({
         active={activeBrands}
         countLabel={(b) => `${brandRowCount(b)} row${brandRowCount(b) !== 1 ? "s" : ""}`}
         allLabel="All Brands"
-        allCount={`${vendorScopedEntries.length} rows`}
+        allCount={`${brandScopeEntries.length} rows`}
         onToggle={toggleBrand}
         onClear={() => setActiveBrands([])}
         onClose={() => setShowBrandModal(false)}
@@ -2300,7 +2408,7 @@ export default function PromoScreen({
         active={activeCategories}
         countLabel={(c) => `${categoryRowCount(c)} row${categoryRowCount(c) !== 1 ? "s" : ""}`}
         allLabel="All Categories"
-        allCount={`${vendorScopedEntries.length} rows`}
+        allCount={`${categoryScopeEntries.length} rows`}
         onToggle={toggleCategory}
         onClear={() => setActiveCategories([])}
         onClose={() => setShowCategoryModal(false)}
