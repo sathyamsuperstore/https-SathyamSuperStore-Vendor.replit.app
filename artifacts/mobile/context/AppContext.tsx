@@ -253,6 +253,10 @@ interface AppContextType {
   // records the first download.
   dataDownloadTime: number | null;
   setDataDownloadTimeNow: () => Promise<void>;
+  // Persist an explicit timestamp (Unix ms). Used by the Excel
+  // importer on the Data Download Time tab so the saved value comes
+  // straight from the upstream sheet rather than the device clock.
+  setDataDownloadTimeValue: (ms: number) => Promise<void>;
   clearDataDownloadTime: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
@@ -1244,6 +1248,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDataDownloadTime(now);
   }
 
+  async function setDataDownloadTimeValue(ms: number) {
+    if (!Number.isFinite(ms) || ms <= 0) {
+      throw new Error("Invalid timestamp");
+    }
+    await AsyncStorage.setItem(DATA_DOWNLOAD_TIME_KEY, String(ms));
+    setDataDownloadTime(ms);
+  }
+
   async function clearDataDownloadTime() {
     await AsyncStorage.removeItem(DATA_DOWNLOAD_TIME_KEY);
     setDataDownloadTime(null);
@@ -1349,6 +1361,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteTitle,
         dataDownloadTime,
         setDataDownloadTimeNow,
+        setDataDownloadTimeValue,
         clearDataDownloadTime,
         hydrated,
       }}
