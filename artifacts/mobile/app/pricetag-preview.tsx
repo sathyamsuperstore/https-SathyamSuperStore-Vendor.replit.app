@@ -1906,12 +1906,19 @@ function StyleBTag({
             tone="light"
           />
         </View>
-        <View style={b.priceCol}>
+        <View
+          style={[
+            b.priceCol,
+            // Style D — left-align the price column so MRP, GOLD
+            // promotion price and the SAVE pill share a clean left
+            // edge instead of the default right edge used by B/C.
+            showStyleASaveBadge && { alignItems: "flex-start" },
+          ]}
+        >
           {showStyleAMrpRow && mrp ? (
-            // Override a.mrpRow's alignSelf:flex-start so the MRP row
-            // right-aligns inside the flex-end priceCol, lining its
-            // right edge up with the GOLD price and SAVE pill.
-            <View style={[a.mrpRow, { alignSelf: "flex-end" }]}>
+            // a.mrpRow already has alignSelf:flex-start, which is what
+            // we want for Style D's left-aligned column.
+            <View style={a.mrpRow}>
               <Text style={a.rupeeSm}>₹</Text>
               <Text style={a.mrpVal}>{mrp}</Text>
               <Text style={a.mrpLabel}>MRP</Text>
@@ -2378,7 +2385,7 @@ function renderTagBHtml(
       ${validTillTop}
       <div class="middleB">
         <div class="imgWrapB">${img}</div>
-        <div class="priceColB">
+        <div class="priceColB${showStyleASaveBadge ? " leftAlign" : ""}">
           ${showStyleAMrpRow && mrp ? `
           <div class="mrpRowA">
             <span class="rupeeSm">₹</span><span class="mrpValA">${escapeHtml(mrp)}</span>
@@ -2478,6 +2485,11 @@ const PDF_CSS_B = `
      handles it; .priceRowA is block-level flex, so it needs its own
      justify-content override here.) */
   .priceColB .priceRowA { justify-content: flex-end; }
+  /* Style D override — flip the price column to left alignment so
+     MRP / GOLD price / SAVE pill share a clean left edge instead. */
+  .priceColB.leftAlign { text-align: left; }
+  .priceColB.leftAlign .priceRowA { justify-content: flex-start; }
+  .priceColB.leftAlign .saveBadgeRowB { text-align: left; }
   /* Style D SAVE pill wrapper — sits in the right-aligned priceColB,
      so the inline-block .offA pill naturally aligns to the right
      under the GOLD price. Margin matches the on-screen 6px gap. */
