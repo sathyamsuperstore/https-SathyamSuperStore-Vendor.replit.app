@@ -197,6 +197,12 @@ interface AppContextType {
   lastSupplyDates: LastSupplyDateEntry[];
   saveLastSupplyDateBatch: (entries: LastSupplyDateEntry[]) => Promise<void>;
   clearLastSupplyDates: () => Promise<void>;
+  // RodeoItems — flat product catalogue imported from Excel. Each
+  // import replaces the entire list (mirrors the MRP / Promo "fresh
+  // snapshot" behaviour) so the table always reflects the latest sheet.
+  rodeoItems: RodeoItem[];
+  saveRodeoItemsBatch: (entries: RodeoItem[]) => Promise<void>;
+  clearRodeoItems: () => Promise<void>;
   // User-entered "New Qty" overrides per Promo row. Map key is
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
   promoNewQty: Record<string, number>;
@@ -429,6 +435,28 @@ export interface LastSupplyDateEntry {
   latestInvoiceDate: string;
 }
 
+// One row in the RodeoItems table. Imported from Excel and stored in
+// AsyncStorage. Numeric fields are nullable so blank cells round-trip
+// as `null` instead of NaN. Date fields are normalised to "DD/MM/YYYY"
+// strings at import time so they sort and display without further
+// parsing. `active` is coerced from common truthy/falsy spellings
+// (Yes/No, Y/N, 1/0, true/false) to a strict boolean.
+export interface RodeoItem {
+  productId: number | null;
+  skuId: number | null;
+  productName: string;
+  barCode: string;
+  itemCode: string;
+  gst: number | null;
+  mrp: number | null;
+  purchasePrice: number | null;
+  sellingPrice: number | null;
+  offerPrice: number | null;
+  offerStartDate: string;
+  offerEndDate: string;
+  active: boolean;
+}
+
 const AppContext = createContext<AppContextType | null>(null);
 
 const SUPPLIERS_KEY = "@suppliers";
@@ -442,6 +470,7 @@ const PROMO_KEY = "@promoBatch";
 const PROMO_PREV_KEY = "@promoPrev";
 const PROMO_PREV_AT_KEY = "@promoPrevAt";
 const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
+const RODEO_ITEMS_KEY = "@rodeoItems";
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
 // Promo workbook (which replaces every row) doesn't blow away the
@@ -568,6 +597,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     priceTagReviewItemsRef.current = priceTagReviewItems;
   }, [priceTagReviewItems]);
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
+  const [rodeoItems, setRodeoItems] = useState<RodeoItem[]>([]);
   const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -577,7 +607,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -589,6 +619,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PROMO_PREV_AT_KEY),
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
+        AsyncStorage.getItem(RODEO_ITEMS_KEY),
         AsyncStorage.getItem(PRICE_TAG_KEY),
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
@@ -627,6 +658,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setPromoPrevEntries(loadedPromoPrev);
       setPromoPrevSnapshotAt(loadedPromoPrevAt);
       setLastSupplyDates(loadedLastSupplyDates);
+      const loadedRodeoItems: RodeoItem[] = rodeoItemsData
+        ? JSON.parse(rodeoItemsData)
+        : [];
+      setRodeoItems(loadedRodeoItems);
       const loadedPromoNewQty: Record<string, number> = promoNewQtyData
         ? JSON.parse(promoNewQtyData)
         : {};
@@ -1273,6 +1308,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers([]);
   }
 
+  async function saveRodeoItemsBatch(entries: RodeoItem[]) {
+    await AsyncStorage.setItem(RODEO_ITEMS_KEY, JSON.stringify(entries));
+    setRodeoItems(entries);
+  }
+
+  async function clearRodeoItems() {
+    await saveRodeoItemsBatch([]);
+  }
+
   async function clearAllAppUsers() {
     await saveAppUsers([]);
   }
@@ -1330,6 +1374,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         lastSupplyDates,
         saveLastSupplyDateBatch,
         clearLastSupplyDates,
+        rodeoItems,
+        saveRodeoItemsBatch,
+        clearRodeoItems,
         promoNewQty,
         setPromoNewQtyValue,
         priceTagItems,

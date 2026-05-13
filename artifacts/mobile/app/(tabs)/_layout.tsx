@@ -219,6 +219,7 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
       <Tabs.Screen name="users" options={{ href: null }} />
       <Tabs.Screen name="last-supply-date" options={{ href: null }} />
       <Tabs.Screen name="data-download-time" options={{ href: null }} />
+      <Tabs.Screen name="rodeo-items" options={{ href: null }} />
     </Tabs>
   );
 }

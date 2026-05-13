@@ -35,6 +35,7 @@ export default function AdmnHubScreen() {
     latestPurchases,
     orders,
     lastSupplyDates,
+    rodeoItems,
     clearAllSuppliers,
     clearAllAppUsers,
     clearPromoBatch,
@@ -42,6 +43,7 @@ export default function AdmnHubScreen() {
     clearLatestPurchases,
     clearAllOrders,
     clearLastSupplyDates,
+    clearRodeoItems,
     setDataDownloadTimeNow,
   } = useApp();
   const router = useRouter();
@@ -153,6 +155,15 @@ export default function AdmnHubScreen() {
       confirmMessage: (n) =>
         `Remove all ${n} promo entr${n === 1 ? "y" : "ies"}? This cannot be undone.`,
     },
+    {
+      key: "rodeo-items",
+      label: "RodeoItems",
+      count: rodeoItems.length,
+      onConfirm: clearRodeoItems,
+      confirmTitle: "Delete All RodeoItems?",
+      confirmMessage: (n) =>
+        `Remove all ${n} RodeoItem${n === 1 ? "" : "s"}? This cannot be undone.`,
+    },
   ];
 
   // Stack into 2-column rows. With 7 items the last row has a
@@ -190,6 +201,7 @@ export default function AdmnHubScreen() {
     },
     { key: "orders", label: "Place Orders", route: "/order/import" },
     { key: "promo", label: "Promo", route: "/(tabs)/promo" },
+    { key: "rodeo-items", label: "RodeoItems", route: "/rodeo/import" },
     // "DownloadTime" doesn't import a workbook — it just stamps the
     // current wall-clock time as the latest data snapshot, then opens
     // the Data Download Time tab so the user can see the new value.
