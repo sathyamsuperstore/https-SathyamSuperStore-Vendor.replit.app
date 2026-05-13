@@ -383,6 +383,12 @@ export interface PriceTagItem {
   // single global `priceTagStyle`. Undefined means "fall back to the
   // screen's currently selected style".
   style?: PriceTagStyle;
+  // Optional per-item custom banner title. Only consumed when the
+  // effective style is "E" ("Customize Me") — the user picks one
+  // from the TitleList catalogue via a green edit button on the
+  // banner (modify mode). When absent we fall back to the Style E
+  // default banner ("Edit Title").
+  customTitle?: string;
   addedAt: number;
 }
 

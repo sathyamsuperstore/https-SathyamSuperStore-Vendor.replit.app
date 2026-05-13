@@ -27,6 +27,7 @@ import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
+import { TitlePickerModal } from "@/components/TitlePickerModal";
 import { useAuth } from "@/context/AuthContext";
 import { pickFont, hasTamil } from "@/constants/typography";
 
@@ -271,7 +272,30 @@ export default function PriceTagPreviewScreen() {
     setPriceTagShowLogo,
     priceTagTitle,
     setPriceTagTitle,
+    titleList,
   } = useApp();
+
+  // Style E ("Customize Me") banner-title picker. While non-null we
+  // show the TitleListPicker modal anchored to that working item; on
+  // pick we write `customTitle` onto the working item so SAVE flushes
+  // the choice into AppContext together with the rest of the working
+  // edits.
+  const [titlePickerKey, setTitlePickerKey] = useState<string | null>(null);
+
+  function setItemCustomTitle(key: string, title: string | undefined) {
+    setWorkingItems((prev) =>
+      prev.map((i) =>
+        i.key === key
+          ? title === undefined
+            ? (() => {
+                const { customTitle: _drop, ...rest } = i;
+                return rest as PriceTagItem;
+              })()
+            : { ...i, customTitle: title }
+          : i,
+      ),
+    );
+  }
 
   // Title editor modal — opens via "Add Title" / "Modify Title".
   // `titleDraft` holds the in-progress text so cancelling doesn't
@@ -1306,7 +1330,7 @@ export default function PriceTagPreviewScreen() {
                 : priceTagStyle === "D"
                   ? "RED Tag Sale"
                   : priceTagStyle === "E"
-                    ? "Edit Title"
+                    ? it.customTitle?.trim() || "Edit Title"
                     : "LOW PRICES";
             return (
               <View key={it.key} style={styles.tagSlot}>
@@ -1377,6 +1401,11 @@ export default function PriceTagPreviewScreen() {
                   showStyleAPriceRow={priceTagStyle === "D" || priceTagStyle === "E"}
                   showStyleASaveBadge={priceTagStyle === "D" || priceTagStyle === "E"}
                   validTillTopLeft={priceTagStyle === "B" || priceTagStyle === "C" || priceTagStyle === "D" || priceTagStyle === "E"}
+                  onEditTitle={
+                    mode === "modify" && priceTagStyle === "E"
+                      ? () => setTitlePickerKey(it.key)
+                      : undefined
+                  }
                 />
               </View>
             );
@@ -1439,6 +1468,29 @@ export default function PriceTagPreviewScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
+
+        {/* Style E per-item title picker — only opens in modify mode
+            via the green pencil button overlaid on the banner. Writes
+            `customTitle` onto the working item; the global Save flushes
+            it through to AppContext + PDF export. */}
+        <TitlePickerModal
+          visible={titlePickerKey !== null}
+          titles={titleList}
+          currentTitle={
+            titlePickerKey
+              ? workingItems.find((i) => i.key === titlePickerKey)?.customTitle
+              : undefined
+          }
+          onPick={(t) => {
+            if (titlePickerKey) setItemCustomTitle(titlePickerKey, t);
+            setTitlePickerKey(null);
+          }}
+          onClear={() => {
+            if (titlePickerKey) setItemCustomTitle(titlePickerKey, undefined);
+            setTitlePickerKey(null);
+          }}
+          onClose={() => setTitlePickerKey(null)}
+        />
 
         {/* Title editor modal — opens via Add/Modify Title. Persists
             on Save to AppContext (AsyncStorage-backed) and feeds the
@@ -1848,6 +1900,7 @@ function StyleBTag({
   showStyleAPriceRow = false,
   showStyleASaveBadge = false,
   validTillTopLeft = false,
+  onEditTitle,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -1856,6 +1909,11 @@ function StyleBTag({
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
   bannerLabel?: string;
+  // Style E only — when set, renders a small green pencil button
+  // overlaying the right side of the top banner so the user can
+  // pick a title from the TitleList catalogue. Undefined means
+  // "no editor" (view mode, or non-E styles).
+  onEditTitle?: () => void;
   // Style D drops the big ₹ price row and the ₹XX OFF / OFFER PRICE
   // badge entirely. Defaulting both to true keeps B and C unchanged.
   showPriceRow?: boolean;
@@ -1894,7 +1952,17 @@ function StyleBTag({
         </View>
       )}
       <View style={b.topBanner}>
-        <Text style={b.bannerText}>{bannerLabel}</Text>
+        <Text style={b.bannerText} numberOfLines={1}>{bannerLabel}</Text>
+        {onEditTitle && (
+          <TouchableOpacity
+            style={b.bannerEditBtn}
+            onPress={onEditTitle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Pick title from TitleList"
+          >
+            <Feather name="edit-2" size={12} color={Colors.textInverse} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {validTillTopLeft && item.promotionToDate ? (
@@ -2127,7 +2195,7 @@ function buildPdfHtml(
               ? renderTagBHtml(
                   it,
                   showLogo,
-                  "Edit Title",
+                  it.customTitle?.trim() || "Edit Title",
                   false, // showPriceRow
                   false, // showOffBadge
                   true,  // showStyleAMrpRow
@@ -2932,6 +3000,17 @@ const b = StyleSheet.create({
   },
   topBanner: {
     backgroundColor: RED, paddingVertical: 6,
+    alignItems: "center", justifyContent: "center",
+    position: "relative",
+  },
+  bannerEditBtn: {
+    position: "absolute",
+    right: 6,
+    top: "50%",
+    marginTop: -11,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "#16A34A",
+    borderWidth: 1, borderColor: "#FFFFFF",
     alignItems: "center", justifyContent: "center",
   },
   bannerText: {
