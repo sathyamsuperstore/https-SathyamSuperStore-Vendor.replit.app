@@ -245,6 +245,15 @@ interface AppContextType {
   addTitle: (title: string, category?: string) => Promise<void>;
   updateTitle: (id: string, title: string, category?: string) => Promise<void>;
   deleteTitle: (id: string) => Promise<void>;
+  // Wall-clock timestamp (Unix ms) recorded the last time the user
+  // refreshed the upstream data snapshot. Driven by the "DownloadTime"
+  // button on the Admin tab and auto-stamped after a successful Promo
+  // import. Surfaced on the Dashboard so users always know how fresh
+  // the numbers they're looking at really are. `null` until the user
+  // records the first download.
+  dataDownloadTime: number | null;
+  setDataDownloadTimeNow: () => Promise<void>;
+  clearDataDownloadTime: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -462,6 +471,11 @@ const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
 // launch — we only seed when both keys are missing.
 const TITLE_LIST_KEY = "@titleList";
 const TITLE_LIST_SEEDED_KEY = "@titleListSeeded";
+// Wall-clock timestamp (Unix ms, stored as a string) for the last
+// upstream data refresh. Written by the Admin "DownloadTime" button
+// and after a successful Promo Excel import. Surfaced on the
+// Dashboard so users see the data snapshot age at a glance.
+const DATA_DOWNLOAD_TIME_KEY = "@dataDownloadTime";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -550,6 +564,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     priceTagReviewItemsRef.current = priceTagReviewItems;
   }, [priceTagReviewItems]);
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
+  const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -558,7 +573,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -580,6 +595,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
         AsyncStorage.getItem(TITLE_LIST_KEY),
         AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
+        AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -701,6 +717,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (typeof priceTagReviewTitleData === "string") {
         setPriceTagReviewTitleState(priceTagReviewTitleData.slice(0, 256));
+      }
+
+      // Last data-download timestamp. Stored as a stringified number;
+      // anything non-numeric (corrupt / legacy) falls back to null so
+      // the Dashboard simply hides the "Last Data Download" line until
+      // the user records a fresh one.
+      if (dataDownloadTimeData) {
+        const n = Number(dataDownloadTimeData);
+        if (Number.isFinite(n) && n > 0) setDataDownloadTime(n);
       }
 
       if (sessionData) {
@@ -1209,6 +1234,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveTitleList(titleListRef.current.filter((t) => t.id !== id));
   }
 
+  // ----- Data Download Time helpers -----
+  // Stamps "now" as the current snapshot time. Used by the Admin
+  // "DownloadTime" button (manual refresh acknowledgement) and by
+  // the Promo Excel importer once it finishes saving the new batch.
+  async function setDataDownloadTimeNow() {
+    const now = Date.now();
+    await AsyncStorage.setItem(DATA_DOWNLOAD_TIME_KEY, String(now));
+    setDataDownloadTime(now);
+  }
+
+  async function clearDataDownloadTime() {
+    await AsyncStorage.removeItem(DATA_DOWNLOAD_TIME_KEY);
+    setDataDownloadTime(null);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1307,6 +1347,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addTitle,
         updateTitle,
         deleteTitle,
+        dataDownloadTime,
+        setDataDownloadTimeNow,
+        clearDataDownloadTime,
         hydrated,
       }}
     >

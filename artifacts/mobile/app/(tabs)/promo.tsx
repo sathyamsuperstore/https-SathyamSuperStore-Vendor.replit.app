@@ -282,6 +282,7 @@ export default function PromoScreen({
     currentUser,
     promoNewQty,
     setPromoNewQtyValue,
+    setDataDownloadTimeNow,
   } = useApp();
   // Effective dataset for everything below — filter, group, search,
   // export, etc. all just see "the promo entries" without caring about
@@ -1175,10 +1176,17 @@ export default function PromoScreen({
       );
       if (localErrors.length > 0) setErrors(localErrors);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Jump to the Orders tab so the user can immediately start placing
-      // orders against the freshly imported promo data, which is the
-      // most common next step after a Promo import.
-      router.replace("/orders-hub?view=place");
+      // A successful Promo import is the canonical "fresh data
+      // snapshot" event in this app — stamp the Data Download Time
+      // and jump to that tab so the user immediately sees the new
+      // value (and remembers when their data was last refreshed).
+      try {
+        await setDataDownloadTimeNow();
+      } catch {
+        // Non-fatal: the Promo rows are already saved; the user can
+        // re-stamp the time manually from the Admin tab if needed.
+      }
+      router.replace("/(tabs)/data-download-time");
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {

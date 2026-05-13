@@ -21,7 +21,7 @@ function formatCurrency(amount: number): string {
 }
 
 export default function DashboardScreen() {
-  const { orders, suppliers } = useApp();
+  const { orders, suppliers, dataDownloadTime } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -94,6 +94,33 @@ export default function DashboardScreen() {
           <Feather name="plus" size={20} color={Colors.textInverse} />
         </TouchableOpacity>
       </View>
+
+      {/* Snapshot freshness — surfaces the wall-clock time recorded
+          by the Data Download Time tab so the user always knows
+          how stale the numbers below them really are. Tap to open
+          the Data Download Time tab where they can refresh it. */}
+      <TouchableOpacity
+        style={styles.dataTimeCard}
+        onPress={() => router.push("/(tabs)/data-download-time")}
+        activeOpacity={0.85}
+      >
+        <Feather name="clock" size={16} color={Colors.primary} />
+        <View style={styles.dataTimeTextWrap}>
+          <Text style={styles.dataTimeLabel}>Last Data Download Time</Text>
+          <Text style={styles.dataTimeValue} numberOfLines={1}>
+            {dataDownloadTime
+              ? new Date(dataDownloadTime).toLocaleString(undefined, {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "Not recorded yet — tap to set"}
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={18} color={Colors.textMuted} />
+      </TouchableOpacity>
 
       {stats.overdue > 0 && (
         <View style={styles.alert}>
@@ -243,6 +270,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   alertText: { fontSize: 13, color: Colors.danger, fontWeight: "600" },
+  dataTimeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  dataTimeTextWrap: { flex: 1, minWidth: 0 },
+  dataTimeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  dataTimeValue: { fontSize: 14, fontWeight: "700", color: Colors.text },
   statsGrid: { gap: 10, marginBottom: 24 },
   statsRow: { flexDirection: "row", gap: 10 },
   section: { marginBottom: 16 },

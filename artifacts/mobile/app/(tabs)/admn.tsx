@@ -42,6 +42,7 @@ export default function AdmnHubScreen() {
     clearLatestPurchases,
     clearAllOrders,
     clearLastSupplyDates,
+    setDataDownloadTimeNow,
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -189,6 +190,12 @@ export default function AdmnHubScreen() {
     },
     { key: "orders", label: "Place Orders", route: "/order/import" },
     { key: "promo", label: "Promo", route: "/(tabs)/promo" },
+    // "DownloadTime" doesn't import a workbook — it just stamps the
+    // current wall-clock time as the latest data snapshot, then opens
+    // the Data Download Time tab so the user can see the new value.
+    // Routed through a sentinel route so the click handler below can
+    // intercept and call setDataDownloadTimeNow() instead of pushing.
+    { key: "download-time", label: "DownloadTime", route: "__download_time__" },
   ];
   const importRows: (ImportButton | null)[][] = chunk2(importButtons);
 
@@ -296,8 +303,25 @@ export default function AdmnHubScreen() {
                   <TouchableOpacity
                     key={b.key}
                     style={styles.importBtn}
-                    onPress={() => {
+                    onPress={async () => {
                       Haptics.selectionAsync();
+                      // Sentinel route used by the DownloadTime button —
+                      // it isn't a real importer, it just stamps the
+                      // current time and jumps to the Data Download
+                      // Time tab so the user sees the new value.
+                      if (b.route === "__download_time__") {
+                        try {
+                          await setDataDownloadTimeNow();
+                        } catch (e: any) {
+                          Alert.alert(
+                            "Couldn't Save",
+                            e?.message ?? "Unknown error",
+                          );
+                          return;
+                        }
+                        router.push("/(tabs)/data-download-time");
+                        return;
+                      }
                       router.push(b.route as any);
                     }}
                     activeOpacity={0.85}
