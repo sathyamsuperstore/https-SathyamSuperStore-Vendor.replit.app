@@ -145,16 +145,18 @@ export default function DataDownloadTimeScreen() {
         return;
       }
       const sheet = workbook.Sheets[sheetName];
-      // We only care about the very first cell. Pull it as raw value
-      // (not formatted text) so we get the underlying Date / number
-      // and can convert it ourselves with full precision.
-      const cellA1 = sheet?.["A1"];
-      const raw = cellA1?.v;
+      // We only care about cell A2 — the convention is row 1 holds
+      // the column header (e.g. "Last Data Download Time") and row 2
+      // holds the actual value. Pull it as the raw value (not the
+      // formatted text) so we get the underlying Date / number and
+      // can convert it with full precision.
+      const cellA2 = sheet?.["A2"];
+      const raw = cellA2?.v;
       const ms = parseTimestampCell(raw);
       if (ms == null) {
         notify(
           "Couldn't read timestamp",
-          "Cell A1 of the first sheet must contain a date+time value (e.g. 2026-05-13 14:30 or an Excel date cell).",
+          "Cell A2 of the first sheet must contain a date+time value (e.g. 2026-05-13 14:30 or an Excel date cell). Row 1 is reserved for the column header.",
         );
         return;
       }
@@ -239,9 +241,10 @@ export default function DataDownloadTimeScreen() {
           </Text>
         )}
         <Text style={styles.fieldHint}>
-          The timestamp is read from cell A1 of the first sheet of the
-          workbook you pick. Cell A1 should be a date+time value (an Excel
-          date cell, an ISO string like "2026-05-13 14:30", or DD/MM/YYYY).
+          The timestamp is read from cell A2 of the first sheet of the
+          workbook you pick (row 1 is the column header, row 2 holds the
+          value). Cell A2 should be a date+time value — an Excel date
+          cell, an ISO string like "2026-05-13 14:30", or DD/MM/YYYY.
           Shown on the Dashboard so everyone knows how fresh the numbers
           they're looking at really are.
         </Text>
