@@ -9,6 +9,71 @@ export interface HealthStatus {
   status: string;
 }
 
+export type PriceTagStyle = (typeof PriceTagStyle)[keyof typeof PriceTagStyle];
+
+export const PriceTagStyle = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  E: "E",
+} as const;
+
+export interface PriceTagItem {
+  itemNo: string;
+  description: string;
+  mrp: string | number;
+  promotionPrice: string | number;
+  sp: string | number;
+  eligibleQty?: string | number;
+  promoSortCode?: string;
+  /** Image source for the tag. Accepts a `data:` URI (recommended for reliability — the server doesn't fetch external URLs) or an absolute http(s) URL Chromium can load.
+   */
+  imageUri?: string;
+  promotionToDate?: string;
+  /** Banner title used when style="E". */
+  customTitle?: string;
+  style?: PriceTagStyle;
+}
+
+export interface PriceTagRenderInput {
+  item: PriceTagItem;
+  style: PriceTagStyle;
+  /** Whether to overlay the Sathyam Super Store watermark logo. */
+  showLogo: boolean;
+  /**
+   * Natural CSS body width in pixels (default 380, mirrors the PDF grid column). Output JPEG width = widthPx × scale.
+
+   * @minimum 200
+   * @maximum 1200
+   */
+  widthPx?: number;
+  /**
+   * Device scale factor used by Chromium (default 4). Higher = crisper output but slower / larger file.
+
+   * @minimum 1
+   * @maximum 6
+   */
+  scale?: number;
+}
+
+export type PriceTagRenderResultMimeType =
+  (typeof PriceTagRenderResultMimeType)[keyof typeof PriceTagRenderResultMimeType];
+
+export const PriceTagRenderResultMimeType = {
+  "image/jpeg": "image/jpeg",
+} as const;
+
+export interface PriceTagRenderResult {
+  /** JPEG bytes, base64-encoded (no data URI prefix). */
+  base64: string;
+  mimeType: PriceTagRenderResultMimeType;
+  /** Final output width in pixels. */
+  widthPx: number;
+  /** Final output height in pixels. */
+  heightPx: number;
+}
+
 export interface DriveUploadInput {
   /**
    * File name as it should appear in Google Drive.

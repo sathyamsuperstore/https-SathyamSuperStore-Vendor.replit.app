@@ -16,6 +16,69 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * Renders the same HTML/CSS the mobile PDF export uses through a headless Chromium and returns the resulting JPEG bytes (base64 encoded). Use this instead of capturing a React Native view to get pixel-perfect output that matches the PDF.
+
+ * @summary Render a single price tag as a JPEG
+ */
+export const renderPriceTagBodyWidthPxMin = 200;
+export const renderPriceTagBodyWidthPxMax = 1200;
+
+export const renderPriceTagBodyScaleMax = 6;
+
+export const RenderPriceTagBody = zod.object({
+  item: zod.object({
+    itemNo: zod.string(),
+    description: zod.string(),
+    mrp: zod.union([zod.string(), zod.number()]),
+    promotionPrice: zod.union([zod.string(), zod.number()]),
+    sp: zod.union([zod.string(), zod.number()]),
+    eligibleQty: zod.union([zod.string(), zod.number()]).optional(),
+    promoSortCode: zod.string().optional(),
+    imageUri: zod
+      .string()
+      .optional()
+      .describe(
+        "Image source for the tag. Accepts a `data:` URI (recommended for reliability — the server doesn't fetch external URLs) or an absolute http(s) URL Chromium can load.\n",
+      ),
+    promotionToDate: zod.string().optional(),
+    customTitle: zod
+      .string()
+      .optional()
+      .describe('Banner title used when style=\"E\".'),
+    style: zod.enum(["A", "B", "C", "D", "E"]).optional(),
+  }),
+  style: zod.enum(["A", "B", "C", "D", "E"]),
+  showLogo: zod
+    .boolean()
+    .describe("Whether to overlay the Sathyam Super Store watermark logo."),
+  widthPx: zod
+    .number()
+    .min(renderPriceTagBodyWidthPxMin)
+    .max(renderPriceTagBodyWidthPxMax)
+    .optional()
+    .describe(
+      "Natural CSS body width in pixels (default 380, mirrors the PDF grid column). Output JPEG width = widthPx × scale.\n",
+    ),
+  scale: zod
+    .number()
+    .min(1)
+    .max(renderPriceTagBodyScaleMax)
+    .optional()
+    .describe(
+      "Device scale factor used by Chromium (default 4). Higher = crisper output but slower \/ larger file.\n",
+    ),
+});
+
+export const RenderPriceTagResponse = zod.object({
+  base64: zod
+    .string()
+    .describe("JPEG bytes, base64-encoded (no data URI prefix)."),
+  mimeType: zod.enum(["image/jpeg"]),
+  widthPx: zod.number().describe("Final output width in pixels."),
+  heightPx: zod.number().describe("Final output height in pixels."),
+});
+
+/**
  * Uploads a base64-encoded file to the connected Google Drive. When `folderName` is provided, the file is placed in that folder (created on demand at Drive root if missing).
 
  * @summary Upload a file to Google Drive

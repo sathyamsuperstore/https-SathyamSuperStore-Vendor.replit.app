@@ -20,6 +20,8 @@ import type {
   DriveUploadInput,
   DriveUploadResult,
   HealthStatus,
+  PriceTagRenderInput,
+  PriceTagRenderResult,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -106,6 +108,94 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Renders the same HTML/CSS the mobile PDF export uses through a headless Chromium and returns the resulting JPEG bytes (base64 encoded). Use this instead of capturing a React Native view to get pixel-perfect output that matches the PDF.
+
+ * @summary Render a single price tag as a JPEG
+ */
+export const getRenderPriceTagUrl = () => {
+  return `/api/pricetag/render`;
+};
+
+export const renderPriceTag = async (
+  priceTagRenderInput: PriceTagRenderInput,
+  options?: RequestInit,
+): Promise<PriceTagRenderResult> => {
+  return customFetch<PriceTagRenderResult>(getRenderPriceTagUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(priceTagRenderInput),
+  });
+};
+
+export const getRenderPriceTagMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renderPriceTag>>,
+    TError,
+    { data: BodyType<PriceTagRenderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof renderPriceTag>>,
+  TError,
+  { data: BodyType<PriceTagRenderInput> },
+  TContext
+> => {
+  const mutationKey = ["renderPriceTag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof renderPriceTag>>,
+    { data: BodyType<PriceTagRenderInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return renderPriceTag(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RenderPriceTagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof renderPriceTag>>
+>;
+export type RenderPriceTagMutationBody = BodyType<PriceTagRenderInput>;
+export type RenderPriceTagMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Render a single price tag as a JPEG
+ */
+export const useRenderPriceTag = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renderPriceTag>>,
+    TError,
+    { data: BodyType<PriceTagRenderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof renderPriceTag>>,
+  TError,
+  { data: BodyType<PriceTagRenderInput> },
+  TContext
+> => {
+  return useMutation(getRenderPriceTagMutationOptions(options));
+};
 
 /**
  * Uploads a base64-encoded file to the connected Google Drive. When `folderName` is provided, the file is placed in that folder (created on demand at Drive root if missing).

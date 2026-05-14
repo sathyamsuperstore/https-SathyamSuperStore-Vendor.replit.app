@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -13,11 +13,21 @@ import {
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { captureRef } from "react-native-view-shot";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+
+// Build a URL pointing at our api-server. On web (Expo running inside
+// the Replit preview iframe) the same origin handles `/api/...`
+// through the shared proxy, so a relative URL works. On a real
+// device we need the absolute Replit dev domain that the dev script
+// puts into `EXPO_PUBLIC_DOMAIN`.
+function apiUrl(path: string): string {
+  const dom = process.env.EXPO_PUBLIC_DOMAIN;
+  if (dom) return `https://${dom}${path}`;
+  return path;
+}
 
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
@@ -380,12 +390,11 @@ export default function PriceTagImgScreen() {
     return { ...found, promotionToDate: undefined };
   }, [itemKey, priceTagReviewItems]);
 
-  // ---- Off-screen capture for "Export IMG". A second copy of the
-  // showcase tag is rendered at a fixed 1900×950 (2:1) far above the
-  // viewport so view-shot can snapshot it at consistent resolution
-  // regardless of the device width. The on-screen copy is purely for
-  // preview. ---------------------------------------------------------
-  const captureHostRef = useRef<View>(null);
+  // ---- "Export IMG" calls the api-server's /pricetag/render endpoint
+  // which renders the same HTML/CSS the PDF export uses through a
+  // headless Chromium, returning a high-resolution JPEG. This avoids
+  // the layout / quality issues of capturing a React Native view on
+  // device. The on-screen copy here is purely for preview.
   const [exporting, setExporting] = useState(false);
 
   if (!item) {
@@ -405,25 +414,53 @@ export default function PriceTagImgScreen() {
     if (!item || exporting) return;
     setExporting(true);
     try {
-      const ref = captureHostRef.current;
-      if (!ref) throw new Error("Renderer not mounted yet — try again.");
-
-      // Let RN settle off-screen layout (images, fonts).
-      await new Promise((r) => setTimeout(r, 150));
-
-      const uri = await captureRef(ref, {
-        format: "jpg",
-        quality: 0.95,
-        result: "tmpfile",
+      // Server-side render. Showcase always uses Style E so the
+      // user-picked TitleList banner drives design variety. The
+      // server returns base64 JPEG bytes that match the PDF
+      // export's HTML/CSS pixel-for-pixel.
+      const renderRes = await fetch(apiUrl("/api/pricetag/render"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          item: {
+            itemNo: item.itemNo,
+            description: item.description,
+            mrp: item.mrp,
+            promotionPrice: item.promotionPrice,
+            sp: item.sp,
+            eligibleQty: item.eligibleQty,
+            promoSortCode: item.promoSortCode,
+            imageUri: item.imageUri,
+            promotionToDate: item.promotionToDate,
+            customTitle: item.customTitle,
+          },
+          style: "E",
+          showLogo: priceTagReviewShowLogo,
+          widthPx: 380,
+          scale: 5,
+        }),
       });
+      if (!renderRes.ok) {
+        const text = await renderRes.text().catch(() => "");
+        throw new Error(
+          `Render failed (${renderRes.status})${text ? `: ${text.slice(0, 200)}` : ""}`,
+        );
+      }
+      const payload = (await renderRes.json()) as {
+        base64: string;
+        mimeType: string;
+        widthPx: number;
+        heightPx: number;
+      };
+      if (!payload?.base64) throw new Error("Server returned no image bytes");
+
       const filename = exportFilename(item);
 
       if (Platform.OS === "web") {
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: "base64" as any,
-        });
-        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: "image/jpeg" });
+        const bytes = Uint8Array.from(atob(payload.base64), (c) =>
+          c.charCodeAt(0),
+        );
+        const blob = new Blob([bytes], { type: payload.mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -436,19 +473,19 @@ export default function PriceTagImgScreen() {
         return;
       }
 
-      // Copy to a stable filename so the gallery shows it nicely.
+      // Native: write base64 to a stable cache file, then push it into
+      // the photo library via the existing MediaLibrary flow below.
       const dir = FileSystem.cacheDirectory ?? "";
-      let saveUri = uri;
-      if (dir) {
-        const target = dir + filename;
-        try {
-          await FileSystem.deleteAsync(target, { idempotent: true });
-          await FileSystem.copyAsync({ from: uri, to: target });
-          saveUri = target;
-        } catch {
-          /* fall back to temp uri */
-        }
+      if (!dir) throw new Error("No writable cache directory available.");
+      const saveUri = dir + filename;
+      try {
+        await FileSystem.deleteAsync(saveUri, { idempotent: true });
+      } catch {
+        /* ignore */
       }
+      await FileSystem.writeAsStringAsync(saveUri, payload.base64, {
+        encoding: "base64" as any,
+      });
 
       let savedViaLibrary = false;
       try {
@@ -592,20 +629,6 @@ export default function PriceTagImgScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {/* Off-screen 1900×950 capture host (showcase only). Positioned
-          far above the viewport so it actually paints — display:none
-          would render an empty image. */}
-      {isShowcase ? (
-        <View pointerEvents="none" style={screen.captureHost} collapsable={false}>
-          <View
-            ref={captureHostRef}
-            collapsable={false}
-            style={screen.captureCanvas}
-          >
-            <ShowcaseTag item={item} />
-          </View>
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -644,19 +667,6 @@ const screen = StyleSheet.create({
     color: Colors.textInverse,
     fontWeight: "800",
     fontSize: 14,
-  },
-  captureHost: {
-    position: "absolute",
-    left: -10000,
-    top: -10000,
-    width: 1900,
-    height: 950,
-  },
-  captureCanvas: {
-    width: 1900,
-    height: 950,
-    backgroundColor: "#fff",
-    flexDirection: "column",
   },
   empty: {
     flex: 1,

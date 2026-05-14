@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: drive
     description: Google Drive operations
+  - name: pricetag
+    description: Price-tag rendering operations
 paths:
   /healthz:
     get:
@@ -26,6 +28,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /pricetag/render:
+    post:
+      operationId: renderPriceTag
+      tags: [pricetag]
+      summary: Render a single price tag as a JPEG
+      description: >
+        Renders the same HTML/CSS the mobile PDF export uses through a
+        headless Chromium and returns the resulting JPEG bytes (base64
+        encoded). Use this instead of capturing a React Native view to
+        get pixel-perfect output that matches the PDF.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriceTagRenderInput"
+      responses:
+        "200":
+          description: Rendered JPEG
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceTagRenderResult"
   /drive/upload:
     post:
       operationId: uploadDriveFile
@@ -57,6 +82,73 @@ components:
           type: string
       required:
         - status
+    PriceTagItem:
+      type: object
+      required: [itemNo, description, mrp, promotionPrice, sp]
+      properties:
+        itemNo: { type: string }
+        description: { type: string }
+        mrp: { type: ["string", "number"] }
+        promotionPrice: { type: ["string", "number"] }
+        sp: { type: ["string", "number"] }
+        eligibleQty: { type: ["string", "number"] }
+        promoSortCode: { type: string }
+        imageUri:
+          type: string
+          description: >
+            Image source for the tag. Accepts a `data:` URI (recommended
+            for reliability — the server doesn't fetch external URLs) or
+            an absolute http(s) URL Chromium can load.
+        promotionToDate: { type: string }
+        customTitle:
+          type: string
+          description: Banner title used when style="E".
+        style:
+          $ref: "#/components/schemas/PriceTagStyle"
+    PriceTagStyle:
+      type: string
+      enum: [A, B, C, D, E]
+    PriceTagRenderInput:
+      type: object
+      required: [item, style, showLogo]
+      properties:
+        item:
+          $ref: "#/components/schemas/PriceTagItem"
+        style:
+          $ref: "#/components/schemas/PriceTagStyle"
+        showLogo:
+          type: boolean
+          description: Whether to overlay the Sathyam Super Store watermark logo.
+        widthPx:
+          type: integer
+          minimum: 200
+          maximum: 1200
+          description: >
+            Natural CSS body width in pixels (default 380, mirrors the
+            PDF grid column). Output JPEG width = widthPx × scale.
+        scale:
+          type: number
+          minimum: 1
+          maximum: 6
+          description: >
+            Device scale factor used by Chromium (default 4). Higher =
+            crisper output but slower / larger file.
+    PriceTagRenderResult:
+      type: object
+      required: [base64, mimeType, widthPx, heightPx]
+      properties:
+        base64:
+          type: string
+          description: JPEG bytes, base64-encoded (no data URI prefix).
+        mimeType:
+          type: string
+          enum: [image/jpeg]
+        widthPx:
+          type: integer
+          description: Final output width in pixels.
+        heightPx:
+          type: integer
+          description: Final output height in pixels.
     DriveUploadInput:
       type: object
       required: [filename, mimeType, dataBase64]
