@@ -1335,44 +1335,57 @@ export default function PriceTagReviewScreen() {
         }
       }
 
-      // Request only the photo scope. Without a granular list,
-      // expo-media-library asks for AUDIO too, which crashes on
-      // Android when the plugin is configured for photos only.
-      const perm = await MediaLibrary.requestPermissionsAsync(
-        false,
-        ["photo"],
-      );
-      if (!perm.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Allow access to your photo library so the PNG can be saved.",
-        );
-        return;
-      }
-      // Save into a dedicated "Sathyam PriceTags" album (created on
-      // first use). createAssetAsync gives us the asset handle we
-      // need; addAssetsToAlbumAsync moves rather than copies on iOS
-      // so the asset only appears in the album.
-      const asset = await MediaLibrary.createAssetAsync(saveUri);
-      const ALBUM = "Sathyam PriceTags";
+      // Try the native MediaLibrary path first — that's what writes
+      // straight into the "Sathyam PriceTags" album. If we're inside
+      // Expo Go on Android 14+, MediaLibrary is now blocked and
+      // throws; we fall back to the system share sheet so the user
+      // can still get the PNG out (Save to Files / Photos / etc.).
+      let savedViaLibrary = false;
       try {
-        const album = await MediaLibrary.getAlbumAsync(ALBUM);
-        if (album) {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        } else {
-          await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+        const perm = await MediaLibrary.requestPermissionsAsync(false, [
+          "photo",
+        ]);
+        if (!perm.granted) {
+          Alert.alert(
+            "Permission needed",
+            "Allow access to your photo library so the PNG can be saved.",
+          );
+          return;
         }
-      } catch {
-        // Album writes can fail on locked-down Android setups; the
-        // asset is still in the photo library, so don't bubble the
-        // error to the user.
+        const asset = await MediaLibrary.createAssetAsync(saveUri);
+        const ALBUM = "Sathyam PriceTags";
+        try {
+          const album = await MediaLibrary.getAlbumAsync(ALBUM);
+          if (album) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          } else {
+            await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+          }
+        } catch {
+          // Album writes can fail on locked-down setups; the asset
+          // is still in the library so don't surface this.
+        }
+        savedViaLibrary = true;
+      } catch (libErr: any) {
+        // Expo Go on Android 14+ throws here. Fall back to the share
+        // sheet so the export still works.
+        const canShare = await Sharing.isAvailableAsync().catch(() => false);
+        if (!canShare) throw libErr;
+        await Sharing.shareAsync(saveUri, {
+          mimeType: "image/png",
+          dialogTitle: captured.filename,
+          UTI: "public.png",
+        });
       }
+
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success,
       ).catch(() => {});
       Alert.alert(
-        "Saved to Photos",
-        `${captured.filename}\nAlbum: Sathyam PriceTags\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+        savedViaLibrary ? "Saved to Photos" : "Saved",
+        savedViaLibrary
+          ? `${captured.filename}\nAlbum: Sathyam PriceTags\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`
+          : `${captured.filename}\nUse the share sheet to save to Photos or Files.\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
       );
       setPngExportItem(null);
     } catch (e: any) {
