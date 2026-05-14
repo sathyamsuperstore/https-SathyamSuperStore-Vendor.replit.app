@@ -2328,7 +2328,11 @@ export default function PriceTagReviewScreen() {
                 // around line 1611). Keep this in lock-step with the
                 // visible tile so the exported PNG matches what the
                 // user sees.
-                const it = pngExportItem;
+                // Strip promotionToDate so the "Valid Till" overlay
+                // (side rail on Style A, top-left line on Style B/C/D/E)
+                // is omitted from the exported JPEG. The on-screen
+                // grid still shows the date — only the capture is bare.
+                const it = { ...pngExportItem, promotionToDate: undefined };
                 const effStyle: PriceTagStyle =
                   it.style ?? priceTagReviewStyle;
                 if (effStyle === "A") {
