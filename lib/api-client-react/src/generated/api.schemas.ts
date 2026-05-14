@@ -8,3 +8,33 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface DriveUploadInput {
+  /**
+   * File name as it should appear in Google Drive.
+   * @minLength 1
+   */
+  filename: string;
+  /**
+   * Mime type of the uploaded bytes (e.g. image/png).
+   * @minLength 1
+   */
+  mimeType: string;
+  /**
+   * Base64-encoded file contents.
+   * @minLength 1
+   */
+  dataBase64: string;
+  /** Optional Drive folder name. The folder is looked up by name at Drive root and created if missing.
+   */
+  folderName?: string;
+}
+
+export interface DriveUploadResult {
+  id: string;
+  name: string;
+  /** @nullable */
+  webViewLink?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+}

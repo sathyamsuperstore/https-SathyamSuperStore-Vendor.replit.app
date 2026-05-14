@@ -5,18 +5,25 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  DriveUploadInput,
+  DriveUploadResult,
+  HealthStatus,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +106,91 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Uploads a base64-encoded file to the connected Google Drive. When `folderName` is provided, the file is placed in that folder (created on demand at Drive root if missing).
+
+ * @summary Upload a file to Google Drive
+ */
+export const getUploadDriveFileUrl = () => {
+  return `/api/drive/upload`;
+};
+
+export const uploadDriveFile = async (
+  driveUploadInput: DriveUploadInput,
+  options?: RequestInit,
+): Promise<DriveUploadResult> => {
+  return customFetch<DriveUploadResult>(getUploadDriveFileUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(driveUploadInput),
+  });
+};
+
+export const getUploadDriveFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadDriveFile>>,
+    TError,
+    { data: BodyType<DriveUploadInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadDriveFile>>,
+  TError,
+  { data: BodyType<DriveUploadInput> },
+  TContext
+> => {
+  const mutationKey = ["uploadDriveFile"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadDriveFile>>,
+    { data: BodyType<DriveUploadInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadDriveFile(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadDriveFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadDriveFile>>
+>;
+export type UploadDriveFileMutationBody = BodyType<DriveUploadInput>;
+export type UploadDriveFileMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload a file to Google Drive
+ */
+export const useUploadDriveFile = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadDriveFile>>,
+    TError,
+    { data: BodyType<DriveUploadInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadDriveFile>>,
+  TError,
+  { data: BodyType<DriveUploadInput> },
+  TContext
+> => {
+  return useMutation(getUploadDriveFileMutationOptions(options));
+};

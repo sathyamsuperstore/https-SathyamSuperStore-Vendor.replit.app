@@ -6,4 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./driveUploadInput";
+export * from "./driveUploadResult";
 export * from "./healthStatus";

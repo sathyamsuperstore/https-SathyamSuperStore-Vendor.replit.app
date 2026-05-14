@@ -14,3 +14,34 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Uploads a base64-encoded file to the connected Google Drive. When `folderName` is provided, the file is placed in that folder (created on demand at Drive root if missing).
+
+ * @summary Upload a file to Google Drive
+ */
+
+export const UploadDriveFileBody = zod.object({
+  filename: zod
+    .string()
+    .min(1)
+    .describe("File name as it should appear in Google Drive."),
+  mimeType: zod
+    .string()
+    .min(1)
+    .describe("Mime type of the uploaded bytes (e.g. image\/png)."),
+  dataBase64: zod.string().min(1).describe("Base64-encoded file contents."),
+  folderName: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional Drive folder name. The folder is looked up by name at Drive root and created if missing.\n",
+    ),
+});
+
+export const UploadDriveFileResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  webViewLink: zod.string().nullish(),
+  folderId: zod.string().nullish(),
+});

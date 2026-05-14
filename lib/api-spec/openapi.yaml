@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: drive
+    description: Google Drive operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /drive/upload:
+    post:
+      operationId: uploadDriveFile
+      tags: [drive]
+      summary: Upload a file to Google Drive
+      description: >
+        Uploads a base64-encoded file to the connected Google Drive. When
+        `folderName` is provided, the file is placed in that folder
+        (created on demand at Drive root if missing).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriveUploadInput"
+      responses:
+        "200":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveUploadResult"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +57,37 @@ components:
           type: string
       required:
         - status
+    DriveUploadInput:
+      type: object
+      required: [filename, mimeType, dataBase64]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          description: File name as it should appear in Google Drive.
+        mimeType:
+          type: string
+          minLength: 1
+          description: Mime type of the uploaded bytes (e.g. image/png).
+        dataBase64:
+          type: string
+          minLength: 1
+          description: Base64-encoded file contents.
+        folderName:
+          type: string
+          description: >
+            Optional Drive folder name. The folder is looked up by name at
+            Drive root and created if missing.
+    DriveUploadResult:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        webViewLink:
+          type: ["string", "null"]
+        folderId:
+          type: ["string", "null"]
 

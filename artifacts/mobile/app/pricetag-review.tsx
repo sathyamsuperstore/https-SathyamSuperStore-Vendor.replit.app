@@ -24,6 +24,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+import * as MediaLibrary from "expo-media-library";
+import { captureRef } from "react-native-view-shot";
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
@@ -324,6 +326,15 @@ export default function PriceTagReviewScreen() {
   const [bgAllRunning, setBgAllRunning] = useState(false);
   const { token: authToken, logout } = useAuth();
   const [exporting, setExporting] = useState(false);
+
+  // ----- PNG export ("PNG's" red button) -----
+  // Two-step modal: step 1 picks the item, step 2 picks Phone vs
+  // Drive. We keep both flags + the selected key local — they only
+  // affect the modal stack and the off-screen capture container.
+  const [pngPickerOpen, setPngPickerOpen] = useState(false);
+  const [pngExportItem, setPngExportItem] = useState<PriceTagItem | null>(null);
+  const [pngBusy, setPngBusy] = useState<null | "phone" | "drive">(null);
+  const pngCaptureRef = useRef<View>(null);
 
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
   const [driveUrl, setDriveUrl] = useState("");
@@ -1104,6 +1115,271 @@ export default function PriceTagReviewScreen() {
     }
   }
 
+  // -------- PNG export (768×384, ≤295 KB) --------
+  //
+  // Filename contract:
+  //   {Item Description}_{MRP}_{PromoPrice}_{DDMMYYYY}.png
+  // Date is the item's `promotionToDate` (Valid till) flattened to
+  // DDMMYYYY with no separators. Filesystem-unsafe characters
+  //   / \ : * ? " < > |
+  // get squashed to "_", and runs of underscores collapse to one so
+  // we don't end up with "Foo___Bar".
+  function pngFilenameFor(item: PriceTagItem): string {
+    const cleanField = (raw: string): string => {
+      const stripped = raw
+        .replace(/[\/\\:*?"<>|\r\n\t\u0000-\u001F]+/g, "_")
+        .replace(/_+/g, "_")
+        .trim();
+      return stripped.replace(/^_+|_+$/g, "") || "_";
+    };
+    const desc = cleanField(item.description || "PriceTag");
+    const mrpRaw = fmt0(item.mrp);
+    // Spec is explicit: PromoPrice segment uses the item's
+    // promotionPrice. If absent we write "0" rather than substituting
+    // SP — the filename has to faithfully reflect what the tag was
+    // promoting, even when no promo was set.
+    const promoRaw = fmt0(item.promotionPrice);
+    const mrp = cleanField(mrpRaw || "0");
+    const promo = cleanField(promoRaw || "0");
+    // Flatten the Valid Till date to DDMMYYYY. The importer emits
+    // DD/MM/YYYY most of the time, but we also tolerate
+    // DD-MM-YYYY and ISO YYYY-MM-DD as a courtesy.
+    const date = (() => {
+      const raw = (item.promotionToDate ?? "").trim();
+      if (!raw) {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
+      }
+      const parts = raw.split(/[\/\-\.]/).map((s) => s.trim());
+      if (parts.length === 3) {
+        const looksIso = parts[0].length === 4;
+        const dd = looksIso ? parts[2] : parts[0];
+        const mm = parts[1];
+        const yyyy = looksIso ? parts[0] : parts[2];
+        const pad2 = (s: string) => s.padStart(2, "0");
+        const yyyyFull =
+          yyyy.length === 2 ? `20${yyyy}` : yyyy.padStart(4, "0");
+        return `${pad2(dd)}${pad2(mm)}${yyyyFull}`;
+      }
+      return cleanField(raw);
+    })();
+    return `${desc}_${mrp}_${promo}_${date}.png`;
+  }
+
+  // Capture the off-screen 768×384 tag, downsample/clamp to exactly
+  // 768×384 px, and re-encode until the byte count fits in the 295 KB
+  // budget. Returns both a `file://` uri and the base64 payload —
+  // the base64 is only computed once because both the Drive upload
+  // path and the size check need it.
+  async function capturePngForItem(): Promise<{
+    uri: string;
+    base64: string;
+    bytes: number;
+    filename: string;
+  } | null> {
+    const item = pngExportItem;
+    if (!item) return null;
+    const filename = pngFilenameFor(item);
+    const ref = pngCaptureRef.current;
+    if (!ref) {
+      throw new Error("Renderer not mounted yet — try again.");
+    }
+
+    // Give RN one frame to settle the off-screen layout (images,
+    // fonts) before we snapshot it.
+    await new Promise((r) => setTimeout(r, 120));
+
+    const rawUri = await captureRef(ref, {
+      format: "png",
+      quality: 1,
+      result: "tmpfile",
+      width: 768,
+      height: 384,
+    });
+
+    // Force the bitmap to exactly 768×384 even if the underlying
+    // backend captured at the device's pixel density. Using PNG
+    // keeps the output lossless on the first pass.
+    let work = await ImageManipulator.manipulateAsync(
+      rawUri,
+      [{ resize: { width: 768, height: 384 } }],
+      {
+        compress: 1,
+        format: ImageManipulator.SaveFormat.PNG,
+      },
+    );
+
+    const MAX_BYTES = 295 * 1024;
+
+    async function readSize(uri: string): Promise<number> {
+      try {
+        const info = (await FileSystem.getInfoAsync(uri)) as {
+          size?: number;
+          exists?: boolean;
+        };
+        return info.exists ? info.size ?? 0 : 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    let size = await readSize(work.uri);
+
+    // PNG honours `compress` only as a quality hint; if we're still
+    // over budget we step the quality down a couple of times. As a
+    // last resort fall back to dropping the longest dimension by 6%
+    // increments — going below ~720×360 stops happening in practice
+    // at 295 KB, but guard against pathological photo content.
+    const tries: Array<{ q: number; w: number; h: number }> = [
+      { q: 0.9, w: 768, h: 384 },
+      { q: 0.7, w: 768, h: 384 },
+      { q: 0.5, w: 768, h: 384 },
+      { q: 0.4, w: 768, h: 384 },
+    ];
+    for (const t of tries) {
+      if (size <= MAX_BYTES) break;
+      work = await ImageManipulator.manipulateAsync(
+        rawUri,
+        [{ resize: { width: t.w, height: t.h } }],
+        { compress: t.q, format: ImageManipulator.SaveFormat.PNG },
+      );
+      size = await readSize(work.uri);
+    }
+
+    // Always finalise to exactly 768×384 — even if a previous
+    // compression attempt would have changed the pixel size we
+    // honour the spec.
+    if (work.width !== 768 || work.height !== 384) {
+      work = await ImageManipulator.manipulateAsync(
+        work.uri,
+        [{ resize: { width: 768, height: 384 } }],
+        { compress: 1, format: ImageManipulator.SaveFormat.PNG },
+      );
+      size = await readSize(work.uri);
+    }
+
+    if (size > MAX_BYTES) {
+      // Hard contract: the spec caps the PNG at 295 KB. If even the
+      // most aggressive PNG encode can't fit, fail loudly rather than
+      // silently uploading an oversize file.
+      throw new Error(
+        `PNG is ${(size / 1024).toFixed(0)} KB, over the 295 KB limit. Try removing the product image or switching styles.`,
+      );
+    }
+
+    const base64 = await FileSystem.readAsStringAsync(work.uri, {
+      encoding: "base64" as any,
+    });
+    return { uri: work.uri, base64, bytes: size, filename };
+  }
+
+  async function savePngToPhone(): Promise<void> {
+    if (!pngExportItem || pngBusy) return;
+    setPngBusy("phone");
+    try {
+      if (Platform.OS === "web") {
+        Alert.alert(
+          "Not supported on web",
+          "Open the app on your phone to save price tag PNGs to your photo library.",
+        );
+        return;
+      }
+      const captured = await capturePngForItem();
+      if (!captured) return;
+
+      // Copy to a stable file with the desired filename so the
+      // gallery shows the human-readable name (some Android galleries
+      // honour the source filename).
+      const dir = FileSystem.cacheDirectory ?? "";
+      let saveUri = captured.uri;
+      if (dir) {
+        const target = dir + captured.filename;
+        try {
+          await FileSystem.deleteAsync(target, { idempotent: true });
+          await FileSystem.copyAsync({ from: captured.uri, to: target });
+          saveUri = target;
+        } catch {
+          /* fall back to original temp uri */
+        }
+      }
+
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          "Permission needed",
+          "Allow access to your photo library so the PNG can be saved.",
+        );
+        return;
+      }
+      await MediaLibrary.saveToLibraryAsync(saveUri);
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      ).catch(() => {});
+      Alert.alert(
+        "Saved to Photos",
+        `${captured.filename}\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+      );
+      setPngExportItem(null);
+    } catch (e: any) {
+      Alert.alert("Save failed", e?.message ?? "Could not save PNG.");
+    } finally {
+      setPngBusy(null);
+    }
+  }
+
+  async function savePngToDrive(): Promise<void> {
+    if (!pngExportItem || pngBusy) return;
+    if (!authToken) {
+      Alert.alert("Sign in required", "Please sign in to upload to Drive.");
+      return;
+    }
+    setPngBusy("drive");
+    try {
+      const captured = await capturePngForItem();
+      if (!captured) return;
+
+      const resp = await fetch(apiUrl("/api/drive/upload"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          filename: captured.filename,
+          mimeType: "image/png",
+          dataBase64: captured.base64,
+          folderName: "Sathyam PriceTags",
+        }),
+      });
+      const text = await resp.text();
+      let body: any = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = null;
+      }
+      if (!resp.ok) {
+        const msg =
+          (body && typeof body.error === "string" && body.error) ||
+          `Drive upload failed (${resp.status}).`;
+        throw new Error(msg);
+      }
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      ).catch(() => {});
+      Alert.alert(
+        "Uploaded to Google Drive",
+        `${captured.filename}\nSaved in “Sathyam PriceTags” · ${(captured.bytes / 1024).toFixed(0)} KB`,
+      );
+      setPngExportItem(null);
+    } catch (e: any) {
+      Alert.alert("Drive upload failed", e?.message ?? "Could not upload PNG.");
+    } finally {
+      setPngBusy(null);
+    }
+  }
+
   function confirmClearAll() {
     Alert.alert(
       "Clear all price tags?",
@@ -1195,6 +1471,20 @@ export default function PriceTagReviewScreen() {
                   <Feather name="download" size={14} color={Colors.textInverse} />
                 )}
                 <Text style={styles.exportBtnText}>{exporting ? "Exporting…" : "Export PDF"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pngBtn}
+                onPress={() => setPngPickerOpen(true)}
+                disabled={priceTagReviewItems.length === 0}
+                activeOpacity={0.85}
+                accessibilityLabel="Export a single tag as a 768 by 384 PNG"
+              >
+                {/* Glossy highlight band — sits over the red base
+                    to give the button its 'shiny' appearance without
+                    pulling in a gradient library. */}
+                <View pointerEvents="none" style={styles.pngBtnShine} />
+                <Feather name="image" size={14} color={Colors.textInverse} />
+                <Text style={styles.pngBtnText}>PNG's</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -1818,6 +2108,241 @@ export default function PriceTagReviewScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* PNG export — item picker.
+            Step 1: pick which item from priceTagReviewItems to export.
+            Step 2 (after pngExportItem is set): destination chooser. */}
+        <Modal
+          visible={pngPickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPngPickerOpen(false)}
+        >
+          <View style={styles.modalScrim}>
+            <View
+              style={[styles.modalCard, { width: "92%", maxHeight: "80%" }]}
+            >
+              <View style={styles.pickerHeader}>
+                <Text style={styles.modalTitle}>Pick a tag to export as PNG</Text>
+                <TouchableOpacity
+                  onPress={() => setPngPickerOpen(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={20} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalBody}>
+                Each export is one PNG sized exactly 768×384 px (≤295 KB).
+              </Text>
+              {priceTagReviewItems.length === 0 ? (
+                <Text style={styles.noResults}>
+                  No items in this preview yet.
+                </Text>
+              ) : (
+                <FlatList
+                  data={priceTagReviewItems}
+                  keyExtractor={(it) => it.key}
+                  contentContainerStyle={{ paddingVertical: 4 }}
+                  keyboardShouldPersistTaps="handled"
+                  ItemSeparatorComponent={() => (
+                    <View style={styles.pickerSep} />
+                  )}
+                  renderItem={({ item }) => {
+                    const { value: pVal, label: pLabel } = priceFor(item);
+                    const mrp = fmt0(item.mrp);
+                    return (
+                      <TouchableOpacity
+                        style={styles.pickerRow}
+                        onPress={() => {
+                          setPngPickerOpen(false);
+                          setPngExportItem(item);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.pickerThumb}>
+                          {item.imageUri ? (
+                            <Image
+                              source={{ uri: item.imageUri }}
+                              style={{ width: 32, height: 32, borderRadius: 4 }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Feather name="tag" size={18} color={DEEP_RED} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.pickerName} numberOfLines={2}>
+                            {item.description || "(no description)"}
+                          </Text>
+                          <Text style={styles.pickerMeta} numberOfLines={1}>
+                            {mrp ? `MRP ₹${mrp}` : "MRP —"} · {pLabel} ₹{pVal}
+                            {item.promotionToDate
+                              ? ` · Valid till ${item.promotionToDate}`
+                              : ""}
+                          </Text>
+                        </View>
+                        <Feather
+                          name="chevron-right"
+                          size={16}
+                          color={Colors.textMuted}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* PNG export — destination chooser. */}
+        <Modal
+          visible={pngExportItem !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!pngBusy) setPngExportItem(null);
+          }}
+        >
+          <View style={styles.sheetScrim}>
+            <View style={styles.sheetCard}>
+              <Text style={styles.sheetTitle}>
+                Save “{pngExportItem?.description?.slice(0, 48) || "Tag"}”
+              </Text>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={savePngToPhone}
+                disabled={pngBusy !== null}
+                activeOpacity={0.7}
+              >
+                {pngBusy === "phone" ? (
+                  <ActivityIndicator color={Colors.primary} />
+                ) : (
+                  <Feather name="smartphone" size={20} color={Colors.text} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetRowText}>
+                    {pngBusy === "phone" ? "Saving…" : "Save to Phone"}
+                  </Text>
+                  <Text style={styles.sheetRowSub}>
+                    Adds the PNG to your photo library.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={savePngToDrive}
+                disabled={pngBusy !== null}
+                activeOpacity={0.7}
+              >
+                {pngBusy === "drive" ? (
+                  <ActivityIndicator color={Colors.primary} />
+                ) : (
+                  <Feather name="cloud" size={20} color={Colors.text} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetRowText}>
+                    {pngBusy === "drive"
+                      ? "Uploading…"
+                      : "Save to Google Drive"}
+                  </Text>
+                  <Text style={styles.sheetRowSub}>
+                    Uploads to “Sathyam PriceTags” folder.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetRow, styles.sheetCancelRow]}
+                onPress={() => {
+                  if (!pngBusy) setPngExportItem(null);
+                }}
+                disabled={pngBusy !== null}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sheetCancelText}>
+                  {pngBusy ? "Working…" : "Cancel"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Off-screen 768×384 capture canvas. We render the chosen
+            tag here so react-native-view-shot can snapshot it at
+            exactly the spec resolution without disturbing the
+            on-screen grid. The container is positioned far off
+            screen rather than `display:none` because hidden views
+            don't paint and view-shot would capture an empty image. */}
+        {pngExportItem ? (
+          <View
+            pointerEvents="none"
+            style={styles.pngCaptureHost}
+            collapsable={false}
+          >
+            <View
+              ref={pngCaptureRef}
+              collapsable={false}
+              style={styles.pngCaptureCanvas}
+            >
+              {(() => {
+                // Mirror the *exact* prop derivation used by the
+                // on-screen grid (see effStyle/bannerLabel block
+                // around line 1611). Keep this in lock-step with the
+                // visible tile so the exported PNG matches what the
+                // user sees.
+                const it = pngExportItem;
+                const effStyle: PriceTagStyle =
+                  it.style ?? priceTagReviewStyle;
+                if (effStyle === "A") {
+                  return (
+                    <StyleATag
+                      item={it}
+                      busy={false}
+                      showLogo={priceTagReviewShowLogo}
+                      onAddImage={() => {}}
+                      onRemoveImage={() => {}}
+                      onRemoveBackground={() => {}}
+                    />
+                  );
+                }
+                const bannerLabel =
+                  effStyle === "C"
+                    ? "Buy 1 Get 1 Free"
+                    : effStyle === "D"
+                      ? "RED Tag Sale"
+                      : effStyle === "E"
+                        ? it.customTitle?.trim() || "Edit Title"
+                        : "LOW PRICES";
+                return (
+                  <StyleBTag
+                    item={it}
+                    busy={false}
+                    showLogo={priceTagReviewShowLogo}
+                    onAddImage={() => {}}
+                    onRemoveImage={() => {}}
+                    onRemoveBackground={() => {}}
+                    bannerLabel={bannerLabel}
+                    showPriceRow={effStyle !== "D" && effStyle !== "E"}
+                    showOffBadge={
+                      effStyle !== "D" &&
+                      effStyle !== "C" &&
+                      effStyle !== "E"
+                    }
+                    showStyleAMrpRow={effStyle === "D" || effStyle === "E"}
+                    showStyleAPriceRow={effStyle === "D" || effStyle === "E"}
+                    showStyleASaveBadge={effStyle === "D" || effStyle === "E"}
+                    validTillTopLeft={
+                      effStyle === "B" ||
+                      effStyle === "C" ||
+                      effStyle === "D" ||
+                      effStyle === "E"
+                    }
+                  />
+                );
+              })()}
+            </View>
+          </View>
+        ) : null}
       </View>
     </>
   );
@@ -2738,6 +3263,46 @@ const styles = StyleSheet.create({
   },
   exportBtnBusy: { opacity: 0.7 },
   exportBtnText: { color: Colors.textInverse, fontWeight: "800", fontSize: 13 },
+  // Shiny red "PNG's" button. Vivid red base + a glossy diagonal
+  // shine band gives the visual lift the spec asks for without a
+  // gradient lib. Sits next to Export PDF in the toolbar.
+  pngBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: "#E11D2E",
+    borderWidth: 1, borderColor: "#7A0F19",
+    overflow: "hidden", position: "relative",
+    shadowColor: "#7A0F19", shadowOpacity: 0.45, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  pngBtnShine: {
+    position: "absolute",
+    top: -10, left: -10, right: -10, height: 14,
+    backgroundColor: "rgba(255,255,255,0.45)",
+    transform: [{ rotate: "-6deg" }],
+  },
+  pngBtnText: {
+    color: Colors.textInverse, fontWeight: "900",
+    fontSize: 13, letterSpacing: 0.4,
+    textShadowColor: "rgba(0,0,0,0.25)",
+    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1,
+  },
+  // Off-screen 768×384 host. Positioned far above the viewport so
+  // it paints (view-shot needs a real layout) without ever being
+  // visible to the user. Fixed pixel size so the snapshot matches
+  // the spec exactly.
+  pngCaptureHost: {
+    position: "absolute",
+    top: -100000, left: 0,
+    width: 768, height: 384,
+    opacity: 0,
+  },
+  pngCaptureCanvas: {
+    width: 768, height: 384,
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    justifyContent: "center",
+  },
   saveBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,

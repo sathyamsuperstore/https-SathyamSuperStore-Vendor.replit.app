@@ -15,12 +15,21 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.coimbatoresathyamsuperstorevendorportal.app"
+      "bundleIdentifier": "com.coimbatoresathyamsuperstorevendorportal.app",
+      "infoPlist": {
+        "NSPhotoLibraryAddUsageDescription": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
+        "NSPhotoLibraryUsageDescription": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos."
+      }
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
       "edgeToEdgeEnabled": false,
       "package": "com.coimbatoresathyamsuperstorevendorportal.app",
+      "permissions": [
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -37,7 +46,15 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
+          "savePhotosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
