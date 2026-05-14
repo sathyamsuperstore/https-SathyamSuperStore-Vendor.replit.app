@@ -1501,11 +1501,13 @@ export default function PriceTagReviewScreen() {
             {items.length} tag{items.length === 1 ? "" : "s"}
             {mode === "modify" ? " · editing" : ""}
           </Text>
-          <View style={{ flex: 1 }} />
+          {/* When the toolbar wraps onto two rows we don't want a
+              flex spacer eating the whole first row — push buttons
+              with marginLeft:auto on the first one instead. */}
           {mode === "view" ? (
             <>
               <TouchableOpacity
-                style={styles.modifyBtn}
+                style={[styles.modifyBtn, { marginLeft: "auto" }]}
                 onPress={sortByPromoSortCode}
                 disabled={priceTagReviewItems.length < 2}
               >
@@ -1653,6 +1655,11 @@ export default function PriceTagReviewScreen() {
               label="D · RED Tag Sale"
               active={priceTagReviewStyle === "D"}
               onPress={() => setPriceTagReviewStyle("D")}
+            />
+            <StyleChip
+              label="E · Custom Title"
+              active={priceTagReviewStyle === "E"}
+              onPress={() => setPriceTagReviewStyle("E")}
             />
           </ScrollView>
           <TouchableOpacity
@@ -3313,7 +3320,9 @@ const styles = StyleSheet.create({
   emptyBtnText: { color: Colors.textInverse, fontWeight: "700" },
   toolbar: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+    flexWrap: "wrap",
+    paddingHorizontal: 12, paddingVertical: 10,
+    rowGap: 8, columnGap: 8,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
     backgroundColor: Colors.surface,
   },
