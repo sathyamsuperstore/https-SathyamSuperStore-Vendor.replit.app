@@ -1500,19 +1500,17 @@ export default function PriceTagReviewScreen() {
                 )}
                 <Text style={styles.exportBtnText}>{exporting ? "Exporting…" : "Export PDF"}</Text>
               </TouchableOpacity>
+              {/* "IMG" button — visual clone of Export PDF. Picks one
+                  item then saves a single-item JPEG to the phone
+                  (same flow that the old red "PNG's" button used). */}
               <TouchableOpacity
-                style={styles.pngBtn}
+                style={styles.exportBtn}
                 onPress={() => setPngPickerOpen(true)}
                 disabled={priceTagReviewItems.length === 0}
-                activeOpacity={0.85}
-                accessibilityLabel="Export a single tag as a 768 by 384 PNG"
+                accessibilityLabel="Export a single tag as a JPEG image"
               >
-                {/* Glossy highlight band — sits over the red base
-                    to give the button its 'shiny' appearance without
-                    pulling in a gradient library. */}
-                <View pointerEvents="none" style={styles.pngBtnShine} />
                 <Feather name="image" size={14} color={Colors.textInverse} />
-                <Text style={styles.pngBtnText}>PNG's</Text>
+                <Text style={styles.exportBtnText}>IMG</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -3315,30 +3313,6 @@ const styles = StyleSheet.create({
   },
   exportBtnBusy: { opacity: 0.7 },
   exportBtnText: { color: Colors.textInverse, fontWeight: "800", fontSize: 13 },
-  // Shiny red "PNG's" button. Vivid red base + a glossy diagonal
-  // shine band gives the visual lift the spec asks for without a
-  // gradient lib. Sits next to Export PDF in the toolbar.
-  pngBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    backgroundColor: "#E11D2E",
-    borderWidth: 1, borderColor: "#7A0F19",
-    overflow: "hidden", position: "relative",
-    shadowColor: "#7A0F19", shadowOpacity: 0.45, shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 }, elevation: 3,
-  },
-  pngBtnShine: {
-    position: "absolute",
-    top: -10, left: -10, right: -10, height: 14,
-    backgroundColor: "rgba(255,255,255,0.45)",
-    transform: [{ rotate: "-6deg" }],
-  },
-  pngBtnText: {
-    color: Colors.textInverse, fontWeight: "900",
-    fontSize: 13, letterSpacing: 0.4,
-    textShadowColor: "rgba(0,0,0,0.25)",
-    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1,
-  },
   // Off-screen high-res capture host. 2:1 frame (1900×950) matches
   // the user-requested wide aspect for the saved JPEG. The inner
   // canvas is a flex column so the tag (passed cardStyle={{flex:1}})
