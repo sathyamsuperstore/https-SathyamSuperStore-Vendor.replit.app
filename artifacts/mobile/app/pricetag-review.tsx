@@ -1335,7 +1335,13 @@ export default function PriceTagReviewScreen() {
         }
       }
 
-      const perm = await MediaLibrary.requestPermissionsAsync();
+      // Request only the photo scope. Without a granular list,
+      // expo-media-library asks for AUDIO too, which crashes on
+      // Android when the plugin is configured for photos only.
+      const perm = await MediaLibrary.requestPermissionsAsync(
+        false,
+        ["photo"],
+      );
       if (!perm.granted) {
         Alert.alert(
           "Permission needed",

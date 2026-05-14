@@ -52,7 +52,8 @@
         {
           "photosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
           "savePhotosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
-          "isAccessMediaLocationEnabled": false
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": ["photo"]
         }
       ]
     ],
