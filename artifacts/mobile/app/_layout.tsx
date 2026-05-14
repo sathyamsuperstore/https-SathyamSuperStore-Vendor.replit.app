@@ -52,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="promo-compare" options={{ presentation: "card", title: "Promo Changes" }} />
       <Stack.Screen name="pricetag-preview" options={{ presentation: "card", title: "PriceTag Preview" }} />
       <Stack.Screen name="pricetag-review" options={{ presentation: "card", title: "PriceTag Review" }} />
+      <Stack.Screen name="pricetag-img" options={{ presentation: "card", title: "PriceTag IMG" }} />
     </Stack>
   );
 }

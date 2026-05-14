@@ -2190,7 +2190,15 @@ export default function PriceTagReviewScreen() {
                         style={styles.pickerRow}
                         onPress={() => {
                           setPngPickerOpen(false);
-                          setPngExportItem(item);
+                          // New flow (May 2026): instead of capturing
+                          // a JPEG inline, navigate to the dedicated
+                          // "PriceTag IMG" screen and show the chosen
+                          // tag at full size. The screen looks the
+                          // tag up by `key` from AppContext.
+                          router.push({
+                            pathname: "/pricetag-img",
+                            params: { itemKey: item.key },
+                          });
                         }}
                         activeOpacity={0.7}
                       >
@@ -2400,7 +2408,7 @@ export default function PriceTagReviewScreen() {
 // Side-by-side text+image cramped the price digits at the 48%-wide
 // tile size, so we stack instead and keep heights bounded.
 
-function StyleATag({
+export function StyleATag({
   item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
   cardStyle,
 }: {
@@ -2513,7 +2521,7 @@ function StyleATag({
 // directly below the big price. Item No tucked in tiny under the
 // banner.
 
-function StyleBTag({
+export function StyleBTag({
   item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
   bannerLabel = "LOW PRICES",
   onEditTitle,
