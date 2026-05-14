@@ -67,6 +67,12 @@ export const RenderPriceTagBody = zod.object({
     .describe(
       "Device scale factor used by Chromium (default 4). Higher = crisper output but slower \/ larger file.\n",
     ),
+  aspect: zod
+    .enum(["banner", "square"])
+    .optional()
+    .describe(
+      "Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.\n",
+    ),
 });
 
 export const RenderPriceTagResponse = zod.object({

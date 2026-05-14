@@ -36,6 +36,18 @@ export interface PriceTagItem {
   style?: PriceTagStyle;
 }
 
+/**
+ * Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
+
+ */
+export type PriceTagRenderInputAspect =
+  (typeof PriceTagRenderInputAspect)[keyof typeof PriceTagRenderInputAspect];
+
+export const PriceTagRenderInputAspect = {
+  banner: "banner",
+  square: "square",
+} as const;
+
 export interface PriceTagRenderInput {
   item: PriceTagItem;
   style: PriceTagStyle;
@@ -55,6 +67,9 @@ export interface PriceTagRenderInput {
    * @maximum 6
    */
   scale?: number;
+  /** Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
+   */
+  aspect?: PriceTagRenderInputAspect;
 }
 
 export type PriceTagRenderResultMimeType =

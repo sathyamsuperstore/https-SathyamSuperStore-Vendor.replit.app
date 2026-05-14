@@ -99,7 +99,10 @@ function offAmount(item: PriceTagItem): string | null {
 // Filename for the exported JPEG. Mirrors the contract used by the
 // review-screen export: `Description_MRP_Promo.jpg` with filesystem-
 // unsafe characters squashed to underscores.
-function exportFilename(item: PriceTagItem): string {
+function exportFilename(
+  item: PriceTagItem,
+  opts?: { square?: boolean },
+): string {
   const clean = (raw: string) =>
     raw
       .replace(/[\/\\:*?"<>|\r\n\t\u0000-\u001F]+/g, "_")
@@ -111,7 +114,11 @@ function exportFilename(item: PriceTagItem): string {
     item.promotionPrice !== "" && item.promotionPrice !== undefined
       ? clean(fmt0(item.promotionPrice))
       : "";
-  const tail = `_${mrp}_${promo}.jpg`;
+  // For square (1:1) exports the user wants "SQUARE" baked into the
+  // filename so they can tell at a glance which file is meant for
+  // Instagram and which is the wide banner.
+  const squareTag = opts?.square ? "_SQUARE" : "";
+  const tail = `_${mrp}_${promo}${squareTag}.jpg`;
   const MAX = 200;
   const trimmed =
     desc.length + tail.length > MAX
@@ -415,12 +422,17 @@ export default function PriceTagImgScreen() {
     priceTagReviewShowLogo,
   } = useApp();
 
+  // The 2:1 banner Showcase strips promotionToDate so the side rail
+  // doesn't render. The 1:1 Showcase SQ explicitly *wants* the date,
+  // shown horizontally at the bottom in gray.
+  const isShowcaseSq = layout === "showcase-sq";
   const item = useMemo(() => {
     if (!itemKey) return null;
     const found = priceTagReviewItems.find((i) => i.key === itemKey);
     if (!found) return null;
+    if (isShowcaseSq) return { ...found };
     return { ...found, promotionToDate: undefined };
-  }, [itemKey, priceTagReviewItems]);
+  }, [itemKey, priceTagReviewItems, isShowcaseSq]);
 
   // ---- "Export IMG" calls the api-server's /pricetag/render endpoint
   // which renders the same HTML/CSS the PDF export uses through a
@@ -441,6 +453,8 @@ export default function PriceTagImgScreen() {
   }
 
   const isShowcase = layout === "showcase";
+  // Either Showcase variant exposes the Download button.
+  const isShowcaseAny = isShowcase || isShowcaseSq;
 
   async function handleExport() {
     if (!item || exporting) return;
@@ -476,8 +490,11 @@ export default function PriceTagImgScreen() {
           },
           style: "E",
           showLogo: priceTagReviewShowLogo,
-          widthPx: 380,
-          scale: 5,
+          // Square: 540 × scale 2 → 1080×1080 (Instagram).
+          // Banner: 380 × scale 5 → 1900×~ (matches existing flow).
+          widthPx: isShowcaseSq ? 540 : 380,
+          scale: isShowcaseSq ? 2 : 5,
+          aspect: isShowcaseSq ? "square" : "banner",
         }),
       });
       if (!renderRes.ok) {
@@ -494,7 +511,7 @@ export default function PriceTagImgScreen() {
       };
       if (!payload?.base64) throw new Error("Server returned no image bytes");
 
-      const filename = exportFilename(item);
+      const filename = exportFilename(item, { square: isShowcaseSq });
 
       if (Platform.OS === "web") {
         const bytes = Uint8Array.from(atob(payload.base64), (c) =>
@@ -579,7 +596,11 @@ export default function PriceTagImgScreen() {
   }
 
   const renderTag = () => {
-    if (isShowcase) return <ShowcaseTag item={item} />;
+    // Showcase SQ uses the same on-screen ShowcaseTag for the
+    // preview — only the surrounding frame's aspect changes
+    // (1:1 vs 2:1) and the server-side render uses a different
+    // template tuned for square output.
+    if (isShowcaseAny) return <ShowcaseTag item={item} />;
 
     const effStyle: PriceTagStyle = item.style ?? priceTagReviewStyle;
     if (effStyle === "A") {
@@ -640,19 +661,36 @@ export default function PriceTagImgScreen() {
     >
       <Stack.Screen
         options={{
-          title: isShowcase ? "PriceTag IMG — Showcase" : "PriceTag IMG",
+          title: isShowcaseSq
+            ? "PriceTag IMG — Showcase SQ"
+            : isShowcase
+              ? "PriceTag IMG — Showcase"
+              : "PriceTag IMG",
         }}
       />
 
-      <View style={screen.frame}>{renderTag()}</View>
+      <View
+        style={[
+          screen.frame,
+          // Square frame for Showcase SQ so the preview matches the
+          // 1:1 file the user will get.
+          isShowcaseSq ? screen.frameSquare : null,
+        ]}
+      >
+        {renderTag()}
+      </View>
       <Text style={screen.caption}>{item.description}</Text>
 
-      {isShowcase ? (
+      {isShowcaseAny ? (
         <TouchableOpacity
           style={[screen.exportBtn, exporting && screen.exportBtnBusy]}
           onPress={handleExport}
           disabled={exporting}
-          accessibilityLabel="Save the showcase tag as a JPEG image"
+          accessibilityLabel={
+            isShowcaseSq
+              ? "Save the square (1:1) showcase tag as a JPEG image"
+              : "Save the showcase tag as a JPEG image"
+          }
         >
           {exporting ? (
             <ActivityIndicator size="small" color={Colors.textInverse} />
@@ -664,7 +702,11 @@ export default function PriceTagImgScreen() {
             />
           )}
           <Text style={screen.exportBtnText}>
-            {exporting ? "Saving…" : "Download Banner"}
+            {exporting
+              ? "Saving…"
+              : isShowcaseSq
+                ? "Download Square"
+                : "Download Banner"}
           </Text>
         </TouchableOpacity>
       ) : null}
@@ -685,6 +727,7 @@ const screen = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  frameSquare: { aspectRatio: 1 },
   tagFill: { flex: 1, width: "100%", height: "100%" },
   caption: {
     marginTop: 12,

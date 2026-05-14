@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import puppeteer, { type Browser } from "puppeteer";
 import {
   buildSingleTagHtml,
+  buildSquareShowcaseHtml,
   LOGO_BASE64,
   type PriceTagRenderItem,
   type PriceTagStyle,
@@ -137,7 +138,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     return;
   }
 
-  const { item, style, showLogo, widthPx: rawWidth, scale: rawScale } = parsed.data;
+  const { item, style, showLogo, widthPx: rawWidth, scale: rawScale, aspect } = parsed.data;
 
   const safety = isImageUriSafe(item.imageUri);
   if (!safety.ok) {
@@ -145,16 +146,27 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     res.status(400).json({ error: `Invalid imageUri: ${safety.reason}` });
     return;
   }
-  const widthPx = rawWidth ?? 380;
+  const isSquare = aspect === "square";
+  // Square defaults to a wider body (540px) so a 1080px Instagram
+  // export only needs scale=2. Banner keeps the original 380px PDF
+  // grid column width.
+  const widthPx = rawWidth ?? (isSquare ? 540 : 380);
   const scale = rawScale ?? 4;
 
-  const html = buildSingleTagHtml(
-    item as PriceTagRenderItem,
-    style as PriceTagStyle,
-    showLogo,
-    LOGO_BASE64,
-    { widthPx },
-  );
+  const html = isSquare
+    ? buildSquareShowcaseHtml(
+        item as PriceTagRenderItem,
+        showLogo,
+        LOGO_BASE64,
+        { widthPx },
+      )
+    : buildSingleTagHtml(
+        item as PriceTagRenderItem,
+        style as PriceTagStyle,
+        showLogo,
+        LOGO_BASE64,
+        { widthPx },
+      );
 
   let page;
   try {
@@ -162,7 +174,10 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     page = await browser.newPage();
     await page.setViewport({
       width: widthPx,
-      height: 600, // arbitrary — fullPage screenshot below uses content height
+      // Square needs an exact widthPx height so the body fits without
+      // a scrollbar. Banner uses an arbitrary tall viewport because
+      // the clip below shrinks to body bbox.
+      height: isSquare ? widthPx : 600,
       deviceScaleFactor: scale,
     });
     // Use `domcontentloaded` + a manual font/image wait. `networkidle0`
@@ -189,15 +204,20 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
 
     // Measure actual content size so the screenshot is cropped tight
     // around the tag. fullPage would pad to viewport height; explicit
-    // `clip` matches `body`'s bounding box exactly.
-    const dims = await page.evaluate(`(() => {
-      const b = document.body;
-      const r = b.getBoundingClientRect();
-      return { w: Math.ceil(r.width), h: Math.ceil(b.scrollHeight || r.height) };
-    })()`) as { w: number; h: number };
-
-    const clipW = Math.max(1, dims.w || widthPx);
-    const clipH = Math.max(1, dims.h || 200);
+    // `clip` matches `body`'s bounding box exactly. For square output
+    // we skip the measurement and use widthPx × widthPx so the result
+    // is a perfect 1:1 even if the body has 1px subpixel slack.
+    let clipW = widthPx;
+    let clipH = widthPx;
+    if (!isSquare) {
+      const dims = await page.evaluate(`(() => {
+        const b = document.body;
+        const r = b.getBoundingClientRect();
+        return { w: Math.ceil(r.width), h: Math.ceil(b.scrollHeight || r.height) };
+      })()`) as { w: number; h: number };
+      clipW = Math.max(1, dims.w || widthPx);
+      clipH = Math.max(1, dims.h || 200);
+    }
 
     const buffer = await page.screenshot({
       type: "jpeg",

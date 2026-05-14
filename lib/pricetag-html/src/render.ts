@@ -442,6 +442,196 @@ export function buildPdfHtml(
 </body></html>`;
 }
 
+// ----- Square Showcase (1:1, Instagram-friendly) -----
+//
+// A standalone 1:1 layout used by the mobile "Showcase SQ" button.
+// Distinct from the PDF tag styles (A/B/C/D/E) because it has to
+// look great when posted as an Instagram square: bigger imagery,
+// centered hierarchy, and a horizontally-oriented "Valid Till" line
+// at the bottom (gray, no rotation).
+export function renderSquareShowcaseHtml(
+  it: PriceTagRenderItem,
+  showLogo: boolean,
+  logoDataUri: string,
+): string {
+  const { value } = priceFor(it);
+  const mrp = fmt0(it.mrp);
+  const off = offAmount(it);
+  const desc = it.description || "";
+  const tamil = hasTamil(desc);
+  const descSpan = tamil
+    ? `<span class="tamil">${escapeHtml(desc)}</span>`
+    : escapeHtml(desc);
+  const img = it.imageUri
+    ? `<img src="${it.imageUri}" />`
+    : `<div class="img-placeholder">No Image</div>`;
+  const title = (it.customTitle?.trim() || "SPECIAL OFFER").toUpperCase();
+  const itemNo = (it.itemNo ?? "").trim();
+  const validTill = it.promotionToDate
+    ? `Valid Till : ${escapeHtml(
+        (it.promotionToDate || "").trim().replace(/\//g, "-"),
+      )}`
+    : "";
+  const watermark = showLogo
+    ? `<img class="watermark" src="${logoDataUri}" alt="" />`
+    : "";
+
+  return `
+    <div class="tagSq">
+      ${watermark}
+      <div class="topBarSq">${escapeHtml(title)}</div>
+      <div class="imgRowSq">
+        <div class="imgFrameSq">${img}</div>
+      </div>
+      <div class="descSq">${descSpan}</div>
+      <div class="priceColSq">
+        ${mrp ? `<div class="mrpLineSq">MRP <span class="strike">₹${escapeHtml(mrp)}</span></div>` : ""}
+        <div class="priceBoxSq">
+          <span class="priceCurrencySq">₹</span><span class="priceValueSq">${escapeHtml(value)}</span>
+        </div>
+        ${off ? `<div class="saveRowSq"><span class="savePillSq">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
+      </div>
+      <div class="footerRowSq">
+        <span class="itemNoSq">${itemNo ? "Item: " + escapeHtml(itemNo) : ""}</span>
+        <span class="validTillSq">${validTill}</span>
+      </div>
+    </div>
+  `;
+}
+
+export const PDF_CSS_SQ = `
+  .tagSq {
+    width: 540px; height: 540px;
+    background: linear-gradient(180deg, ${CREAM} 0%, #F2E5C2 100%);
+    border: 4px solid ${DEEP_RED};
+    position: relative;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .tagSq .watermark {
+    position: absolute;
+    top: 10px; right: 12px;
+    width: 70px; height: auto;
+    opacity: 0.55;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .tagSq .topBarSq {
+    background: ${DEEP_RED};
+    color: #FFF;
+    text-align: center;
+    font-size: 26px; font-weight: 900;
+    letter-spacing: 1.5px;
+    padding: 12px 60px 12px 16px;
+    line-height: 1.1;
+  }
+  .tagSq .imgRowSq {
+    flex: 1;
+    min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 14px;
+  }
+  .tagSq .imgFrameSq {
+    width: 240px; height: 240px;
+    background: #FFFFFF;
+    border: 2px solid ${GOLD};
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px;
+    box-shadow: 0 2px 0 rgba(122, 15, 25, 0.12);
+  }
+  .tagSq .imgFrameSq img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
+  .tagSq .imgFrameSq .img-placeholder {
+    color: #94A3B8; font-size: 14px; font-weight: 700;
+  }
+  .tagSq .descSq {
+    text-align: center;
+    color: #1F2937;
+    font-size: 20px; font-weight: 800;
+    line-height: 1.2;
+    padding: 0 18px;
+    margin-bottom: 6px;
+    /* Cap to two lines so long descriptions don't break the layout */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tagSq .priceColSq {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px;
+    padding: 0 16px;
+  }
+  .tagSq .mrpLineSq {
+    font-size: 14px; color: #6B7280; font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .tagSq .mrpLineSq .strike { text-decoration: line-through; }
+  .tagSq .priceBoxSq {
+    background: ${DEEP_RED};
+    border-radius: 12px;
+    padding: 8px 26px;
+    display: inline-flex; align-items: baseline; gap: 6px;
+  }
+  .tagSq .priceCurrencySq {
+    color: #FFF; font-size: 26px; font-weight: 900;
+  }
+  .tagSq .priceValueSq {
+    color: #FFF; font-size: 48px; font-weight: 900; line-height: 1;
+  }
+  .tagSq .saveRowSq {
+    display: flex; justify-content: center;
+  }
+  .tagSq .savePillSq {
+    background: ${GOLD};
+    color: ${DEEP_RED};
+    font-weight: 900; font-size: 14px;
+    letter-spacing: 0.5px;
+    padding: 4px 16px;
+    border-radius: 999px;
+  }
+  .tagSq .footerRowSq {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px 12px;
+    font-size: 12px; color: #6B7280; font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .tagSq .itemNoSq { color: #6B7280; }
+  .tagSq .validTillSq { color: #6B7280; }
+`;
+
+// Square 1:1 wrapper for the server-side JPEG renderer. The body is
+// sized exactly widthPx × widthPx so Chromium clips a perfect square.
+export function buildSquareShowcaseHtml(
+  item: PriceTagRenderItem,
+  showLogo: boolean,
+  logoDataUri: string,
+  opts: { widthPx?: number } = {},
+): string {
+  const widthPx = opts.widthPx ?? 540;
+  const tagHtml = renderSquareShowcaseHtml(item, showLogo, logoDataUri);
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8" />
+<title>Price Tag — Square</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: #FFFFFF;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #0F172A;
+  }
+  body { width: ${widthPx}px; height: ${widthPx}px; }
+  .tamil { font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif; }
+  .tagSq { width: ${widthPx}px !important; height: ${widthPx}px !important; }
+  ${PDF_CSS_SQ}
+</style>
+</head><body>${tagHtml}</body></html>`;
+}
+
 // Single-tag wrapper for the server-side JPEG renderer. The body is
 // sized to the natural tag width (380px ≈ one column of the PDF
 // grid). The api-server screenshots at deviceScaleFactor>=3 to get

@@ -338,7 +338,9 @@ export default function PriceTagReviewScreen() {
   // Which IMG screen layout the picker is targeting. "default" routes
   // to the existing tag layout; "showcase" routes to the new
   // visually-redesigned 2:1 layout opened by the "Showcase" button.
-  const [imgPickerLayout, setImgPickerLayout] = useState<"default" | "showcase">("default");
+  const [imgPickerLayout, setImgPickerLayout] = useState<
+    "default" | "showcase" | "showcase-sq"
+  >("default");
   const [pngExportItem, setPngExportItem] = useState<PriceTagItem | null>(null);
   const [pngBusy, setPngBusy] = useState<null | "phone" | "drive">(null);
   const pngCaptureRef = useRef<View>(null);
@@ -1533,6 +1535,22 @@ export default function PriceTagReviewScreen() {
               >
                 <Feather name="star" size={14} color={Colors.textInverse} />
                 <Text style={styles.exportBtnText}>Showcase</Text>
+              </TouchableOpacity>
+              {/* "Showcase SQ" — same flow as Showcase but the
+                  exported file is 1:1 (Instagram-friendly). The
+                  IMG screen renders a square preview and posts
+                  aspect="square" to the server renderer. */}
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={() => {
+                  setImgPickerLayout("showcase-sq");
+                  setPngPickerOpen(true);
+                }}
+                disabled={priceTagReviewItems.length === 0}
+                accessibilityLabel="Open a single tag in the square (1:1) Showcase layout"
+              >
+                <Feather name="square" size={14} color={Colors.textInverse} />
+                <Text style={styles.exportBtnText}>Showcase SQ</Text>
               </TouchableOpacity>
             </>
           ) : (

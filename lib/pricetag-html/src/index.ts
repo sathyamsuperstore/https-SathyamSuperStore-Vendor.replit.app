@@ -27,6 +27,9 @@ export {
   renderTagAHtml,
   renderTagBHtml,
   renderTagHtmlForStyle,
+  renderSquareShowcaseHtml,
   buildPdfHtml,
   buildSingleTagHtml,
+  buildSquareShowcaseHtml,
+  PDF_CSS_SQ,
 } from "./render";
