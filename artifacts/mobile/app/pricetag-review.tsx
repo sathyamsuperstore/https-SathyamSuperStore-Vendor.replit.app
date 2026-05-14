@@ -13,6 +13,7 @@ import {
   TextInput,
   ActivityIndicator,
   FlatList,
+  Linking,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -1132,25 +1133,25 @@ export default function PriceTagReviewScreen() {
         .trim();
       return stripped.replace(/^_+|_+$/g, "") || "_";
     };
-    const desc = cleanField(item.description || "PriceTag");
-    const mrpRaw = fmt0(item.mrp);
-    // Spec is explicit: PromoPrice segment uses the item's
-    // promotionPrice. If absent we write "0" rather than substituting
-    // SP — the filename has to faithfully reflect what the tag was
-    // promoting, even when no promo was set.
-    const promoRaw = fmt0(item.promotionPrice);
-    const mrp = cleanField(mrpRaw || "0");
-    const promo = cleanField(promoRaw || "0");
+    // Strict fallback contract: missing MRP / PromoPrice / Valid Till
+    // segments are emitted as empty strings, preserving the four
+    // underscore separators. So a tag with only a description and
+    // valid-till date becomes `Foo___10052026.png`.
+    const descRaw = (item.description ?? "").trim();
+    const desc = descRaw ? cleanField(descRaw) : "PriceTag";
+    const mrp = item.mrp !== undefined && item.mrp !== ""
+      ? cleanField(fmt0(item.mrp))
+      : "";
+    const promo =
+      item.promotionPrice !== undefined && item.promotionPrice !== ""
+        ? cleanField(fmt0(item.promotionPrice))
+        : "";
     // Flatten the Valid Till date to DDMMYYYY. The importer emits
     // DD/MM/YYYY most of the time, but we also tolerate
-    // DD-MM-YYYY and ISO YYYY-MM-DD as a courtesy.
+    // DD-MM-YYYY and ISO YYYY-MM-DD. Missing date → empty segment.
     const date = (() => {
       const raw = (item.promotionToDate ?? "").trim();
-      if (!raw) {
-        const d = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
-      }
+      if (!raw) return "";
       const parts = raw.split(/[\/\-\.]/).map((s) => s.trim());
       if (parts.length === 3) {
         const looksIso = parts[0].length === 4;
@@ -1164,7 +1165,17 @@ export default function PriceTagReviewScreen() {
       }
       return cleanField(raw);
     })();
-    return `${desc}_${mrp}_${promo}_${date}.png`;
+    // Trim the description if the assembled name would exceed common
+    // filesystem limits (~200 chars before extension). The other
+    // segments are short enough that only the description can blow
+    // the budget.
+    const tail = `_${mrp}_${promo}_${date}.png`;
+    const MAX = 200;
+    const descTrimmed =
+      desc.length + tail.length > MAX
+        ? desc.slice(0, Math.max(1, MAX - tail.length))
+        : desc;
+    return `${descTrimmed}${tail}`;
   }
 
   // Capture the off-screen 768×384 tag, downsample/clamp to exactly
@@ -1278,15 +1289,35 @@ export default function PriceTagReviewScreen() {
     if (!pngExportItem || pngBusy) return;
     setPngBusy("phone");
     try {
-      if (Platform.OS === "web") {
-        Alert.alert(
-          "Not supported on web",
-          "Open the app on your phone to save price tag PNGs to your photo library.",
-        );
-        return;
-      }
       const captured = await capturePngForItem();
       if (!captured) return;
+
+      if (Platform.OS === "web") {
+        // Web has no photo library — trigger a normal browser
+        // download so the user gets the same PNG file with the same
+        // contract filename. We rebuild the blob from the base64 we
+        // already have, which avoids fetching the file:// URL (web
+        // fs APIs vary across browsers).
+        const bytes = Uint8Array.from(atob(captured.base64), (c) =>
+          c.charCodeAt(0),
+        );
+        const blob = new Blob([bytes], { type: "image/png" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = captured.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Give Safari a moment to start the download before revoking.
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        Alert.alert(
+          "Downloaded",
+          `${captured.filename}\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+        );
+        setPngExportItem(null);
+        return;
+      }
 
       // Copy to a stable file with the desired filename so the
       // gallery shows the human-readable name (some Android galleries
@@ -1312,13 +1343,30 @@ export default function PriceTagReviewScreen() {
         );
         return;
       }
-      await MediaLibrary.saveToLibraryAsync(saveUri);
+      // Save into a dedicated "Sathyam PriceTags" album (created on
+      // first use). createAssetAsync gives us the asset handle we
+      // need; addAssetsToAlbumAsync moves rather than copies on iOS
+      // so the asset only appears in the album.
+      const asset = await MediaLibrary.createAssetAsync(saveUri);
+      const ALBUM = "Sathyam PriceTags";
+      try {
+        const album = await MediaLibrary.getAlbumAsync(ALBUM);
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        } else {
+          await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+        }
+      } catch {
+        // Album writes can fail on locked-down Android setups; the
+        // asset is still in the photo library, so don't bubble the
+        // error to the user.
+      }
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success,
       ).catch(() => {});
       Alert.alert(
         "Saved to Photos",
-        `${captured.filename}\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+        `${captured.filename}\nAlbum: Sathyam PriceTags\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
       );
       setPngExportItem(null);
     } catch (e: any) {
@@ -1368,9 +1416,23 @@ export default function PriceTagReviewScreen() {
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success,
       ).catch(() => {});
+      const webViewLink: string | undefined =
+        body && typeof body.webViewLink === "string"
+          ? body.webViewLink
+          : undefined;
+      const buttons: any[] = [{ text: "Done", style: "cancel" }];
+      if (webViewLink) {
+        buttons.push({
+          text: "Open in Drive",
+          onPress: () => {
+            Linking.openURL(webViewLink).catch(() => {});
+          },
+        });
+      }
       Alert.alert(
         "Uploaded to Google Drive",
         `${captured.filename}\nSaved in “Sathyam PriceTags” · ${(captured.bytes / 1024).toFixed(0)} KB`,
+        buttons,
       );
       setPngExportItem(null);
     } catch (e: any) {
@@ -2148,8 +2210,12 @@ export default function PriceTagReviewScreen() {
                     <View style={styles.pickerSep} />
                   )}
                   renderItem={({ item }) => {
-                    const { value: pVal, label: pLabel } = priceFor(item);
                     const mrp = fmt0(item.mrp);
+                    // Show the *effective* style — per-item override
+                    // takes precedence over the review-wide selection.
+                    const effStyle: PriceTagStyle =
+                      item.style ?? priceTagReviewStyle;
+                    const brand = (item.brand ?? "").trim();
                     return (
                       <TouchableOpacity
                         style={styles.pickerRow}
@@ -2175,10 +2241,13 @@ export default function PriceTagReviewScreen() {
                             {item.description || "(no description)"}
                           </Text>
                           <Text style={styles.pickerMeta} numberOfLines={1}>
-                            {mrp ? `MRP ₹${mrp}` : "MRP —"} · {pLabel} ₹{pVal}
-                            {item.promotionToDate
-                              ? ` · Valid till ${item.promotionToDate}`
-                              : ""}
+                            {brand ? `${brand} · ` : ""}
+                            {mrp ? `MRP ₹${mrp}` : "MRP —"}
+                          </Text>
+                        </View>
+                        <View style={styles.pickerStyleChip}>
+                          <Text style={styles.pickerStyleChipText}>
+                            {effStyle}
                           </Text>
                         </View>
                         <Feather
@@ -3302,6 +3371,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     padding: 12,
     justifyContent: "center",
+  },
+  // Small "A/B/C/D/E" chip on the picker row so the user can see at
+  // a glance which style each item will be exported in.
+  pickerStyleChip: {
+    minWidth: 24, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10, backgroundColor: "#F2E9D8",
+    borderWidth: 1, borderColor: "#D4B97A",
+    alignItems: "center", justifyContent: "center",
+  },
+  pickerStyleChipText: {
+    color: "#7A4F00", fontSize: 11, fontWeight: "800",
   },
   saveBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,

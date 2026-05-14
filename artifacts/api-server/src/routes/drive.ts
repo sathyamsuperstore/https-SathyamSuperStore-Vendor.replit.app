@@ -128,7 +128,11 @@ router.get("/drive/file/:fileId", async (req, res) => {
 
 async function findFolderByName(name: string): Promise<string | null> {
   const safe = name.replace(/'/g, "\\'");
-  const q = `name='${safe}' and mimeType='${FOLDER_MIME}' and trashed=false`;
+  // Constrain to Drive root so we don't accidentally reuse a same-named
+  // folder living elsewhere in the user's Drive (e.g. inside Shared
+  // with me). The PNG export contract specifies the folder lives at
+  // the user's root.
+  const q = `name='${safe}' and mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`;
   const params = new URLSearchParams({
     q,
     fields: "files(id,name)",
