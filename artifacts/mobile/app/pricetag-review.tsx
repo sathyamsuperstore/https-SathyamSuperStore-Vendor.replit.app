@@ -1178,11 +1178,16 @@ export default function PriceTagReviewScreen() {
     return `${descTrimmed}${tail}`;
   }
 
-  // Capture the off-screen 768×384 tag, downsample/clamp to exactly
-  // 768×384 px, and re-encode until the byte count fits in the 295 KB
-  // budget. Returns both a `file://` uri and the base64 payload —
-  // the base64 is only computed once because both the Drive upload
-  // path and the size check need it.
+  // High-quality capture for evaluation:
+  //   - Renders the off-screen tag at 1200×1200 (square — same
+  //     aspect as the on-screen tile, which is what the React
+  //     component is laid out for; the previous 2:1 / 768×384 was
+  //     squishing things and hurting quality).
+  //   - Captures at the device's pixel density (no `width`/`height`
+  //     overrides) so the bitmap is at native resolution.
+  //   - No resize, no compression sweep, no 295 KB size cap.
+  // We can re-introduce the size/pixel restrictions once the user
+  // has decided on the visual target.
   async function capturePngForItem(): Promise<{
     uri: string;
     base64: string;
@@ -1197,92 +1202,30 @@ export default function PriceTagReviewScreen() {
       throw new Error("Renderer not mounted yet — try again.");
     }
 
-    // Give RN one frame to settle the off-screen layout (images,
-    // fonts) before we snapshot it.
-    await new Promise((r) => setTimeout(r, 120));
+    // Give RN a frame to settle off-screen layout (images, fonts).
+    await new Promise((r) => setTimeout(r, 150));
 
-    const rawUri = await captureRef(ref, {
+    const uri = await captureRef(ref, {
       format: "png",
       quality: 1,
       result: "tmpfile",
-      width: 768,
-      height: 384,
     });
 
-    // Force the bitmap to exactly 768×384 even if the underlying
-    // backend captured at the device's pixel density. Using PNG
-    // keeps the output lossless on the first pass.
-    let work = await ImageManipulator.manipulateAsync(
-      rawUri,
-      [{ resize: { width: 768, height: 384 } }],
-      {
-        compress: 1,
-        format: ImageManipulator.SaveFormat.PNG,
-      },
-    );
-
-    const MAX_BYTES = 295 * 1024;
-
-    async function readSize(uri: string): Promise<number> {
-      try {
-        const info = (await FileSystem.getInfoAsync(uri)) as {
-          size?: number;
-          exists?: boolean;
-        };
-        return info.exists ? info.size ?? 0 : 0;
-      } catch {
-        return 0;
-      }
+    let bytes = 0;
+    try {
+      const info = (await FileSystem.getInfoAsync(uri)) as {
+        size?: number;
+        exists?: boolean;
+      };
+      bytes = info.exists ? info.size ?? 0 : 0;
+    } catch {
+      bytes = 0;
     }
 
-    let size = await readSize(work.uri);
-
-    // PNG honours `compress` only as a quality hint; if we're still
-    // over budget we step the quality down a couple of times. As a
-    // last resort fall back to dropping the longest dimension by 6%
-    // increments — going below ~720×360 stops happening in practice
-    // at 295 KB, but guard against pathological photo content.
-    const tries: Array<{ q: number; w: number; h: number }> = [
-      { q: 0.9, w: 768, h: 384 },
-      { q: 0.7, w: 768, h: 384 },
-      { q: 0.5, w: 768, h: 384 },
-      { q: 0.4, w: 768, h: 384 },
-    ];
-    for (const t of tries) {
-      if (size <= MAX_BYTES) break;
-      work = await ImageManipulator.manipulateAsync(
-        rawUri,
-        [{ resize: { width: t.w, height: t.h } }],
-        { compress: t.q, format: ImageManipulator.SaveFormat.PNG },
-      );
-      size = await readSize(work.uri);
-    }
-
-    // Always finalise to exactly 768×384 — even if a previous
-    // compression attempt would have changed the pixel size we
-    // honour the spec.
-    if (work.width !== 768 || work.height !== 384) {
-      work = await ImageManipulator.manipulateAsync(
-        work.uri,
-        [{ resize: { width: 768, height: 384 } }],
-        { compress: 1, format: ImageManipulator.SaveFormat.PNG },
-      );
-      size = await readSize(work.uri);
-    }
-
-    if (size > MAX_BYTES) {
-      // Hard contract: the spec caps the PNG at 295 KB. If even the
-      // most aggressive PNG encode can't fit, fail loudly rather than
-      // silently uploading an oversize file.
-      throw new Error(
-        `PNG is ${(size / 1024).toFixed(0)} KB, over the 295 KB limit. Try removing the product image or switching styles.`,
-      );
-    }
-
-    const base64 = await FileSystem.readAsStringAsync(work.uri, {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: "base64" as any,
     });
-    return { uri: work.uri, base64, bytes: size, filename };
+    return { uri, base64, bytes, filename };
   }
 
   async function savePngToPhone(): Promise<void> {
@@ -3384,20 +3327,22 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.25)",
     textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1,
   },
-  // Off-screen 768×384 host. Positioned far above the viewport so
-  // it paints (view-shot needs a real layout) without ever being
-  // visible to the user. Fixed pixel size so the snapshot matches
-  // the spec exactly.
+  // Off-screen high-res capture host. 1200×1200 (square) matches
+  // the on-screen tile aspect (which the React tag component is laid
+  // out for) and gives view-shot a generous canvas so text rasterises
+  // crisp instead of being squished into a 2:1 box. Positioned far
+  // above the viewport so the layout actually paints (view-shot
+  // needs a real layout) without ever being visible to the user.
   pngCaptureHost: {
     position: "absolute",
     top: -100000, left: 0,
-    width: 768, height: 384,
+    width: 1200, height: 1200,
     opacity: 0,
   },
   pngCaptureCanvas: {
-    width: 768, height: 384,
+    width: 1200, height: 1200,
     backgroundColor: "#FFFFFF",
-    padding: 12,
+    padding: 24,
     justifyContent: "center",
   },
   // Small "A/B/C/D/E" chip on the picker row so the user can see at
