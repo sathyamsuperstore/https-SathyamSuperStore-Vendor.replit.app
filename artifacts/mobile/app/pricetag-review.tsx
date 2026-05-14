@@ -14,6 +14,8 @@ import {
   ActivityIndicator,
   FlatList,
   Linking,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -2408,7 +2410,7 @@ function StyleATag({
   onRemoveBackground: () => void;
   // Optional outer-card style override. Used by the off-screen PNG
   // exporter to stretch the tag to fill the 2:1 capture frame.
-  cardStyle?: any;
+  cardStyle?: StyleProp<ViewStyle>;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
@@ -2551,7 +2553,7 @@ function StyleBTag({
   validTillTopLeft?: boolean;
   // Optional outer-card style override. Used by the off-screen PNG
   // exporter to stretch the tag to fill the 2:1 capture frame.
-  cardStyle?: any;
+  cardStyle?: StyleProp<ViewStyle>;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
