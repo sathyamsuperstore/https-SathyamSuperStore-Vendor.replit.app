@@ -1169,7 +1169,7 @@ export default function PriceTagReviewScreen() {
     // filesystem limits (~200 chars before extension). The other
     // segments are short enough that only the description can blow
     // the budget.
-    const tail = `_${mrp}_${promo}_${date}.png`;
+    const tail = `_${mrp}_${promo}_${date}.jpg`;
     const MAX = 200;
     const descTrimmed =
       desc.length + tail.length > MAX
@@ -1179,13 +1179,13 @@ export default function PriceTagReviewScreen() {
   }
 
   // High-quality capture for evaluation:
-  //   - Renders the off-screen tag at 1200×1200 (square — same
-  //     aspect as the on-screen tile, which is what the React
-  //     component is laid out for; the previous 2:1 / 768×384 was
-  //     squishing things and hurting quality).
-  //   - Captures at the device's pixel density (no `width`/`height`
-  //     overrides) so the bitmap is at native resolution.
-  //   - No resize, no compression sweep, no 295 KB size cap.
+  //   - Renders the off-screen tag in a 2:1 frame (1900×950) and
+  //     stretches the tag to fill it, so the captured bitmap matches
+  //     a tag cropped from the PDF (no whitespace bands).
+  //   - Captures at the device's pixel density.
+  //   - Encodes as JPEG at quality 0.95 over a white background —
+  //     this gave noticeably crisper text on device than PNG and
+  //     keeps the file size reasonable. No 295 KB cap, no resize.
   // We can re-introduce the size/pixel restrictions once the user
   // has decided on the visual target.
   async function capturePngForItem(): Promise<{
@@ -1206,8 +1206,8 @@ export default function PriceTagReviewScreen() {
     await new Promise((r) => setTimeout(r, 150));
 
     const uri = await captureRef(ref, {
-      format: "png",
-      quality: 1,
+      format: "jpg",
+      quality: 0.95,
       result: "tmpfile",
     });
 
@@ -1244,7 +1244,7 @@ export default function PriceTagReviewScreen() {
         const bytes = Uint8Array.from(atob(captured.base64), (c) =>
           c.charCodeAt(0),
         );
-        const blob = new Blob([bytes], { type: "image/png" });
+        const blob = new Blob([bytes], { type: "image/jpeg" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -1256,7 +1256,7 @@ export default function PriceTagReviewScreen() {
         setTimeout(() => URL.revokeObjectURL(url), 1500);
         Alert.alert(
           "Downloaded",
-          `${captured.filename}\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+          `${captured.filename}\n${(captured.bytes / 1024).toFixed(0)} KB`,
         );
         setPngExportItem(null);
         return;
@@ -1315,9 +1315,9 @@ export default function PriceTagReviewScreen() {
         const canShare = await Sharing.isAvailableAsync().catch(() => false);
         if (!canShare) throw libErr;
         await Sharing.shareAsync(saveUri, {
-          mimeType: "image/png",
+          mimeType: "image/jpeg",
           dialogTitle: captured.filename,
-          UTI: "public.png",
+          UTI: "public.jpeg",
         });
       }
 
@@ -1327,8 +1327,8 @@ export default function PriceTagReviewScreen() {
       Alert.alert(
         savedViaLibrary ? "Saved to Photos" : "Saved",
         savedViaLibrary
-          ? `${captured.filename}\nAlbum: Sathyam PriceTags\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`
-          : `${captured.filename}\nUse the share sheet to save to Photos or Files.\n${(captured.bytes / 1024).toFixed(0)} KB · 768×384`,
+          ? `${captured.filename}\nAlbum: Sathyam PriceTags\n${(captured.bytes / 1024).toFixed(0)} KB`
+          : `${captured.filename}\nUse the share sheet to save to Photos or Files.\n${(captured.bytes / 1024).toFixed(0)} KB`,
       );
       setPngExportItem(null);
     } catch (e: any) {
@@ -1357,7 +1357,7 @@ export default function PriceTagReviewScreen() {
         },
         body: JSON.stringify({
           filename: captured.filename,
-          mimeType: "image/png",
+          mimeType: "image/jpeg",
           dataBase64: captured.base64,
           folderName: "Sathyam PriceTags",
         }),
@@ -2340,6 +2340,7 @@ export default function PriceTagReviewScreen() {
                       onAddImage={() => {}}
                       onRemoveImage={() => {}}
                       onRemoveBackground={() => {}}
+                      cardStyle={styles.pngStretchCard}
                     />
                   );
                 }
@@ -2375,6 +2376,7 @@ export default function PriceTagReviewScreen() {
                       effStyle === "D" ||
                       effStyle === "E"
                     }
+                    cardStyle={styles.pngStretchCard}
                   />
                 );
               })()}
@@ -2396,6 +2398,7 @@ export default function PriceTagReviewScreen() {
 
 function StyleATag({
   item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
+  cardStyle,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -2403,6 +2406,9 @@ function StyleATag({
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
+  // Optional outer-card style override. Used by the off-screen PNG
+  // exporter to stretch the tag to fill the 2:1 capture frame.
+  cardStyle?: any;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
@@ -2410,7 +2416,7 @@ function StyleATag({
   const minQty = minPurchaseQty(item);
 
   return (
-    <View style={a.card}>
+    <View style={[a.card, cardStyle]}>
       {/* Logo watermark — top-right corner. pointerEvents="none" lets
           taps fall through to the price/image controls underneath.
           Style A uses layerA (no top banner to clear). */}
@@ -2513,6 +2519,7 @@ function StyleBTag({
   showStyleAPriceRow = false,
   showStyleASaveBadge = false,
   validTillTopLeft = false,
+  cardStyle,
 }: {
   item: PriceTagItem;
   busy: boolean;
@@ -2542,6 +2549,9 @@ function StyleBTag({
   // Styles C/D render Valid Till as a horizontal gray line under the
   // top banner instead of the rotated left-edge rail used by Style B.
   validTillTopLeft?: boolean;
+  // Optional outer-card style override. Used by the off-screen PNG
+  // exporter to stretch the tag to fill the 2:1 capture frame.
+  cardStyle?: any;
 }) {
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
@@ -2550,7 +2560,7 @@ function StyleBTag({
   const labelParts = label.toUpperCase().split(" ");
 
   return (
-    <View style={b.card}>
+    <View style={[b.card, cardStyle]}>
       {/* Logo watermark — see note in StyleATag. Styles B/C/D use
           layerB so the logo sits just under the red top banner
           rather than overlapping it. */}
@@ -3327,23 +3337,29 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.25)",
     textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1,
   },
-  // Off-screen high-res capture host. 1200×1200 (square) matches
-  // the on-screen tile aspect (which the React tag component is laid
-  // out for) and gives view-shot a generous canvas so text rasterises
-  // crisp instead of being squished into a 2:1 box. Positioned far
-  // above the viewport so the layout actually paints (view-shot
-  // needs a real layout) without ever being visible to the user.
+  // Off-screen high-res capture host. 2:1 frame (1900×950) matches
+  // the user-requested wide aspect for the saved JPEG. The inner
+  // canvas is a flex column so the tag (passed cardStyle={{flex:1}})
+  // stretches edge-to-edge — no whitespace bands above/below.
+  // Positioned far above the viewport so the layout actually paints
+  // (view-shot needs a real layout) without being visible.
   pngCaptureHost: {
     position: "absolute",
     top: -100000, left: 0,
-    width: 1200, height: 1200,
+    width: 1900, height: 950,
     opacity: 0,
   },
   pngCaptureCanvas: {
-    width: 1200, height: 1200,
+    width: 1900, height: 950,
     backgroundColor: "#FFFFFF",
-    padding: 24,
-    justifyContent: "center",
+    padding: 16,
+  },
+  // Spread on the outer card View of StyleATag/StyleBTag during the
+  // off-screen capture so the tag fills the 2:1 frame edge-to-edge.
+  pngStretchCard: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
   },
   // Small "A/B/C/D/E" chip on the picker row so the user can see at
   // a glance which style each item will be exported in.
