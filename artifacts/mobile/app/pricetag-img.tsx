@@ -29,6 +29,38 @@ function apiUrl(path: string): string {
   return path;
 }
 
+// Map a local file:// (or content://) URI to a self-contained data:
+// URI. The server-side renderer can't fetch device-local URIs and
+// rejects non-http(s) protocols on purpose, so we have to inline
+// the bytes ourselves. http(s) and data: inputs pass through.
+async function toServerImageUri(
+  uri: string | undefined | null,
+): Promise<string | undefined> {
+  if (!uri) return undefined;
+  if (uri.startsWith("data:")) return uri;
+  if (uri.startsWith("http://") || uri.startsWith("https://")) return uri;
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: "base64" as any,
+    });
+    // Pick a sensible mime type from the file extension. Chromium
+    // is forgiving about jpeg vs png but a wrong type can break
+    // some encoders, so we default to jpeg (most common from
+    // expo-image-picker) and only override on a clear .png/.webp.
+    const lower = uri.toLowerCase();
+    const mime = lower.endsWith(".png")
+      ? "image/png"
+      : lower.endsWith(".webp")
+        ? "image/webp"
+        : "image/jpeg";
+    return `data:${mime};base64,${base64}`;
+  } catch {
+    // If we can't read it, omit the image rather than failing the
+    // whole render — the tag still looks fine without a photo.
+    return undefined;
+  }
+}
+
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import {
@@ -414,6 +446,14 @@ export default function PriceTagImgScreen() {
     if (!item || exporting) return;
     setExporting(true);
     try {
+      // The server can't reach a `file://` URI on the device — and
+      // we block non-http(s) protocols server-side as an SSRF guard.
+      // For local files (typical when the user picked an image from
+      // the camera roll) we read the bytes here and inline them as a
+      // data: URI so Chromium can render the image directly. http(s)
+      // URLs and existing data: URIs are forwarded unchanged.
+      const safeImageUri = await toServerImageUri(item.imageUri);
+
       // Server-side render. Showcase always uses Style E so the
       // user-picked TitleList banner drives design variety. The
       // server returns base64 JPEG bytes that match the PDF
@@ -430,7 +470,7 @@ export default function PriceTagImgScreen() {
             sp: item.sp,
             eligibleQty: item.eligibleQty,
             promoSortCode: item.promoSortCode,
-            imageUri: item.imageUri,
+            imageUri: safeImageUri,
             promotionToDate: item.promotionToDate,
             customTitle: item.customTitle,
           },
