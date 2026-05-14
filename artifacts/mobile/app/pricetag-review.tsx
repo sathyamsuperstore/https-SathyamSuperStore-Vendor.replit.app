@@ -335,6 +335,10 @@ export default function PriceTagReviewScreen() {
   // Drive. We keep both flags + the selected key local — they only
   // affect the modal stack and the off-screen capture container.
   const [pngPickerOpen, setPngPickerOpen] = useState(false);
+  // Which IMG screen layout the picker is targeting. "default" routes
+  // to the existing tag layout; "showcase" routes to the new
+  // visually-redesigned 2:1 layout opened by the "Showcase" button.
+  const [imgPickerLayout, setImgPickerLayout] = useState<"default" | "showcase">("default");
   const [pngExportItem, setPngExportItem] = useState<PriceTagItem | null>(null);
   const [pngBusy, setPngBusy] = useState<null | "phone" | "drive">(null);
   const pngCaptureRef = useRef<View>(null);
@@ -1501,16 +1505,34 @@ export default function PriceTagReviewScreen() {
                 <Text style={styles.exportBtnText}>{exporting ? "Exporting…" : "Export PDF"}</Text>
               </TouchableOpacity>
               {/* "IMG" button — visual clone of Export PDF. Picks one
-                  item then saves a single-item JPEG to the phone
-                  (same flow that the old red "PNG's" button used). */}
+                  item then opens the PriceTag IMG screen with the
+                  default tag layout. */}
               <TouchableOpacity
                 style={styles.exportBtn}
-                onPress={() => setPngPickerOpen(true)}
+                onPress={() => {
+                  setImgPickerLayout("default");
+                  setPngPickerOpen(true);
+                }}
                 disabled={priceTagReviewItems.length === 0}
-                accessibilityLabel="Export a single tag as a JPEG image"
+                accessibilityLabel="Open a single tag in the PriceTag IMG view"
               >
                 <Feather name="image" size={14} color={Colors.textInverse} />
                 <Text style={styles.exportBtnText}>IMG</Text>
+              </TouchableOpacity>
+              {/* "Showcase" button — opens the PriceTag IMG screen with
+                  a brand-new visually-redesigned 2:1 layout. Uses the
+                  same item picker as IMG. */}
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={() => {
+                  setImgPickerLayout("showcase");
+                  setPngPickerOpen(true);
+                }}
+                disabled={priceTagReviewItems.length === 0}
+                accessibilityLabel="Open a single tag in the redesigned Showcase layout"
+              >
+                <Feather name="star" size={14} color={Colors.textInverse} />
+                <Text style={styles.exportBtnText}>Showcase</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -2197,7 +2219,10 @@ export default function PriceTagReviewScreen() {
                           // tag up by `key` from AppContext.
                           router.push({
                             pathname: "/pricetag-img",
-                            params: { itemKey: item.key },
+                            params: {
+                              itemKey: item.key,
+                              layout: imgPickerLayout,
+                            },
                           });
                         }}
                         activeOpacity={0.7}
