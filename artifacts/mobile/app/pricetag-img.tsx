@@ -664,7 +664,7 @@ export default function PriceTagImgScreen() {
             />
           )}
           <Text style={screen.exportBtnText}>
-            {exporting ? "Saving…" : "Export IMG"}
+            {exporting ? "Saving…" : "Download Banner"}
           </Text>
         </TouchableOpacity>
       ) : null}
