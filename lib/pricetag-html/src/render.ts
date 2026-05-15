@@ -617,7 +617,7 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     text-align: center;
     font-size: 26px; font-weight: 900;
     letter-spacing: 1.5px;
-    padding: 12px 60px 12px 16px;
+    padding: 12px 16px;
     line-height: 1.1;
   }
   .tagSq .imgRowSq {
@@ -698,14 +698,16 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   .tagSq .validTillSq { color: #6B7280; }
   .tagSq .companySq {
     margin-top: auto;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 14px;
     padding: 8px 14px 10px;
     background: rgba(122, 15, 25, 0.06);
     border-top: 1px solid rgba(122, 15, 25, 0.18);
+    text-align: center;
   }
+  .tagSq .companyText { text-align: center; }
+  .tagSq .companyPhones { justify-content: center; }
   .tagSq .companyText {
-    flex: 1;
     min-width: 0;
     color: #1F2937;
     font-size: 10px;
@@ -964,9 +966,10 @@ export function buildSquareMinimalCss(c: TagColors = DEFAULT_TAG_COLORS): string
   }
   .tagSqMin .mrpLineMin .strike { text-decoration: line-through; }
   .tagSqMin .priceRowMin {
+    position: relative;
     display: flex; align-items: center; justify-content: center;
-    gap: 12px;
     margin-bottom: 4px;
+    min-height: 72px;
   }
   .tagSqMin .priceBoxMin {
     background: ${DEEP_RED};
@@ -980,7 +983,12 @@ export function buildSquareMinimalCss(c: TagColors = DEFAULT_TAG_COLORS): string
   .tagSqMin .priceValueMin {
     color: #FFF; font-size: 52px; font-weight: 900; line-height: 1;
   }
+  /* Float the app-store badges to the right edge so the price box
+     stays centred in the square frame. */
   .tagSqMin .priceStoresMin {
+    position: absolute;
+    right: 0; top: 50%;
+    transform: translateY(-50%);
     display: flex; align-items: center;
   }
   .tagSqMin .storesBadgeMin {
