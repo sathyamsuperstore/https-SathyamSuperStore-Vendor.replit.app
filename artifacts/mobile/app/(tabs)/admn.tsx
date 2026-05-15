@@ -36,6 +36,7 @@ export default function AdmnHubScreen() {
     orders,
     lastSupplyDates,
     rodeoItems,
+    rasiItems,
     clearAllSuppliers,
     clearAllAppUsers,
     clearPromoBatch,
@@ -44,6 +45,7 @@ export default function AdmnHubScreen() {
     clearAllOrders,
     clearLastSupplyDates,
     clearRodeoItems,
+    clearRasiItems,
     setDataDownloadTimeNow,
   } = useApp();
   const router = useRouter();
@@ -164,6 +166,15 @@ export default function AdmnHubScreen() {
       confirmMessage: (n) =>
         `Remove all ${n} RodeoItem${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
+    {
+      key: "rasi-items",
+      label: "Rasi Items",
+      count: rasiItems.length,
+      onConfirm: clearRasiItems,
+      confirmTitle: "Delete All Rasi Items?",
+      confirmMessage: (n) =>
+        `Remove all ${n} Rasi item${n === 1 ? "" : "s"}? This cannot be undone.`,
+    },
   ];
 
   // Stack into 2-column rows. With 7 items the last row has a
@@ -202,6 +213,7 @@ export default function AdmnHubScreen() {
     { key: "orders", label: "Place Orders", route: "/order/import" },
     { key: "promo", label: "Promo", route: "/(tabs)/promo" },
     { key: "rodeo-items", label: "RodeoItems", route: "/rodeo/import" },
+    { key: "rasi-items", label: "Rasi Items", route: "/(tabs)/rasi-items" },
     // "DownloadTime" doesn't import a workbook — it just stamps the
     // current wall-clock time as the latest data snapshot, then opens
     // the Data Download Time tab so the user can see the new value.

@@ -175,6 +175,9 @@ interface AppContextType {
   mrpEntries: MrpEntry[];
   saveMrpBatch: (entries: MrpEntry[]) => Promise<void>;
   clearMrpBatch: () => Promise<void>;
+  rasiItems: RasiItem[];
+  saveRasiItems: (entries: RasiItem[]) => Promise<void>;
+  clearRasiItems: () => Promise<void>;
   latestPurchases: LatestPurchaseEntry[];
   saveLatestPurchasesBatch: (entries: LatestPurchaseEntry[]) => Promise<void>;
   clearLatestPurchases: () => Promise<void>;
@@ -334,6 +337,24 @@ export const DEFAULT_COMPANY_DETAILS: CompanyDetails = {
 export interface MrpEntry {
   itemNo: string;
   mrp: number;
+}
+
+// "Rasi Items" master catalog row. Imported from an Excel sheet whose
+// columns are: code, item, igroup, unit, godown, mrp, wrate, srate,
+// Brand, UNITSPER, MULFACTOR (header matching is case- and
+// whitespace-insensitive — see rasi-items.tsx).
+export interface RasiItem {
+  code: string;
+  item: string;
+  igroup: string;
+  unit: string;
+  godown: string;
+  mrp: number;
+  wrate: number;
+  srate: number;
+  brand: string;
+  unitsPer: number;
+  mulFactor: number;
 }
 
 // Canonical column order for the Latest Purchases sheet. Used by the
@@ -523,6 +544,7 @@ const SUPPLIERS_KEY = "@suppliers";
 const ORDERS_KEY = "@orders";
 const USERS_KEY = "@appUsers";
 const MRP_KEY = "@mrpBatch";
+const RASI_ITEMS_KEY = "@rasiItems";
 const LATEST_PURCHASES_KEY = "@latestPurchases";
 const PROMO_KEY = "@promoBatch";
 // Stored separately from @promoBatch so a corrupted live import can never
@@ -631,6 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [mrpEntries, setMrpEntries] = useState<MrpEntry[]>([]);
+  const [rasiItems, setRasiItems] = useState<RasiItem[]>([]);
   const [latestPurchases, setLatestPurchases] = useState<LatestPurchaseEntry[]>([]);
   const [promoEntries, setPromoEntries] = useState<PromoEntry[]>([]);
   const [promoPrevEntries, setPromoPrevEntries] = useState<PromoEntry[]>([]);
@@ -684,7 +707,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -712,12 +735,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
         AsyncStorage.getItem(COMPANY_DETAILS_KEY),
         AsyncStorage.getItem(PRICE_TAG_SQUARE_VARIANT_KEY),
+        AsyncStorage.getItem(RASI_ITEMS_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
       const loadedOrders = ordersData ? JSON.parse(ordersData) : [];
       const loadedUsers: AppUser[] = usersData ? JSON.parse(usersData) : [];
       const loadedMrp: MrpEntry[] = mrpData ? JSON.parse(mrpData) : [];
+      const loadedRasiItems: RasiItem[] = rasiItemsData ? JSON.parse(rasiItemsData) : [];
       const loadedLatestPurchases: LatestPurchaseEntry[] = latestPurchasesData
         ? JSON.parse(latestPurchasesData)
         : [];
@@ -734,6 +759,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setOrders(loadedOrders);
       setAppUsers(loadedUsers);
       setMrpEntries(loadedMrp);
+      setRasiItems(loadedRasiItems);
       setLatestPurchases(loadedLatestPurchases);
       setPromoEntries(loadedPromo);
       setPromoPrevEntries(loadedPromoPrev);
@@ -961,6 +987,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function clearMrpBatch() {
     await AsyncStorage.removeItem(MRP_KEY);
     setMrpEntries([]);
+  }
+
+  async function saveRasiItems(entries: RasiItem[]) {
+    await AsyncStorage.setItem(RASI_ITEMS_KEY, JSON.stringify(entries));
+    setRasiItems(entries);
+  }
+
+  async function clearRasiItems() {
+    await AsyncStorage.removeItem(RASI_ITEMS_KEY);
+    setRasiItems([]);
   }
 
   // Latest Purchases helpers mirror the MRP write-first pattern: persist to
@@ -1605,6 +1641,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         mrpEntries,
         saveMrpBatch,
         clearMrpBatch,
+        rasiItems,
+        saveRasiItems,
+        clearRasiItems,
         latestPurchases,
         saveLatestPurchasesBatch,
         clearLatestPurchases,

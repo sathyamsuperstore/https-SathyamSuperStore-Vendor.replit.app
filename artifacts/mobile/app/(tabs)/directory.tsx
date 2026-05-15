@@ -6,6 +6,7 @@ import MrpScreen from "./mrp";
 import LastSupplyDateScreen from "./last-supply-date";
 import LatestPurchasesScreen from "./latest-purchases";
 import RodeoItemsScreen from "./rodeo-items";
+import RasiItemsScreen from "./rasi-items";
 
 export default function DirectoryHubScreen() {
   return (
@@ -45,6 +46,11 @@ export default function DirectoryHubScreen() {
           key: "rodeo-items",
           label: "RodeoItems",
           render: () => <RodeoItemsScreen />,
+        },
+        {
+          key: "rasi-items",
+          label: "Rasi Items",
+          render: () => <RasiItemsScreen />,
         },
       ]}
     />
