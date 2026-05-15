@@ -165,6 +165,16 @@ components:
             (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
         companyDetails:
           $ref: "#/components/schemas/CompanyDetails"
+        squareVariant:
+          type: string
+          enum: [detailed, minimal]
+          description: >
+            Only consulted when `aspect = "square"`. `detailed`
+            (default) renders the full company-details footer band
+            (address, GST, FSSAI, etc.). `minimal` renders the
+            simplified layout: a slim store-name + WhatsApp bar at
+            the bottom and the app-store badges stacked next to the
+            price.
     CompanyDetails:
       type: object
       description: >

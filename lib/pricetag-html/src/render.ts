@@ -757,15 +757,24 @@ export function buildSquareShowcaseHtml(
     company?: CompanyDetails;
     whatsappLogoDataUri?: string;
     appStoreLogoDataUri?: string;
+    variant?: "detailed" | "minimal";
   } = {},
 ): string {
   const widthPx = opts.widthPx ?? 540;
   const colors = opts.colors ?? DEFAULT_TAG_COLORS;
-  const tagHtml = renderSquareShowcaseHtml(item, showLogo, logoDataUri, {
-    company: opts.company,
-    whatsappLogoDataUri: opts.whatsappLogoDataUri,
-    appStoreLogoDataUri: opts.appStoreLogoDataUri,
-  });
+  const variant = opts.variant ?? "detailed";
+  const tagHtml =
+    variant === "minimal"
+      ? renderSquareMinimalHtml(item, showLogo, logoDataUri, {
+          company: opts.company,
+          whatsappLogoDataUri: opts.whatsappLogoDataUri,
+          appStoreLogoDataUri: opts.appStoreLogoDataUri,
+        })
+      : renderSquareShowcaseHtml(item, showLogo, logoDataUri, {
+          company: opts.company,
+          whatsappLogoDataUri: opts.whatsappLogoDataUri,
+          appStoreLogoDataUri: opts.appStoreLogoDataUri,
+        });
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
 <title>Price Tag — Square</title>
@@ -779,10 +788,242 @@ export function buildSquareShowcaseHtml(
   }
   body { width: ${widthPx}px; height: ${widthPx}px; }
   .tamil { font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif; }
-  .tagSq { width: ${widthPx}px !important; height: ${widthPx}px !important; }
-  ${buildPdfCssSq(colors)}
+  .tagSq, .tagSqMin {
+    width: ${widthPx}px !important;
+    height: ${widthPx}px !important;
+  }
+  ${variant === "minimal" ? buildSquareMinimalCss(colors) : buildPdfCssSq(colors)}
 </style>
 </head><body>${tagHtml}</body></html>`;
+}
+
+// ===========================================================================
+// Square 1:1 — "minimal" variant
+// ---------------------------------------------------------------------------
+// Same 540×540 Instagram canvas, but trades the full company-details
+// footer for a slim store-name + WhatsApp bar, and stacks the
+// app-store badges next to the price box. Uses the shared TagColors
+// palette so brand-colour overrides flow through identically to the
+// detailed variant.
+// ===========================================================================
+export function renderSquareMinimalHtml(
+  it: PriceTagRenderItem,
+  showLogo: boolean,
+  logoDataUri: string,
+  opts: {
+    company?: CompanyDetails;
+    whatsappLogoDataUri?: string;
+    appStoreLogoDataUri?: string;
+  } = {},
+): string {
+  const { value } = priceFor(it);
+  const mrp = fmt0(it.mrp);
+  const off = offAmount(it);
+  const desc = it.description || "";
+  const tamil = hasTamil(desc);
+  const descSpan = tamil
+    ? `<span class="tamil">${escapeHtml(desc)}</span>`
+    : escapeHtml(desc);
+  const img = it.imageUri
+    ? `<img src="${it.imageUri}" />`
+    : `<div class="img-placeholder">No Image</div>`;
+  const title = (it.customTitle?.trim() || "VALUE PACK").toUpperCase();
+  const itemNo = (it.itemNo ?? "").trim();
+  const validTill = it.promotionToDate
+    ? `Valid Till : ${escapeHtml(
+        (it.promotionToDate || "").trim().replace(/\//g, "-"),
+      )}`
+    : "";
+  const watermark = showLogo
+    ? `<img class="watermark" src="${logoDataUri}" alt="" />`
+    : "";
+
+  const tr = (s?: string): string => (typeof s === "string" ? s.trim() : "");
+  const company = opts.company ?? {};
+  const storeName = tr(company.companyName);
+  const whatsapp = tr(company.whatsapp) || tr(company.mobile);
+  const waIcon = opts.whatsappLogoDataUri
+    ? `<img class="waIcon" src="${opts.whatsappLogoDataUri}" alt="WA" />`
+    : "";
+  const storeBar =
+    storeName || whatsapp
+      ? `<div class="storeBarMin">
+          <span class="storeNameMin">${escapeHtml(storeName)}</span>
+          ${
+            whatsapp
+              ? `<span class="storeWaMin">${waIcon}<span>${escapeHtml(whatsapp)}</span></span>`
+              : ""
+          }
+        </div>`
+      : "";
+
+  const stores = opts.appStoreLogoDataUri
+    ? `<img class="storesBadgeMin" src="${opts.appStoreLogoDataUri}" alt="Get the app" />`
+    : "";
+
+  return `
+    <div class="tagSqMin">
+      <div class="topBarMin">${escapeHtml(title)}</div>
+      <div class="bodyMin">
+        ${watermark}
+        <div class="imgRowMin">
+          <div class="imgFrameMin">${img}</div>
+        </div>
+        <div class="descMin">${descSpan}</div>
+        ${mrp ? `<div class="mrpLineMin">MRP <span class="strike">₹${escapeHtml(mrp)}</span></div>` : ""}
+        <div class="priceRowMin">
+          <div class="priceBoxMin">
+            <span class="priceCurrencyMin">₹</span><span class="priceValueMin">${escapeHtml(value)}</span>
+          </div>
+          ${stores ? `<div class="priceStoresMin">${stores}</div>` : ""}
+        </div>
+        ${off ? `<div class="saveRowMin"><span class="savePillMin">SAVE ₹${escapeHtml(off)}</span></div>` : ""}
+        <div class="footerRowMin">
+          <span class="itemNoMin">${itemNo ? "Item: " + escapeHtml(itemNo) : ""}</span>
+          <span class="validTillMin">${validTill}</span>
+        </div>
+      </div>
+      ${storeBar}
+    </div>
+  `;
+}
+
+export function buildSquareMinimalCss(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  void RED;
+  return `
+  .tagSqMin {
+    width: 540px; height: 540px;
+    background: #FFFFFF;
+    position: relative;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .tagSqMin .topBarMin {
+    background: ${DEEP_RED};
+    color: #FFF;
+    text-align: center;
+    font-size: 26px; font-weight: 900;
+    letter-spacing: 1.5px;
+    padding: 14px 16px;
+    line-height: 1.1;
+  }
+  .tagSqMin .bodyMin {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: linear-gradient(180deg, #FFFFFF 0%, ${CREAM} 100%);
+    display: flex; flex-direction: column;
+    padding: 6px 16px 8px;
+  }
+  .tagSqMin .watermark {
+    position: absolute;
+    top: 8px; right: 12px;
+    width: 60px; height: auto;
+    opacity: 0.45;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .tagSqMin .imgRowMin {
+    flex: 1;
+    min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 0 8px;
+  }
+  .tagSqMin .imgFrameMin {
+    width: 220px; height: 220px;
+    background: #FFFFFF;
+    border: 3px solid ${GOLD};
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px;
+  }
+  .tagSqMin .imgFrameMin img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
+  .tagSqMin .imgFrameMin .img-placeholder {
+    color: #94A3B8; font-size: 14px; font-weight: 700;
+  }
+  .tagSqMin .descMin {
+    text-align: center;
+    color: #1F2937;
+    font-size: 20px; font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tagSqMin .mrpLineMin {
+    text-align: center;
+    font-size: 14px; color: #6B7280; font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .tagSqMin .mrpLineMin .strike { text-decoration: line-through; }
+  .tagSqMin .priceRowMin {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .tagSqMin .priceBoxMin {
+    background: ${DEEP_RED};
+    border-radius: 14px;
+    padding: 10px 28px;
+    display: inline-flex; align-items: baseline; gap: 6px;
+  }
+  .tagSqMin .priceCurrencyMin {
+    color: #FFF; font-size: 28px; font-weight: 900;
+  }
+  .tagSqMin .priceValueMin {
+    color: #FFF; font-size: 52px; font-weight: 900; line-height: 1;
+  }
+  .tagSqMin .priceStoresMin {
+    display: flex; align-items: center;
+  }
+  .tagSqMin .storesBadgeMin {
+    height: 60px; width: auto; object-fit: contain;
+  }
+  .tagSqMin .saveRowMin {
+    display: flex; justify-content: center;
+    margin-top: 2px;
+  }
+  .tagSqMin .savePillMin {
+    background: ${GOLD};
+    color: ${DEEP_RED};
+    font-weight: 900; font-size: 14px;
+    letter-spacing: 0.5px;
+    padding: 4px 18px;
+    border-radius: 999px;
+  }
+  .tagSqMin .footerRowMin {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 2px 0;
+    font-size: 12px; color: #6B7280; font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .tagSqMin .storeBarMin {
+    background: ${DEEP_RED};
+    color: #FFF;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 10px 18px;
+    font-size: 16px; font-weight: 900;
+    letter-spacing: 0.6px;
+  }
+  .tagSqMin .storeNameMin { text-transform: uppercase; }
+  .tagSqMin .storeWaMin {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 800;
+  }
+  .tagSqMin .waIcon {
+    width: 22px; height: 22px; object-fit: contain;
+    background: #FFF; border-radius: 50%;
+    padding: 2px;
+  }
+`;
 }
 
 // Single-tag wrapper for the server-side JPEG renderer. The body is

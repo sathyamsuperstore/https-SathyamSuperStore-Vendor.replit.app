@@ -8,6 +8,7 @@
 import type { CompanyDetails } from "./companyDetails";
 import type { PriceTagItem } from "./priceTagItem";
 import type { PriceTagRenderInputAspect } from "./priceTagRenderInputAspect";
+import type { PriceTagRenderInputSquareVariant } from "./priceTagRenderInputSquareVariant";
 import type { PriceTagStyle } from "./priceTagStyle";
 import type { TagColors } from "./tagColors";
 
@@ -35,4 +36,7 @@ export interface PriceTagRenderInput {
    */
   aspect?: PriceTagRenderInputAspect;
   companyDetails?: CompanyDetails;
+  /** Only consulted when `aspect = "square"`. `detailed` (default) renders the full company-details footer band (address, GST, FSSAI, etc.). `minimal` renders the simplified layout: a slim store-name + WhatsApp bar at the bottom and the app-store badges stacked next to the price.
+   */
+  squareVariant?: PriceTagRenderInputSquareVariant;
 }

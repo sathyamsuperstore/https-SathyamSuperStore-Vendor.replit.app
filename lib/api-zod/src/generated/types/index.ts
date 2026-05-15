@@ -13,6 +13,7 @@ export * from "./healthStatus";
 export * from "./priceTagItem";
 export * from "./priceTagRenderInput";
 export * from "./priceTagRenderInputAspect";
+export * from "./priceTagRenderInputSquareVariant";
 export * from "./priceTagRenderResult";
 export * from "./priceTagRenderResultMimeType";
 export * from "./priceTagStyle";

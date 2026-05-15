@@ -115,6 +115,12 @@ export const RenderPriceTagBody = zod.object({
     .describe(
       "Store identity printed on the bottom of the square showcase tag (company name, address, contact numbers, GST\/FSSAI). All fields optional — empty strings are simply hidden in the rendered output.\n",
     ),
+  squareVariant: zod
+    .enum(["detailed", "minimal"])
+    .optional()
+    .describe(
+      'Only consulted when `aspect = \"square\"`. `detailed` (default) renders the full company-details footer band (address, GST, FSSAI, etc.). `minimal` renders the simplified layout: a slim store-name + WhatsApp bar at the bottom and the app-store badges stacked next to the price.\n',
+    ),
 });
 
 export const RenderPriceTagResponse = zod.object({

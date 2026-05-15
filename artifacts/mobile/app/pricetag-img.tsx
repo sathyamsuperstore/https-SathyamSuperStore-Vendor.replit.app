@@ -147,6 +147,7 @@ export default function PriceTagImgScreen() {
     priceTagReviewShowLogo,
     tagColors,
     companyDetails,
+    priceTagSquareVariant,
   } = useApp();
 
   // The 2:1 banner Showcase strips promotionToDate so the side rail
@@ -232,7 +233,9 @@ export default function PriceTagImgScreen() {
           colors: tagColors,
           // Only include company identity in the square Instagram
           // export — the banner layout has no footer band for it.
-          ...(isShowcaseSq ? { companyDetails } : {}),
+          ...(isShowcaseSq
+            ? { companyDetails, squareVariant: priceTagSquareVariant }
+            : {}),
         }),
       });
       if (!renderRes.ok) {
@@ -258,7 +261,14 @@ export default function PriceTagImgScreen() {
     } finally {
       if (seq === renderSeq.current) setRendering(false);
     }
-  }, [item, isShowcaseSq, priceTagReviewShowLogo, tagColors, companyDetails]);
+  }, [
+    item,
+    isShowcaseSq,
+    priceTagReviewShowLogo,
+    tagColors,
+    companyDetails,
+    priceTagSquareVariant,
+  ]);
 
   useEffect(() => {
     if (!isShowcaseAny) return;

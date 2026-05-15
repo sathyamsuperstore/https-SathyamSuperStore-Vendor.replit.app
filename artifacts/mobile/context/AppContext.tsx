@@ -242,6 +242,12 @@ interface AppContextType {
   setPriceTagReviewStyle: (style: PriceTagStyle) => Promise<void>;
   priceTagReviewShowLogo: boolean;
   setPriceTagReviewShowLogo: (show: boolean) => Promise<void>;
+  // Square (1:1) showcase layout variant. "detailed" prints the
+  // full company-details footer (address, GST, FSSAI). "minimal"
+  // prints just a slim store-name + WhatsApp bar at the bottom and
+  // stacks the app-store badges next to the price box.
+  priceTagSquareVariant: "detailed" | "minimal";
+  setPriceTagSquareVariant: (v: "detailed" | "minimal") => Promise<void>;
   priceTagReviewTitle: string;
   setPriceTagReviewTitle: (title: string) => Promise<void>;
   // Brand-color palette applied to all Style A/B/C/D/E pricetags
@@ -550,6 +556,7 @@ const PRICE_TAG_TITLE_KEY = "@priceTagTitle";
 const PRICE_TAG_REVIEW_KEY = "@priceTagReviewItems";
 const PRICE_TAG_REVIEW_STYLE_KEY = "@priceTagReviewStyle";
 const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
+const PRICE_TAG_SQUARE_VARIANT_KEY = "@priceTagSquareVariant";
 const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
 // Brand palette JSON: { red, deepRed, cream, gold } as #RRGGBB.
 const TAG_COLORS_KEY = "@tagColors";
@@ -650,6 +657,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagReviewItems, setPriceTagReviewItems] = useState<PriceTagItem[]>([]);
   const [priceTagReviewStyle, setPriceTagReviewStyleState] = useState<PriceTagStyle>("A");
   const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
+  const [priceTagSquareVariant, setPriceTagSquareVariantState] = useState<
+    "detailed" | "minimal"
+  >("minimal");
   const [priceTagReviewTitle, setPriceTagReviewTitleState] = useState<string>("");
   const [tagColors, setTagColorsState] = useState<TagColors>(DEFAULT_TAG_COLORS);
   const [customTagPresets, setCustomTagPresetsState] = useState<TagColorPreset[]>([]);
@@ -674,7 +684,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -701,6 +711,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
         AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
         AsyncStorage.getItem(COMPANY_DETAILS_KEY),
+        AsyncStorage.getItem(PRICE_TAG_SQUARE_VARIANT_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -823,6 +834,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagReviewShowLogoState(false);
       } else if (priceTagReviewShowLogoData === "1") {
         setPriceTagReviewShowLogoState(true);
+      }
+      if (
+        priceTagSquareVariantData === "detailed" ||
+        priceTagSquareVariantData === "minimal"
+      ) {
+        setPriceTagSquareVariantState(priceTagSquareVariantData);
       }
       if (typeof priceTagReviewTitleData === "string") {
         setPriceTagReviewTitleState(priceTagReviewTitleData.slice(0, 256));
@@ -1378,6 +1395,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagReviewShowLogoState(show);
   }
 
+  async function setPriceTagSquareVariant(v: "detailed" | "minimal") {
+    await AsyncStorage.setItem(PRICE_TAG_SQUARE_VARIANT_KEY, v);
+    setPriceTagSquareVariantState(v);
+  }
+
   async function setPriceTagReviewTitle(title: string) {
     const clean = title.slice(0, 256);
     await AsyncStorage.setItem(PRICE_TAG_REVIEW_TITLE_KEY, clean);
@@ -1621,6 +1643,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagReviewStyle,
         priceTagReviewShowLogo,
         setPriceTagReviewShowLogo,
+        priceTagSquareVariant,
+        setPriceTagSquareVariant,
         priceTagReviewTitle,
         setPriceTagReviewTitle,
         tagColors,

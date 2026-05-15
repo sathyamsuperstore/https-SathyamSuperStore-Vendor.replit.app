@@ -149,6 +149,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     aspect,
     colors,
     companyDetails,
+    squareVariant,
   } = parsed.data;
 
   const safety = isImageUriSafe(item.imageUri);
@@ -175,6 +176,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
           company: companyDetails,
           whatsappLogoDataUri: WHATSAPP_LOGO_BASE64,
           appStoreLogoDataUri: APPSTORE_LOGO_BASE64,
+          variant: squareVariant,
         },
       )
     : buildSingleTagHtml(

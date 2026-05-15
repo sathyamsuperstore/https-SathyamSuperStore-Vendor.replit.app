@@ -64,6 +64,18 @@ export const PriceTagRenderInputAspect = {
 } as const;
 
 /**
+ * Only consulted when `aspect = "square"`. `detailed` (default) renders the full company-details footer band (address, GST, FSSAI, etc.). `minimal` renders the simplified layout: a slim store-name + WhatsApp bar at the bottom and the app-store badges stacked next to the price.
+
+ */
+export type PriceTagRenderInputSquareVariant =
+  (typeof PriceTagRenderInputSquareVariant)[keyof typeof PriceTagRenderInputSquareVariant];
+
+export const PriceTagRenderInputSquareVariant = {
+  detailed: "detailed",
+  minimal: "minimal",
+} as const;
+
+/**
  * Store identity printed on the bottom of the square showcase tag (company name, address, contact numbers, GST/FSSAI). All fields optional — empty strings are simply hidden in the rendered output.
 
  */
@@ -105,6 +117,9 @@ export interface PriceTagRenderInput {
    */
   aspect?: PriceTagRenderInputAspect;
   companyDetails?: CompanyDetails;
+  /** Only consulted when `aspect = "square"`. `detailed` (default) renders the full company-details footer band (address, GST, FSSAI, etc.). `minimal` renders the simplified layout: a slim store-name + WhatsApp bar at the bottom and the app-store badges stacked next to the price.
+   */
+  squareVariant?: PriceTagRenderInputSquareVariant;
 }
 
 export type PriceTagRenderResultMimeType =

@@ -281,6 +281,8 @@ export default function PriceTagReviewScreen() {
     setPriceTagReviewStyle,
     priceTagReviewShowLogo,
     setPriceTagReviewShowLogo,
+    priceTagSquareVariant,
+    setPriceTagSquareVariant,
     priceTagReviewTitle,
     setPriceTagReviewTitle,
     tagColors,
@@ -1604,6 +1606,61 @@ export default function PriceTagReviewScreen() {
           </TouchableOpacity>
           <Text style={styles.logoToggleHint}>
             {priceTagReviewShowLogo ? "Watermark on (30%)" : "Watermark off"}
+          </Text>
+        </View>
+
+        {/* Square (1:1) layout variant — Detailed shows the full
+            company-details footer; Minimal swaps it for a slim
+            store-name + WhatsApp bar with stacked app-store badges.
+            Only affects "Banner SQ" exports. */}
+        <View style={styles.logoToggleBar}>
+          <Text style={styles.logoToggleLabel}>Square Layout</Text>
+          <View style={styles.sqVariantPill}>
+            <TouchableOpacity
+              style={[
+                styles.sqVariantBtn,
+                priceTagSquareVariant === "detailed" &&
+                  styles.sqVariantBtnActive,
+              ]}
+              onPress={() => setPriceTagSquareVariant("detailed")}
+              accessibilityRole="button"
+              accessibilityLabel="Use detailed square layout with full company details"
+            >
+              <Text
+                style={[
+                  styles.sqVariantBtnText,
+                  priceTagSquareVariant === "detailed" &&
+                    styles.sqVariantBtnTextActive,
+                ]}
+              >
+                Detailed
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.sqVariantBtn,
+                priceTagSquareVariant === "minimal" &&
+                  styles.sqVariantBtnActive,
+              ]}
+              onPress={() => setPriceTagSquareVariant("minimal")}
+              accessibilityRole="button"
+              accessibilityLabel="Use minimal square layout with store name and WhatsApp"
+            >
+              <Text
+                style={[
+                  styles.sqVariantBtnText,
+                  priceTagSquareVariant === "minimal" &&
+                    styles.sqVariantBtnTextActive,
+                ]}
+              >
+                Minimal
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.logoToggleHint}>
+            {priceTagSquareVariant === "minimal"
+              ? "Store name + WhatsApp bar"
+              : "Address, GST, FSSAI"}
           </Text>
         </View>
 
@@ -3463,6 +3520,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 }, elevation: 2,
   },
   logoToggleKnobOn: { alignSelf: "flex-end" },
+  sqVariantPill: {
+    flexDirection: "row",
+    backgroundColor: Colors.border,
+    borderRadius: 14,
+    padding: 2,
+  },
+  sqVariantBtn: {
+    paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sqVariantBtnActive: { backgroundColor: Colors.primary },
+  sqVariantBtnText: {
+    fontSize: 12, fontWeight: "800",
+    color: Colors.textSecondary, letterSpacing: 0.4,
+  },
+  sqVariantBtnTextActive: { color: Colors.textInverse },
   logoToggleHint: {
     fontSize: 11, color: Colors.textMuted, fontWeight: "600",
     marginLeft: "auto",
