@@ -11,7 +11,7 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -81,6 +81,7 @@ const PREVIEW_ITEM: PriceTagItem = {
 
 export default function TagColoursScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const {
     tagColors,
     setTagColors,
@@ -443,7 +444,20 @@ export default function TagColoursScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Tag Colours</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Tag Colours</Text>
+          <Pressable
+            onPress={() => router.setParams({ view: "priceTagReview" })}
+            style={({ pressed }) => [
+              styles.openReviewBtn,
+              pressed && styles.openReviewBtnPressed,
+            ]}
+            hitSlop={8}
+          >
+            <Feather name="external-link" size={12} color={Colors.textInverse} />
+            <Text style={styles.openReviewText}>PriceTag Review</Text>
+          </Pressable>
+        </View>
         <Text style={styles.subtitle}>
           Customize the brand palette used by every Style A/B/C/D/E pricetag
           (preview, PDF, and shareable JPEG).
@@ -682,6 +696,27 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 16, paddingBottom: 80 },
   title: { fontSize: 22, fontWeight: "800", color: Colors.text },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  openReviewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  openReviewBtnPressed: { opacity: 0.75 },
+  openReviewText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textInverse,
+  },
   subtitle: {
     fontSize: 13,
     color: Colors.textMuted,
