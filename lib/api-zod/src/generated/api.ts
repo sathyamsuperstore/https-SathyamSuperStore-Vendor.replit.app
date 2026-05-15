@@ -97,6 +97,24 @@ export const RenderPriceTagBody = zod.object({
     .describe(
       "Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.\n",
     ),
+  companyDetails: zod
+    .object({
+      companyName: zod.string().optional(),
+      address1: zod.string().optional(),
+      address2: zod.string().optional(),
+      city: zod.string().optional(),
+      state: zod.string().optional(),
+      country: zod.string().optional(),
+      pincode: zod.string().optional(),
+      mobile: zod.string().optional(),
+      whatsapp: zod.string().optional(),
+      gstNo: zod.string().optional(),
+      fssaiNo: zod.string().optional(),
+    })
+    .optional()
+    .describe(
+      "Store identity printed on the bottom of the square showcase tag (company name, address, contact numbers, GST\/FSSAI). All fields optional — empty strings are simply hidden in the rendered output.\n",
+    ),
 });
 
 export const RenderPriceTagResponse = zod.object({

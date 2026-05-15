@@ -1,4 +1,9 @@
-import type { PriceTagRenderItem, PriceTagStyle, TagColors } from "./types";
+import type {
+  CompanyDetails,
+  PriceTagRenderItem,
+  PriceTagStyle,
+  TagColors,
+} from "./types";
 import { DEFAULT_TAG_COLORS } from "./types";
 import {
   fmt0,
@@ -465,6 +470,11 @@ export function renderSquareShowcaseHtml(
   it: PriceTagRenderItem,
   showLogo: boolean,
   logoDataUri: string,
+  opts: {
+    company?: CompanyDetails;
+    whatsappLogoDataUri?: string;
+    appStoreLogoDataUri?: string;
+  } = {},
 ): string {
   const { value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -488,6 +498,74 @@ export function renderSquareShowcaseHtml(
     ? `<img class="watermark" src="${logoDataUri}" alt="" />`
     : "";
 
+  // Compose the company footer band only when at least one
+  // identity field is present — keeps the layout clean for callers
+  // that don't supply CompanyDetails (e.g. the legacy PDF flow).
+  const company = opts.company ?? {};
+  const tr = (s?: string): string => (typeof s === "string" ? s.trim() : "");
+  const companyName = tr(company.companyName);
+  const addr1 = tr(company.address1);
+  const addr2 = tr(company.address2);
+  const cityLine = [tr(company.city), tr(company.state), tr(company.pincode)]
+    .filter(Boolean)
+    .join(", ");
+  const country = tr(company.country);
+  const cityCountry = [cityLine, country].filter(Boolean).join(" · ");
+  const mobile = tr(company.mobile);
+  const whatsapp = tr(company.whatsapp);
+  const gst = tr(company.gstNo);
+  const fssai = tr(company.fssaiNo);
+  const hasCompany =
+    !!(companyName || addr1 || addr2 || cityCountry || mobile || whatsapp ||
+      gst || fssai);
+
+  const waIcon = opts.whatsappLogoDataUri
+    ? `<img class="waIcon" src="${opts.whatsappLogoDataUri}" alt="WA" />`
+    : "";
+  // When mobile and whatsapp are the same number we collapse to a
+  // single chip with the WA icon. Otherwise show two chips: phone
+  // for the landline/mobile, WA icon for the whatsapp number.
+  const phoneRow =
+    whatsapp && whatsapp === mobile
+      ? `<span class="phoneItem">${waIcon}<span>${escapeHtml(whatsapp)}</span></span>`
+      : [
+          mobile
+            ? `<span class="phoneItem">📞 ${escapeHtml(mobile)}</span>`
+            : "",
+          whatsapp
+            ? `<span class="phoneItem">${waIcon}<span>${escapeHtml(whatsapp)}</span></span>`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("");
+
+  const idLine = [
+    gst ? `GST: ${escapeHtml(gst)}` : "",
+    fssai ? `FSSAI: ${escapeHtml(fssai)}` : "",
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+
+  const storesBadge = opts.appStoreLogoDataUri
+    ? `<img class="storesBadge" src="${opts.appStoreLogoDataUri}" alt="Get the app" />`
+    : "";
+
+  const companyBlock = hasCompany
+    ? `
+      <div class="companySq">
+        <div class="companyText">
+          ${companyName ? `<div class="companyName">${escapeHtml(companyName)}</div>` : ""}
+          ${addr1 ? `<div class="companyAddr">${escapeHtml(addr1)}</div>` : ""}
+          ${addr2 ? `<div class="companyAddr">${escapeHtml(addr2)}</div>` : ""}
+          ${cityCountry ? `<div class="companyAddr">${escapeHtml(cityCountry)}</div>` : ""}
+          ${phoneRow ? `<div class="companyPhones">${phoneRow}</div>` : ""}
+          ${idLine ? `<div class="companyIds">${idLine}</div>` : ""}
+        </div>
+        ${storesBadge ? `<div class="companyStores">${storesBadge}</div>` : ""}
+      </div>
+    `
+    : "";
+
   return `
     <div class="tagSq">
       ${watermark}
@@ -507,6 +585,7 @@ export function renderSquareShowcaseHtml(
         <span class="itemNoSq">${itemNo ? "Item: " + escapeHtml(itemNo) : ""}</span>
         <span class="validTillSq">${validTill}</span>
       </div>
+      ${companyBlock}
     </div>
   `;
 }
@@ -548,7 +627,7 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     padding: 14px;
   }
   .tagSq .imgFrameSq {
-    width: 240px; height: 240px;
+    width: 200px; height: 200px;
     background: #FFFFFF;
     border: 2px solid ${GOLD};
     border-radius: 12px;
@@ -611,12 +690,58 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   }
   .tagSq .footerRowSq {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 16px 12px;
+    padding: 6px 16px 4px;
     font-size: 12px; color: #6B7280; font-weight: 700;
     letter-spacing: 0.3px;
   }
   .tagSq .itemNoSq { color: #6B7280; }
   .tagSq .validTillSq { color: #6B7280; }
+  .tagSq .companySq {
+    margin-top: auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px 10px;
+    background: rgba(122, 15, 25, 0.06);
+    border-top: 1px solid rgba(122, 15, 25, 0.18);
+  }
+  .tagSq .companyText {
+    flex: 1;
+    min-width: 0;
+    color: #1F2937;
+    font-size: 10px;
+    line-height: 1.25;
+    font-weight: 600;
+  }
+  .tagSq .companyName {
+    font-size: 13px; font-weight: 900; color: ${DEEP_RED};
+    letter-spacing: 0.3px;
+    margin-bottom: 1px;
+  }
+  .tagSq .companyAddr { color: #374151; }
+  .tagSq .companyPhones {
+    margin-top: 2px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    color: #111827;
+  }
+  .tagSq .phoneItem {
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .tagSq .waIcon {
+    width: 12px; height: 12px; object-fit: contain;
+    vertical-align: middle;
+  }
+  .tagSq .companyIds {
+    margin-top: 1px;
+    color: #6B7280; font-weight: 700; font-size: 9px;
+    letter-spacing: 0.3px;
+  }
+  .tagSq .companyStores {
+    flex-shrink: 0;
+    display: flex; align-items: center;
+  }
+  .tagSq .storesBadge {
+    height: 36px; width: auto; object-fit: contain;
+  }
 `;
 }
 
@@ -626,11 +751,21 @@ export function buildSquareShowcaseHtml(
   item: PriceTagRenderItem,
   showLogo: boolean,
   logoDataUri: string,
-  opts: { widthPx?: number; colors?: TagColors } = {},
+  opts: {
+    widthPx?: number;
+    colors?: TagColors;
+    company?: CompanyDetails;
+    whatsappLogoDataUri?: string;
+    appStoreLogoDataUri?: string;
+  } = {},
 ): string {
   const widthPx = opts.widthPx ?? 540;
   const colors = opts.colors ?? DEFAULT_TAG_COLORS;
-  const tagHtml = renderSquareShowcaseHtml(item, showLogo, logoDataUri);
+  const tagHtml = renderSquareShowcaseHtml(item, showLogo, logoDataUri, {
+    company: opts.company,
+    whatsappLogoDataUri: opts.whatsappLogoDataUri,
+    appStoreLogoDataUri: opts.appStoreLogoDataUri,
+  });
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
 <title>Price Tag — Square</title>

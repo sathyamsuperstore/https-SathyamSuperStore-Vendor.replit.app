@@ -2,9 +2,11 @@ import { Router } from "express";
 import { execSync } from "node:child_process";
 import puppeteer, { type Browser } from "puppeteer";
 import {
+  APPSTORE_LOGO_BASE64,
   buildSingleTagHtml,
   buildSquareShowcaseHtml,
   LOGO_BASE64,
+  WHATSAPP_LOGO_BASE64,
   type PriceTagRenderItem,
   type PriceTagStyle,
 } from "@workspace/pricetag-html";
@@ -138,7 +140,16 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     return;
   }
 
-  const { item, style, showLogo, widthPx: rawWidth, scale: rawScale, aspect, colors } = parsed.data;
+  const {
+    item,
+    style,
+    showLogo,
+    widthPx: rawWidth,
+    scale: rawScale,
+    aspect,
+    colors,
+    companyDetails,
+  } = parsed.data;
 
   const safety = isImageUriSafe(item.imageUri);
   if (!safety.ok) {
@@ -158,7 +169,13 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
         item as PriceTagRenderItem,
         showLogo,
         LOGO_BASE64,
-        { widthPx, colors },
+        {
+          widthPx,
+          colors,
+          company: companyDetails,
+          whatsappLogoDataUri: WHATSAPP_LOGO_BASE64,
+          appStoreLogoDataUri: APPSTORE_LOGO_BASE64,
+        },
       )
     : buildSingleTagHtml(
         item as PriceTagRenderItem,

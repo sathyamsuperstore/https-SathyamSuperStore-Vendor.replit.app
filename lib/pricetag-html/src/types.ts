@@ -13,6 +13,24 @@ export type PriceTagStyle = "A" | "B" | "C" | "D" | "E";
 //               background gradient base.
 //   gold      — Style A/D big price digits, square frame border,
 //               square SAVE pill background.
+
+// Company / store identity printed on the bottom of the square
+// showcase tag. All fields are optional strings — the renderer
+// silently skips empty values so partial data still produces a
+// clean layout.
+export interface CompanyDetails {
+  companyName?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  mobile?: string;
+  whatsapp?: string;
+  gstNo?: string;
+  fssaiNo?: string;
+}
 export interface TagColors {
   red: string;
   deepRed: string;

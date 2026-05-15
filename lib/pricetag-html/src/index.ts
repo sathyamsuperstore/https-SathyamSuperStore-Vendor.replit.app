@@ -7,7 +7,16 @@
 // Single source of truth so the JPEG and PDF outputs always match.
 
 export { LOGO_BASE64 } from "./logo";
-export type { PriceTagStyle, PriceTagRenderItem, TagColors } from "./types";
+export {
+  WHATSAPP_LOGO_BASE64,
+  APPSTORE_LOGO_BASE64,
+} from "./assets";
+export type {
+  PriceTagStyle,
+  PriceTagRenderItem,
+  TagColors,
+  CompanyDetails,
+} from "./types";
 export { DEFAULT_TAG_COLORS } from "./types";
 export {
   fmt0,

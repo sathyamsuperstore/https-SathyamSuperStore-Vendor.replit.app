@@ -63,6 +63,24 @@ export const PriceTagRenderInputAspect = {
   square: "square",
 } as const;
 
+/**
+ * Store identity printed on the bottom of the square showcase tag (company name, address, contact numbers, GST/FSSAI). All fields optional — empty strings are simply hidden in the rendered output.
+
+ */
+export interface CompanyDetails {
+  companyName?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  mobile?: string;
+  whatsapp?: string;
+  gstNo?: string;
+  fssaiNo?: string;
+}
+
 export interface PriceTagRenderInput {
   item: PriceTagItem;
   style: PriceTagStyle;
@@ -86,6 +104,7 @@ export interface PriceTagRenderInput {
   /** Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
    */
   aspect?: PriceTagRenderInputAspect;
+  companyDetails?: CompanyDetails;
 }
 
 export type PriceTagRenderResultMimeType =

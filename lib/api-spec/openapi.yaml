@@ -163,6 +163,27 @@ components:
             tight-clipped tag layout (~2:1). `square` renders the
             dedicated Instagram-friendly 1:1 showcase template
             (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
+        companyDetails:
+          $ref: "#/components/schemas/CompanyDetails"
+    CompanyDetails:
+      type: object
+      description: >
+        Store identity printed on the bottom of the square showcase
+        tag (company name, address, contact numbers, GST/FSSAI). All
+        fields optional — empty strings are simply hidden in the
+        rendered output.
+      properties:
+        companyName: { type: string }
+        address1: { type: string }
+        address2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        country: { type: string }
+        pincode: { type: string }
+        mobile: { type: string }
+        whatsapp: { type: string }
+        gstNo: { type: string }
+        fssaiNo: { type: string }
     PriceTagRenderResult:
       type: object
       required: [base64, mimeType, widthPx, heightPx]
