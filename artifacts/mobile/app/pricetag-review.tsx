@@ -1506,24 +1506,8 @@ export default function PriceTagReviewScreen() {
                 )}
                 <Text style={styles.exportBtnText}>{exporting ? "Exporting…" : "Export PDF"}</Text>
               </TouchableOpacity>
-              {/* "IMG" button — visual clone of Export PDF. Picks one
-                  item then opens the PriceTag IMG screen with the
-                  default tag layout. */}
-              <TouchableOpacity
-                style={styles.exportBtn}
-                onPress={() => {
-                  setImgPickerLayout("default");
-                  setPngPickerOpen(true);
-                }}
-                disabled={priceTagReviewItems.length === 0}
-                accessibilityLabel="Open a single tag in the PriceTag IMG view"
-              >
-                <Feather name="image" size={14} color={Colors.textInverse} />
-                <Text style={styles.exportBtnText}>IMG</Text>
-              </TouchableOpacity>
-              {/* "Showcase" button — opens the PriceTag IMG screen with
-                  a brand-new visually-redesigned 2:1 layout. Uses the
-                  same item picker as IMG. */}
+              {/* "Banner 2:1" button — opens the PriceTag IMG screen
+                  with the visually-redesigned 2:1 layout. */}
               <TouchableOpacity
                 style={styles.exportBtn}
                 onPress={() => {
@@ -1531,12 +1515,12 @@ export default function PriceTagReviewScreen() {
                   setPngPickerOpen(true);
                 }}
                 disabled={priceTagReviewItems.length === 0}
-                accessibilityLabel="Open a single tag in the redesigned Showcase layout"
+                accessibilityLabel="Open a single tag in the 2:1 banner layout"
               >
                 <Feather name="star" size={14} color={Colors.textInverse} />
-                <Text style={styles.exportBtnText}>Showcase</Text>
+                <Text style={styles.exportBtnText}>Banner 2:1</Text>
               </TouchableOpacity>
-              {/* "Showcase SQ" — same flow as Showcase but the
+              {/* "Banner SQ" — same flow as Banner 2:1 but the
                   exported file is 1:1 (Instagram-friendly). The
                   IMG screen renders a square preview and posts
                   aspect="square" to the server renderer. */}
@@ -1547,10 +1531,10 @@ export default function PriceTagReviewScreen() {
                   setPngPickerOpen(true);
                 }}
                 disabled={priceTagReviewItems.length === 0}
-                accessibilityLabel="Open a single tag in the square (1:1) Showcase layout"
+                accessibilityLabel="Open a single tag in the square (1:1) banner layout"
               >
                 <Feather name="square" size={14} color={Colors.textInverse} />
-                <Text style={styles.exportBtnText}>Showcase SQ</Text>
+                <Text style={styles.exportBtnText}>Banner SQ</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -3775,7 +3759,7 @@ const b = StyleSheet.create({
   },
   bannerEditBtn: {
     position: "absolute",
-    right: 6,
+    left: 6,
     top: "50%",
     marginTop: -11,
     width: 22, height: 22, borderRadius: 11,
