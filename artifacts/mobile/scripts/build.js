@@ -55,20 +55,56 @@ function stripProtocol(domain) {
 }
 
 function getDeploymentDomain() {
-  if (process.env.REPLIT_INTERNAL_APP_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_INTERNAL_APP_DOMAIN);
-  }
-
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_DEV_DOMAIN);
-  }
-
   if (process.env.EXPO_PUBLIC_DOMAIN) {
     return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
   }
 
+  if (process.env.REPLIT_INTERNAL_APP_DOMAIN) {
+    return stripProtocol(process.env.REPLIT_INTERNAL_APP_DOMAIN);
+  }
+
+  if (process.env.REPLIT_DOMAINS) {
+    const first = process.env.REPLIT_DOMAINS.split(",")[0].trim();
+    if (first) return stripProtocol(first);
+  }
+
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    console.warn(
+      "\n========================================================",
+    );
+    console.warn(
+      "WARNING: Falling back to REPLIT_DEV_DOMAIN (workspace dev URL).",
+    );
+    console.warn(
+      "Dev URLs are protected by Replit auth and will return 403 to",
+    );
+    console.warn(
+      "any APK installed outside the Replit browser. The unlock screen",
+    );
+    console.warn(
+      "will fail with a 403 error.",
+    );
+    console.warn("");
+    console.warn(
+      "Before building a distributable APK, publish the API Server in",
+    );
+    console.warn(
+      "Replit and set the EXPO_PUBLIC_DOMAIN secret to its .replit.app",
+    );
+    console.warn(
+      "domain (no https:// prefix). Example:",
+    );
+    console.warn(
+      "  EXPO_PUBLIC_DOMAIN=my-api.replit.app",
+    );
+    console.warn(
+      "========================================================\n",
+    );
+    return stripProtocol(process.env.REPLIT_DEV_DOMAIN);
+  }
+
   console.error(
-    "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
+    "ERROR: No deployment domain found. Set EXPO_PUBLIC_DOMAIN to your published .replit.app domain.",
   );
   process.exit(1);
 }
