@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -62,13 +62,11 @@ async function toServerImageUri(
 }
 
 import { Colors } from "@/constants/colors";
-import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import {
   useApp,
   type PriceTagItem,
   type PriceTagStyle,
 } from "@/context/AppContext";
-import { pickFont, hasTamil } from "@/constants/typography";
 import { StyleATag, StyleBTag } from "./pricetag-review";
 
 // ============================================================
@@ -128,283 +126,10 @@ function exportFilename(
 }
 
 // ============================================================
-// Showcase tag — visually-appealing 2:1 layout.
+// Showcase preview — the on-screen image is the actual JPEG
+// produced by the server, not a hand-coded RN approximation.
+// See PriceTagImgScreen for the render-on-mount logic.
 // ============================================================
-
-const RED = "#C8102E";
-const DEEP_RED = "#7A0F19";
-const CREAM = "#FAF4E6";
-const GOLD = "#B8860B";
-const INK = "#1F2937";
-
-function ShowcaseTag({ item }: { item: PriceTagItem }) {
-  const desc = item.description || "(no description)";
-  const mrp = fmt0(item.mrp);
-  const promo = fmt0(item.promotionPrice);
-  const sp = fmt0(item.sp);
-  const priceValue = promo || sp || "—";
-  const priceLabel = promo ? "OFFER PRICE" : "PRICE";
-  const off = offAmount(item);
-  const itemNo = (item.itemNo ?? "").trim();
-
-  return (
-    <View style={s.card}>
-      {/* Cream background */}
-      <View style={s.bg} />
-
-      {/* Top-left diagonal corner ribbon */}
-      <View pointerEvents="none" style={s.ribbon}>
-        <Text style={s.ribbonText}>SPECIAL</Text>
-      </View>
-
-      {/* Logo watermark, bottom-right */}
-      <View pointerEvents="none" style={s.logoWrap}>
-        <Image
-          source={{ uri: LOGO_BASE64 }}
-          style={s.logo}
-          resizeMode="contain"
-        />
-      </View>
-
-      {/* Two-pane row: image left, text right */}
-      <View style={s.row}>
-        {/* LEFT — product image tile */}
-        <View style={s.imageCol}>
-          <View style={s.imageFrame}>
-            {item.imageUri ? (
-              <Image
-                source={{ uri: item.imageUri }}
-                style={s.image}
-                resizeMode="contain"
-              />
-            ) : (
-              <View style={s.imagePlaceholder}>
-                <Text style={s.imagePlaceholderText}>No Image</Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* RIGHT — text column. flex:1 + justify space-between keeps
-            the SAVE pill anchored to the bottom even if the
-            description wraps to three lines. */}
-        <View style={s.textCol}>
-          {/* Description — allow up to 3 lines and auto-shrink so
-              long names don't get cut off mid-word. */}
-          <Text
-            style={[
-              s.desc,
-              { fontFamily: pickFont(desc, "bold") },
-              hasTamil(desc) ? { lineHeight: 20 } : null,
-            ]}
-            numberOfLines={3}
-            adjustsFontSizeToFit
-            minimumFontScale={0.6}
-          >
-            {desc}
-          </Text>
-
-          {/* MRP row */}
-          {mrp ? (
-            <View style={s.mrpRow}>
-              <Text style={s.mrpLabel}>MRP</Text>
-              <Text style={s.mrpValue}>₹{mrp}</Text>
-            </View>
-          ) : null}
-
-          {/* Big price block */}
-          <View style={s.priceBlock}>
-            <Text style={s.priceLabel}>{priceLabel}</Text>
-            <View style={s.priceLine}>
-              <Text style={s.priceCurrency}>₹</Text>
-              <Text
-                style={s.priceValue}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.4}
-              >
-                {priceValue}
-              </Text>
-            </View>
-          </View>
-
-          {/* Footer — SAVE pill + item code. Reserve space at the
-              bottom so the watermark logo never overlaps it. */}
-          <View style={s.footer}>
-            {off ? (
-              <View style={s.savePill}>
-                <Text style={s.saveText}>SAVE ₹{off}</Text>
-              </View>
-            ) : (
-              <View />
-            )}
-            {itemNo ? <Text style={s.itemNo}>#{itemNo}</Text> : null}
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const s = StyleSheet.create({
-  card: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-    borderRadius: 14,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: DEEP_RED,
-    backgroundColor: CREAM,
-    position: "relative",
-  },
-  bg: { ...StyleSheet.absoluteFillObject, backgroundColor: CREAM },
-  ribbon: {
-    position: "absolute",
-    top: 12,
-    left: -44,
-    width: 150,
-    transform: [{ rotate: "-35deg" }],
-    backgroundColor: DEEP_RED,
-    paddingVertical: 3,
-    alignItems: "center",
-    zIndex: 4,
-  },
-  ribbonText: {
-    color: "#fff",
-    fontWeight: "900",
-    letterSpacing: 1.2,
-    fontSize: 10,
-  },
-  logoWrap: {
-    position: "absolute",
-    right: 8,
-    bottom: 4,
-    width: 48,
-    height: 16,
-    opacity: 0.55,
-    zIndex: 1,
-  },
-  logo: { width: "100%", height: "100%" },
-  row: {
-    flex: 1,
-    flexDirection: "row",
-    padding: 10,
-    paddingBottom: 14,
-    gap: 10,
-  },
-  imageCol: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imageFrame: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    borderWidth: 1.5,
-    borderColor: GOLD,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 6,
-  },
-  image: { width: "100%", height: "100%" },
-  imagePlaceholder: {
-    flex: 1,
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imagePlaceholderText: {
-    color: "#94A3B8",
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  textCol: {
-    flex: 1.2,
-    justifyContent: "space-between",
-    paddingTop: 2,
-  },
-  desc: {
-    color: INK,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 17,
-  },
-  mrpRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 6,
-    marginTop: 2,
-  },
-  mrpLabel: {
-    color: "#6B7280",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-  mrpValue: {
-    color: "#6B7280",
-    fontSize: 12,
-    fontWeight: "700",
-    textDecorationLine: "line-through",
-  },
-  priceBlock: {
-    backgroundColor: DEEP_RED,
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    marginTop: 4,
-  },
-  priceLabel: {
-    color: GOLD,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-    fontSize: 10,
-  },
-  priceLine: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    marginTop: 0,
-  },
-  priceCurrency: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "900",
-    marginRight: 2,
-  },
-  priceValue: {
-    color: "#fff",
-    fontSize: 30,
-    fontWeight: "900",
-    lineHeight: 34,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  savePill: {
-    backgroundColor: GOLD,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  saveText: {
-    color: DEEP_RED,
-    fontWeight: "900",
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  itemNo: {
-    color: "#6B7280",
-    fontSize: 9,
-    fontWeight: "700",
-    marginRight: 56, // leave room for the logo watermark
-  },
-});
 
 // ============================================================
 // Screen
@@ -434,12 +159,23 @@ export default function PriceTagImgScreen() {
     return { ...found, promotionToDate: undefined };
   }, [itemKey, priceTagReviewItems, isShowcaseSq]);
 
-  // ---- "Export IMG" calls the api-server's /pricetag/render endpoint
-  // which renders the same HTML/CSS the PDF export uses through a
-  // headless Chromium, returning a high-resolution JPEG. This avoids
-  // the layout / quality issues of capturing a React Native view on
-  // device. The on-screen copy here is purely for preview.
+  // The server-side renderer is the single source of truth for the
+  // Showcase / Showcase SQ images. We render once on mount and reuse
+  // the same JPEG bytes for both the on-screen preview AND the file
+  // the user downloads — so what they see is exactly what they save.
   const [exporting, setExporting] = useState(false);
+  const [rendered, setRendered] = useState<{
+    base64: string;
+    mimeType: string;
+    widthPx: number;
+    heightPx: number;
+  } | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  // Bumping this triggers a re-render on the server (used by the
+  // "Try again" button after a failed render).
+  const [renderNonce, setRenderNonce] = useState(0);
+  const renderSeq = useRef(0);
 
   if (!item) {
     return (
@@ -456,22 +192,18 @@ export default function PriceTagImgScreen() {
   // Either Showcase variant exposes the Download button.
   const isShowcaseAny = isShowcase || isShowcaseSq;
 
-  async function handleExport() {
-    if (!item || exporting) return;
-    setExporting(true);
+  // Fetch the server-rendered JPEG once per (item / aspect / logo
+  // / nonce). Stored in state and used both for preview and download.
+  const renderOnServer = useCallback(async () => {
+    if (!item) return;
+    const seq = ++renderSeq.current;
+    setRendering(true);
+    setRenderError(null);
+    // Drop any previously cached bytes so the user can't see or
+    // download a stale preview while the new render is in flight.
+    setRendered(null);
     try {
-      // The server can't reach a `file://` URI on the device — and
-      // we block non-http(s) protocols server-side as an SSRF guard.
-      // For local files (typical when the user picked an image from
-      // the camera roll) we read the bytes here and inline them as a
-      // data: URI so Chromium can render the image directly. http(s)
-      // URLs and existing data: URIs are forwarded unchanged.
       const safeImageUri = await toServerImageUri(item.imageUri);
-
-      // Server-side render. Showcase always uses Style E so the
-      // user-picked TitleList banner drives design variety. The
-      // server returns base64 JPEG bytes that match the PDF
-      // export's HTML/CSS pixel-for-pixel.
       const renderRes = await fetch(apiUrl("/api/pricetag/render"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -510,7 +242,35 @@ export default function PriceTagImgScreen() {
         heightPx: number;
       };
       if (!payload?.base64) throw new Error("Server returned no image bytes");
+      // Drop stale responses if a newer render started.
+      if (seq !== renderSeq.current) return;
+      setRendered(payload);
+    } catch (e: any) {
+      if (seq !== renderSeq.current) return;
+      setRendered(null);
+      setRenderError(e?.message ?? "Could not render the image.");
+    } finally {
+      if (seq === renderSeq.current) setRendering(false);
+    }
+  }, [item, isShowcaseSq, priceTagReviewShowLogo]);
 
+  useEffect(() => {
+    if (!isShowcaseAny) return;
+    void renderOnServer();
+  }, [isShowcaseAny, renderOnServer, renderNonce]);
+
+  async function handleExport() {
+    if (!item || exporting) return;
+    if (!rendered) {
+      Alert.alert(
+        "Preview not ready",
+        renderError ?? "Please wait for the preview to finish rendering.",
+      );
+      return;
+    }
+    setExporting(true);
+    try {
+      const payload = rendered;
       const filename = exportFilename(item, { square: isShowcaseSq });
 
       if (Platform.OS === "web") {
@@ -596,11 +356,44 @@ export default function PriceTagImgScreen() {
   }
 
   const renderTag = () => {
-    // Showcase SQ uses the same on-screen ShowcaseTag for the
-    // preview — only the surrounding frame's aspect changes
-    // (1:1 vs 2:1) and the server-side render uses a different
-    // template tuned for square output.
-    if (isShowcaseAny) return <ShowcaseTag item={item} />;
+    // Showcase / Showcase SQ: the preview IS the server-rendered
+    // JPEG, so what the user sees on screen is exactly the file
+    // they will download. While the render is in flight we show a
+    // spinner; on failure we show an error + Try again button.
+    if (isShowcaseAny) {
+      if (rendered) {
+        return (
+          <Image
+            source={{ uri: `data:${rendered.mimeType};base64,${rendered.base64}` }}
+            style={screen.tagFill}
+            resizeMode="contain"
+          />
+        );
+      }
+      if (rendering) {
+        return (
+          <View style={screen.previewBusy}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={screen.previewBusyText}>Generating preview…</Text>
+          </View>
+        );
+      }
+      return (
+        <View style={screen.previewBusy}>
+          <Feather name="alert-triangle" size={28} color={Colors.danger} />
+          <Text style={screen.previewErrorText}>
+            {renderError ?? "Could not generate preview."}
+          </Text>
+          <TouchableOpacity
+            style={screen.retryBtn}
+            onPress={() => setRenderNonce((n) => n + 1)}
+          >
+            <Feather name="refresh-cw" size={14} color={Colors.textInverse} />
+            <Text style={screen.retryBtnText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
     const effStyle: PriceTagStyle = item.style ?? priceTagReviewStyle;
     if (effStyle === "A") {
@@ -683,9 +476,12 @@ export default function PriceTagImgScreen() {
 
       {isShowcaseAny ? (
         <TouchableOpacity
-          style={[screen.exportBtn, exporting && screen.exportBtnBusy]}
+          style={[
+            screen.exportBtn,
+            (exporting || !rendered) && screen.exportBtnBusy,
+          ]}
           onPress={handleExport}
-          disabled={exporting}
+          disabled={exporting || !rendered}
           accessibilityLabel={
             isShowcaseSq
               ? "Save the square (1:1) showcase tag as a JPEG image"
@@ -759,4 +555,38 @@ const screen = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   emptyText: { color: Colors.textSecondary, textAlign: "center" },
+  previewBusy: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    gap: 10,
+  },
+  previewBusyText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  previewErrorText: {
+    color: Colors.danger,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingHorizontal: 12,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    marginTop: 4,
+  },
+  retryBtnText: {
+    color: Colors.textInverse,
+    fontWeight: "800",
+    fontSize: 13,
+  },
 });
