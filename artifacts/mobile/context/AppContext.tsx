@@ -294,6 +294,11 @@ interface AppContextType {
   companyDetails: CompanyDetails;
   setCompanyDetails: (details: CompanyDetails) => Promise<void>;
   resetCompanyDetails: () => Promise<void>;
+  // CompanyR — second store-identity profile (same shape as
+  // companyDetails, separate AsyncStorage slot + defaults).
+  companyDetailsR: CompanyDetails;
+  setCompanyDetailsR: (details: CompanyDetails) => Promise<void>;
+  resetCompanyDetailsR: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
@@ -330,6 +335,23 @@ export const DEFAULT_COMPANY_DETAILS: CompanyDetails = {
   pincode: "641029",
   mobile: "+919788144868",
   whatsapp: "+919788144868",
+  gstNo: "",
+  fssaiNo: "",
+};
+
+// "CompanyR" — second store-identity profile, structurally identical
+// to CompanyDetails. Edited from the "CompanyR Details" tab and kept
+// in its own AsyncStorage slot so neither profile clobbers the other.
+export const DEFAULT_COMPANY_DETAILS_R: CompanyDetails = {
+  companyName: "Rasi Super Store",
+  address1: "",
+  address2: "",
+  city: "Coimbatore",
+  state: "TN",
+  country: "India",
+  pincode: "",
+  mobile: "",
+  whatsapp: "",
   gstNo: "",
   fssaiNo: "",
 };
@@ -602,6 +624,10 @@ const TITLE_LIST_SEEDED_KEY = "@titleListSeeded";
 const DATA_DOWNLOAD_TIME_KEY = "@dataDownloadTime";
 // Company / store identity JSON. See CompanyDetails for the shape.
 const COMPANY_DETAILS_KEY = "@companyDetails";
+// CompanyR — second store-identity profile, same shape as
+// COMPANY_DETAILS_KEY. Stored in its own slot so it persists
+// independently.
+const COMPANY_DETAILS_R_KEY = "@companyDetailsR";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -699,6 +725,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rodeoItems, setRodeoItems] = useState<RodeoItem[]>([]);
   const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
   const [companyDetails, setCompanyDetailsState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS);
+  const [companyDetailsR, setCompanyDetailsRState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS_R);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -707,7 +734,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData, companyDetailsRData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -736,6 +763,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(COMPANY_DETAILS_KEY),
         AsyncStorage.getItem(PRICE_TAG_SQUARE_VARIANT_KEY),
         AsyncStorage.getItem(RASI_ITEMS_KEY),
+        AsyncStorage.getItem(COMPANY_DETAILS_R_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -954,6 +982,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (typeof v === "string") merged[k] = v;
             }
             setCompanyDetailsState(merged);
+          }
+        } catch {
+          // Non-fatal: keep defaults.
+        }
+      }
+
+      // CompanyR — same merge-with-defaults strategy as the primary
+      // companyDetails block above. Independent storage slot.
+      if (companyDetailsRData) {
+        try {
+          const parsed = JSON.parse(companyDetailsRData);
+          if (parsed && typeof parsed === "object") {
+            const merged: CompanyDetails = { ...DEFAULT_COMPANY_DETAILS_R };
+            for (const k of Object.keys(DEFAULT_COMPANY_DETAILS_R) as (keyof CompanyDetails)[]) {
+              const v = (parsed as Record<string, unknown>)[k];
+              if (typeof v === "string") merged[k] = v;
+            }
+            setCompanyDetailsRState(merged);
           }
         } catch {
           // Non-fatal: keep defaults.
@@ -1576,6 +1622,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCompanyDetailsState(DEFAULT_COMPANY_DETAILS);
   }
 
+  // ----- CompanyR details helpers (mirror of the primary set) -----
+  async function setCompanyDetailsR(details: CompanyDetails) {
+    const trim = (v: unknown): string =>
+      typeof v === "string" ? v.slice(0, 200) : "";
+    const next: CompanyDetails = {
+      companyName: trim(details.companyName),
+      address1: trim(details.address1),
+      address2: trim(details.address2),
+      city: trim(details.city),
+      state: trim(details.state),
+      country: trim(details.country),
+      pincode: trim(details.pincode),
+      mobile: trim(details.mobile),
+      whatsapp: trim(details.whatsapp),
+      gstNo: trim(details.gstNo),
+      fssaiNo: trim(details.fssaiNo),
+    };
+    await AsyncStorage.setItem(COMPANY_DETAILS_R_KEY, JSON.stringify(next));
+    setCompanyDetailsRState(next);
+  }
+
+  async function resetCompanyDetailsR() {
+    await AsyncStorage.removeItem(COMPANY_DETAILS_R_KEY);
+    setCompanyDetailsRState(DEFAULT_COMPANY_DETAILS_R);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1705,6 +1777,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         companyDetails,
         setCompanyDetails,
         resetCompanyDetails,
+        companyDetailsR,
+        setCompanyDetailsR,
+        resetCompanyDetailsR,
         hydrated,
       }}
     >

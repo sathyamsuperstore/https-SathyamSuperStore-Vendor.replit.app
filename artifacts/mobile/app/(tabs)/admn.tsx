@@ -327,6 +327,19 @@ export default function AdmnHubScreen() {
             Company Details
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.importBtn, { marginTop: 8 }]}
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/company-details-r" as any);
+          }}
+          activeOpacity={0.85}
+        >
+          <Feather name="briefcase" size={16} color={Colors.primary} />
+          <Text style={styles.importBtnText} numberOfLines={1}>
+            CompanyR Details
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.section, { marginTop: 16 }]}>
