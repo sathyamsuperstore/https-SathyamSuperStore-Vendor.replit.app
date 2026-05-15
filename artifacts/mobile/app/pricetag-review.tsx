@@ -3754,14 +3754,12 @@ const b = StyleSheet.create({
   },
   topBanner: {
     backgroundColor: RED, paddingVertical: 6,
+    flexDirection: "row",
     alignItems: "center", justifyContent: "center",
-    position: "relative",
+    gap: 8,
+    paddingHorizontal: 8,
   },
   bannerEditBtn: {
-    position: "absolute",
-    left: 6,
-    top: "50%",
-    marginTop: -11,
     width: 22, height: 22, borderRadius: 11,
     backgroundColor: "#16A34A",
     borderWidth: 1, borderColor: "#FFFFFF",
