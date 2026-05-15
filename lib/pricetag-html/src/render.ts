@@ -592,6 +592,7 @@ export function renderSquareShowcaseHtml(
 
 export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  void RED; // Banner SQ Detailed uses white/deepRed/cream/gold; RED reserved.
   return `
   .tagSq {
     width: 540px; height: 540px;
@@ -669,13 +670,14 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     padding: 8px 26px;
     display: inline-flex; align-items: baseline; gap: 6px;
   }
-  /* Spec: big promo price text → red. Sits inside the deepRed price
-     box (priceBoxSq). */
+  /* Big promo price text → white on the deepRed pill for max contrast
+     and consistency with the Minimal variant. (Earlier red-on-deepRed
+     spec was reverted: ~3:1 contrast was hard to read.) */
   .tagSq .priceCurrencySq {
-    color: ${RED}; font-size: 26px; font-weight: 900;
+    color: #FFF; font-size: 26px; font-weight: 900;
   }
   .tagSq .priceValueSq {
-    color: ${RED}; font-size: 48px; font-weight: 900; line-height: 1;
+    color: #FFF; font-size: 48px; font-weight: 900; line-height: 1;
   }
   .tagSq .saveRowSq {
     display: flex; justify-content: center;
