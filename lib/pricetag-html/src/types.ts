@@ -41,7 +41,10 @@ export interface TagColors {
 // Sathyam Super Store default palette — the hand-tuned values the
 // app shipped with before the user could customize them.
 export const DEFAULT_TAG_COLORS: TagColors = {
-  red: "#C8102E",
+  // `red` brightened from #C8102E so the SQ Detailed promo price text
+  // (red on the deepRed price box) keeps adequate contrast. Also lifts
+  // the Style B/C/D/E PDF accents (borders, RED Tag badge, save chip).
+  red: "#ED1C24",
   deepRed: "#7A0F19",
   cream: "#F8F2E4",
   gold: "#B8860B",
