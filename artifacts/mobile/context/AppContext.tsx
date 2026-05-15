@@ -250,6 +250,13 @@ interface AppContextType {
   tagColors: TagColors;
   setTagColors: (colors: TagColors) => Promise<void>;
   resetTagColors: () => Promise<void>;
+  // User-saved palette presets, surfaced on the TagColours screen
+  // alongside the built-in presets. Persisted as JSON; corrupt entries
+  // are dropped on load.
+  customTagPresets: TagColorPreset[];
+  saveCustomTagPreset: (name: string, colors: TagColors) => Promise<void>;
+  deleteCustomTagPreset: (name: string) => Promise<void>;
+  replaceCustomTagPresets: (presets: TagColorPreset[]) => Promise<void>;
   // User-managed catalogue of punchy banner titles, surfaced on the
   // TitleList tab. Seeded with ~400 defaults on first launch and then
   // freely editable (add / edit / delete + Excel import / export).
@@ -506,6 +513,12 @@ const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
 const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
 // Brand palette JSON: { red, deepRed, cream, gold } as #RRGGBB.
 const TAG_COLORS_KEY = "@tagColors";
+const CUSTOM_TAG_PRESETS_KEY = "@customTagPresets";
+
+export interface TagColorPreset {
+  name: string;
+  colors: TagColors;
+}
 // Persisted user-managed banner-title catalogue. Seeded once with the
 // 400 defaults; after that the user owns the list (add / edit /
 // delete / Excel import). A separate "@titleListSeeded" flag stops
@@ -597,6 +610,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
   const [priceTagReviewTitle, setPriceTagReviewTitleState] = useState<string>("");
   const [tagColors, setTagColorsState] = useState<TagColors>(DEFAULT_TAG_COLORS);
+  const [customTagPresets, setCustomTagPresetsState] = useState<TagColorPreset[]>([]);
   const [titleList, setTitleListState] = useState<TitleListItem[]>([]);
   const titleListRef = useRef<TitleListItem[]>([]);
   useEffect(() => {
@@ -617,7 +631,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -639,6 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
         AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
         AsyncStorage.getItem(TAG_COLORS_KEY),
+        AsyncStorage.getItem(CUSTOM_TAG_PRESETS_KEY),
         AsyncStorage.getItem(TITLE_LIST_KEY),
         AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
         AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
@@ -788,6 +803,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         } catch {
           // Non-fatal: keep defaults.
+        }
+      }
+
+      // Custom tag-color presets. Validate each entry shape and drop
+      // anything that doesn't have a non-empty name + 4 valid #RRGGBB
+      // hex slots so a corrupt save can't crash the TagColours screen.
+      if (customTagPresetsData) {
+        try {
+          const parsedList = JSON.parse(customTagPresetsData);
+          const hex = /^#[0-9A-Fa-f]{6}$/;
+          if (Array.isArray(parsedList)) {
+            const cleaned: TagColorPreset[] = [];
+            for (const p of parsedList) {
+              const name = typeof p?.name === "string" ? p.name.trim() : "";
+              const c = p?.colors;
+              if (
+                name &&
+                c &&
+                typeof c.red === "string" && hex.test(c.red) &&
+                typeof c.deepRed === "string" && hex.test(c.deepRed) &&
+                typeof c.cream === "string" && hex.test(c.cream) &&
+                typeof c.gold === "string" && hex.test(c.gold)
+              ) {
+                cleaned.push({
+                  name: name.slice(0, 60),
+                  colors: {
+                    red: c.red.toUpperCase(),
+                    deepRed: c.deepRed.toUpperCase(),
+                    cream: c.cream.toUpperCase(),
+                    gold: c.gold.toUpperCase(),
+                  },
+                });
+              }
+            }
+            setCustomTagPresetsState(cleaned);
+          }
+        } catch {
+          // Non-fatal: keep empty list.
         }
       }
 
@@ -1277,6 +1330,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTagColorsState(DEFAULT_TAG_COLORS);
   }
 
+  async function persistCustomTagPresets(next: TagColorPreset[]) {
+    await AsyncStorage.setItem(
+      CUSTOM_TAG_PRESETS_KEY,
+      JSON.stringify(next),
+    );
+    setCustomTagPresetsState(next);
+  }
+
+  async function saveCustomTagPreset(name: string, colors: TagColors) {
+    const clean = name.trim().slice(0, 60);
+    if (!clean) return;
+    // Replace by name (case-insensitive) so re-saving with the same
+    // name updates instead of duplicating.
+    const lower = clean.toLowerCase();
+    const next = customTagPresets.filter(
+      (p) => p.name.toLowerCase() !== lower,
+    );
+    next.push({ name: clean, colors });
+    await persistCustomTagPresets(next);
+  }
+
+  async function deleteCustomTagPreset(name: string) {
+    const lower = name.trim().toLowerCase();
+    const next = customTagPresets.filter(
+      (p) => p.name.toLowerCase() !== lower,
+    );
+    await persistCustomTagPresets(next);
+  }
+
+  async function replaceCustomTagPresets(presets: TagColorPreset[]) {
+    await persistCustomTagPresets(presets);
+  }
+
   // ----- TitleList helpers -----
   async function saveTitleList(items: TitleListItem[]) {
     await AsyncStorage.setItem(TITLE_LIST_KEY, JSON.stringify(items));
@@ -1447,6 +1533,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         tagColors,
         setTagColors,
         resetTagColors,
+        customTagPresets,
+        saveCustomTagPreset,
+        deleteCustomTagPreset,
+        replaceCustomTagPresets,
         titleList,
         saveTitleList,
         addTitle,

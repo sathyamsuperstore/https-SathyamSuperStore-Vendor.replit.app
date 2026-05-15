@@ -7,30 +7,56 @@ import {
   TextInput,
   Pressable,
   Alert,
+  Platform,
+  Modal,
 } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as XLSX from "xlsx-js-style";
 import { Colors } from "@/constants/colors";
-import { useApp, type PriceTagItem } from "@/context/AppContext";
+import {
+  useApp,
+  type PriceTagItem,
+  type TagColorPreset,
+} from "@/context/AppContext";
 import { DEFAULT_TAG_COLORS, type TagColors } from "@workspace/pricetag-html";
 import { StyleBTag } from "./pricetag-review";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
-const PRESETS: { name: string; colors: TagColors }[] = [
-  {
-    name: "Sathyam (default)",
-    colors: DEFAULT_TAG_COLORS,
-  },
-  {
-    name: "Royal Blue",
-    colors: { red: "#1E3A8A", deepRed: "#0F1F4D", cream: "#F1F5F9", gold: "#D4A017" },
-  },
-  {
-    name: "Forest Green",
-    colors: { red: "#15803D", deepRed: "#14532D", cream: "#F0FDF4", gold: "#CA8A04" },
-  },
+// 25 built-in palettes. The first is the Sathyam default; the rest are
+// curated retail-friendly brand palettes covering warm, cool, neutral
+// and seasonal tones so the user has something punchy to start from.
+const BUILTIN_PRESETS: TagColorPreset[] = [
+  { name: "Sathyam (default)", colors: DEFAULT_TAG_COLORS },
+  { name: "Royal Blue",       colors: { red: "#1E3A8A", deepRed: "#0F1F4D", cream: "#F1F5F9", gold: "#D4A017" } },
+  { name: "Forest Green",     colors: { red: "#15803D", deepRed: "#14532D", cream: "#F0FDF4", gold: "#CA8A04" } },
+  { name: "Crimson Bold",     colors: { red: "#DC2626", deepRed: "#7F1D1D", cream: "#FEF2F2", gold: "#F59E0B" } },
+  { name: "Sunset Orange",    colors: { red: "#EA580C", deepRed: "#9A3412", cream: "#FFF7ED", gold: "#FACC15" } },
+  { name: "Tropical Teal",    colors: { red: "#0D9488", deepRed: "#134E4A", cream: "#F0FDFA", gold: "#EAB308" } },
+  { name: "Midnight Purple",  colors: { red: "#7C3AED", deepRed: "#4C1D95", cream: "#F5F3FF", gold: "#FBBF24" } },
+  { name: "Charcoal Mono",    colors: { red: "#374151", deepRed: "#111827", cream: "#F3F4F6", gold: "#9CA3AF" } },
+  { name: "Festive Maroon",   colors: { red: "#9F1239", deepRed: "#4C0519", cream: "#FFF1F2", gold: "#D4A017" } },
+  { name: "Mango Yellow",     colors: { red: "#F59E0B", deepRed: "#78350F", cream: "#FFFBEB", gold: "#B45309" } },
+  { name: "Ocean Cyan",       colors: { red: "#0891B2", deepRed: "#164E63", cream: "#ECFEFF", gold: "#EAB308" } },
+  { name: "Rose Pink",        colors: { red: "#E11D48", deepRed: "#881337", cream: "#FFF1F2", gold: "#F59E0B" } },
+  { name: "Fresh Lime",       colors: { red: "#65A30D", deepRed: "#365314", cream: "#F7FEE7", gold: "#CA8A04" } },
+  { name: "Indigo Sky",       colors: { red: "#4F46E5", deepRed: "#312E81", cream: "#EEF2FF", gold: "#FACC15" } },
+  { name: "Brick Red",        colors: { red: "#B91C1C", deepRed: "#7F1D1D", cream: "#FEF7ED", gold: "#D97706" } },
+  { name: "Olive Earth",      colors: { red: "#84CC16", deepRed: "#3F6212", cream: "#F7FEE7", gold: "#A16207" } },
+  { name: "Slate Steel",      colors: { red: "#475569", deepRed: "#1E293B", cream: "#F8FAFC", gold: "#CA8A04" } },
+  { name: "Coral Reef",       colors: { red: "#F43F5E", deepRed: "#9F1239", cream: "#FFF7ED", gold: "#FBBF24" } },
+  { name: "Emerald Lux",      colors: { red: "#059669", deepRed: "#064E3B", cream: "#ECFDF5", gold: "#D4A017" } },
+  { name: "Berry Blast",      colors: { red: "#A21CAF", deepRed: "#581C87", cream: "#FAF5FF", gold: "#FACC15" } },
+  { name: "Dijon Mustard",    colors: { red: "#CA8A04", deepRed: "#713F12", cream: "#FEFCE8", gold: "#A16207" } },
+  { name: "Aqua Mint",        colors: { red: "#14B8A6", deepRed: "#115E59", cream: "#F0FDFA", gold: "#CA8A04" } },
+  { name: "Sky Blue",         colors: { red: "#0EA5E9", deepRed: "#0C4A6E", cream: "#F0F9FF", gold: "#F59E0B" } },
+  { name: "Holiday Red",      colors: { red: "#C8102E", deepRed: "#5B0A14", cream: "#FFF8F0", gold: "#FFD700" } },
+  { name: "Espresso",         colors: { red: "#92400E", deepRed: "#451A03", cream: "#FAF6F0", gold: "#D4A017" } },
 ];
 
 const SLOTS: { key: keyof TagColors; label: string; hint: string }[] = [
@@ -54,15 +80,21 @@ const PREVIEW_ITEM: PriceTagItem = {
 
 export default function TagColoursScreen() {
   const insets = useSafeAreaInsets();
-  const { tagColors, setTagColors, resetTagColors } = useApp();
+  const {
+    tagColors,
+    setTagColors,
+    resetTagColors,
+    customTagPresets,
+    saveCustomTagPreset,
+    deleteCustomTagPreset,
+    replaceCustomTagPresets,
+  } = useApp();
 
-  // Local draft so the user can type freely (e.g. mid-edit "#FF") without
-  // every keystroke trying to commit. We only persist when the value
-  // is a valid #RRGGBB hex.
   const [draft, setDraft] = useState<TagColors>(tagColors);
+  const [busy, setBusy] = useState(false);
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [saveName, setSaveName] = useState("");
 
-  // Reseed the draft when the persisted palette changes externally
-  // (e.g. preset applied, reset).
   React.useEffect(() => {
     setDraft(tagColors);
   }, [tagColors]);
@@ -83,10 +115,7 @@ export default function TagColoursScreen() {
 
   const apply = useCallback(async () => {
     if (!valid) {
-      Alert.alert(
-        "Invalid color",
-        "Each color must be a 6-digit hex code (e.g. #C8102E).",
-      );
+      Alert.alert("Invalid color", "Each color must be a 6-digit hex code (e.g. #C8102E).");
       return;
     }
     await setTagColors(draft);
@@ -111,6 +140,250 @@ export default function TagColoursScreen() {
       },
     ]);
   }, [resetTagColors]);
+
+  // Combined list rendered in the scrollable presets container.
+  const allPresets = useMemo(
+    () => [
+      ...BUILTIN_PRESETS.map((p) => ({ ...p, isCustom: false })),
+      ...customTagPresets.map((p) => ({ ...p, isCustom: true })),
+    ],
+    [customTagPresets],
+  );
+
+  function openSaveModal() {
+    if (!valid) {
+      Alert.alert("Invalid color", "Fix the hex codes before saving.");
+      return;
+    }
+    setSaveName("");
+    setSaveModalVisible(true);
+  }
+
+  async function confirmSave() {
+    const clean = saveName.trim();
+    if (!clean) {
+      Alert.alert("Name required", "Give the preset a name.");
+      return;
+    }
+    const dup = customTagPresets.find(
+      (p) => p.name.toLowerCase() === clean.toLowerCase(),
+    );
+    const builtinDup = BUILTIN_PRESETS.find(
+      (p) => p.name.toLowerCase() === clean.toLowerCase(),
+    );
+    if (builtinDup) {
+      Alert.alert(
+        "Reserved name",
+        "That name matches a built-in preset. Pick another.",
+      );
+      return;
+    }
+    const doSave = async () => {
+      await saveCustomTagPreset(clean, draft);
+      setSaveModalVisible(false);
+    };
+    if (dup) {
+      Alert.alert("Replace preset?", `"${clean}" already exists. Overwrite it?`, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Overwrite", style: "destructive", onPress: () => void doSave() },
+      ]);
+    } else {
+      await doSave();
+    }
+  }
+
+  function confirmDeleteCustom(name: string) {
+    Alert.alert("Delete preset", `Remove "${name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => void deleteCustomTagPreset(name),
+      },
+    ]);
+  }
+
+  async function onExport() {
+    try {
+      setBusy(true);
+      // Export ALL presets (built-in + custom) so the user has a full
+      // record they can edit and re-import.
+      const rows = allPresets.map((p) => ({
+        Name: p.name,
+        Red: p.colors.red,
+        DeepRed: p.colors.deepRed,
+        Cream: p.colors.cream,
+        Gold: p.colors.gold,
+        Type: p.isCustom ? "Custom" : "Built-in",
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows, {
+        header: ["Name", "Red", "DeepRed", "Cream", "Gold", "Type"],
+      });
+      ws["!cols"] = [{ wch: 28 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "TagColourPresets");
+
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+      const filename = `TagColourPresets_${stamp}.xlsx`;
+
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+        const blob = new Blob([wbout], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+        const path = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(path, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(path, {
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export Tag Colour Presets",
+            UTI: "org.openxmlformats.spreadsheetml.sheet",
+          });
+        } else {
+          Alert.alert("Saved", `Exported to ${path}`);
+        }
+      }
+    } catch (e) {
+      Alert.alert("Export failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onImport() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.ms-excel",
+          "*/*",
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      setBusy(true);
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      let workbook: XLSX.WorkBook;
+      if (Platform.OS === "web") {
+        const resp = await fetch(asset.uri);
+        const arrayBuffer = await resp.arrayBuffer();
+        workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+      } else {
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        workbook = XLSX.read(base64, { type: "base64" });
+      }
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        Alert.alert("Import failed", "The file has no sheets.");
+        return;
+      }
+      const sheet = workbook.Sheets[firstSheetName];
+      if (!sheet) {
+        Alert.alert("Import failed", "Could not read the first sheet.");
+        return;
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+      });
+
+      // Drop built-in names so the user's custom list never shadows
+      // the canned ones (those always render from BUILTIN_PRESETS).
+      const builtinLower = new Set(
+        BUILTIN_PRESETS.map((p) => p.name.toLowerCase()),
+      );
+      const seen = new Set<string>();
+      const parsed: TagColorPreset[] = [];
+      let skipped = 0;
+
+      const norm = (s: unknown): string =>
+        s == null ? "" : String(s).trim();
+      const normHex = (s: unknown): string => {
+        const v = norm(s);
+        const withHash = v.startsWith("#") ? v : `#${v}`;
+        return withHash.toUpperCase();
+      };
+
+      for (const r of rows) {
+        const name = norm(r["Name"] ?? r["name"] ?? r["NAME"]).slice(0, 60);
+        const red = normHex(r["Red"] ?? r["red"] ?? r["RED"]);
+        const deepRed = normHex(
+          r["DeepRed"] ?? r["deepRed"] ?? r["Deep Red"] ?? r["deep_red"] ?? r["DEEPRED"],
+        );
+        const cream = normHex(r["Cream"] ?? r["cream"] ?? r["CREAM"]);
+        const gold = normHex(r["Gold"] ?? r["gold"] ?? r["GOLD"]);
+        if (!name) {
+          skipped++;
+          continue;
+        }
+        if (builtinLower.has(name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        if (
+          !HEX_RE.test(red) ||
+          !HEX_RE.test(deepRed) ||
+          !HEX_RE.test(cream) ||
+          !HEX_RE.test(gold)
+        ) {
+          skipped++;
+          continue;
+        }
+        const lower = name.toLowerCase();
+        if (seen.has(lower)) {
+          skipped++;
+          continue;
+        }
+        seen.add(lower);
+        parsed.push({ name, colors: { red, deepRed, cream, gold } });
+      }
+
+      if (parsed.length === 0) {
+        Alert.alert(
+          "Nothing imported",
+          `No valid rows found. Expect columns: Name, Red, DeepRed, Cream, Gold (each color a #RRGGBB hex).${
+            skipped > 0 ? ` Skipped ${skipped} row(s).` : ""
+          }`,
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Replace custom presets?",
+        `Found ${parsed.length} valid preset(s)${
+          skipped > 0 ? ` (${skipped} skipped)` : ""
+        }. Replace your current custom presets with this list?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Replace",
+            style: "destructive",
+            onPress: () => void replaceCustomTagPresets(parsed),
+          },
+        ],
+      );
+    } catch (e) {
+      Alert.alert("Import failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -182,36 +455,145 @@ export default function TagColoursScreen() {
               <Feather name="check" size={16} color="#FFF" />
               <Text style={styles.btnPrimaryText}>Apply</Text>
             </Pressable>
+            <Pressable
+              onPress={openSaveModal}
+              style={[styles.btn, styles.btnAccent, !valid && styles.btnDisabled]}
+              disabled={!valid}
+            >
+              <Feather name="bookmark" size={16} color="#FFF" />
+              <Text style={styles.btnPrimaryText}>Save as Preset</Text>
+            </Pressable>
             <Pressable onPress={reset} style={[styles.btn, styles.btnGhost]}>
               <Feather name="rotate-ccw" size={16} color={Colors.text} />
-              <Text style={styles.btnGhostText}>Reset to Default</Text>
+              <Text style={styles.btnGhostText}>Reset</Text>
             </Pressable>
           </View>
         </View>
 
-        {/* Presets */}
+        {/* Presets — fixed-height inner scroll so the user can browse
+            25+ palettes without bloating the page. */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Presets</Text>
-          {PRESETS.map((p) => (
-            <Pressable
-              key={p.name}
-              onPress={() => applyPreset(p.colors)}
-              style={styles.presetRow}
-            >
-              <View style={styles.presetSwatches}>
-                {(["red", "deepRed", "cream", "gold"] as const).map((k) => (
-                  <View
-                    key={k}
-                    style={[styles.presetSwatch, { backgroundColor: p.colors[k] }]}
-                  />
-                ))}
+          <View style={styles.presetsHeader}>
+            <Text style={styles.sectionLabel}>
+              Presets ({allPresets.length})
+            </Text>
+            <View style={styles.ioRow}>
+              <Pressable
+                onPress={onImport}
+                style={[styles.iconBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+              >
+                <Feather name="upload" size={14} color={Colors.text} />
+                <Text style={styles.iconBtnText}>Import</Text>
+              </Pressable>
+              <Pressable
+                onPress={onExport}
+                style={[styles.iconBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+              >
+                <Feather name="download" size={14} color={Colors.text} />
+                <Text style={styles.iconBtnText}>Export</Text>
+              </Pressable>
+            </View>
+          </View>
+          <ScrollView
+            style={styles.presetScroll}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+          >
+            {allPresets.map((p) => (
+              <View key={`${p.isCustom ? "c" : "b"}|${p.name}`} style={styles.presetRow}>
+                <Pressable
+                  onPress={() => applyPreset(p.colors)}
+                  style={styles.presetMain}
+                >
+                  <View style={styles.presetSwatches}>
+                    {(["red", "deepRed", "cream", "gold"] as const).map((k) => (
+                      <View
+                        key={k}
+                        style={[styles.presetSwatch, { backgroundColor: p.colors[k] }]}
+                      />
+                    ))}
+                  </View>
+                  <View style={styles.presetMeta}>
+                    <Text style={styles.presetName} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    {p.isCustom ? (
+                      <Text style={styles.presetTag}>Custom</Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+                {p.isCustom ? (
+                  <Pressable
+                    onPress={() => confirmDeleteCustom(p.name)}
+                    style={styles.deleteBtn}
+                    hitSlop={8}
+                  >
+                    <Feather name="trash-2" size={16} color="#DC2626" />
+                  </Pressable>
+                ) : (
+                  <Feather name="chevron-right" size={18} color={Colors.textMuted} />
+                )}
               </View>
-              <Text style={styles.presetName}>{p.name}</Text>
-              <Feather name="chevron-right" size={18} color={Colors.textMuted} />
-            </Pressable>
-          ))}
+            ))}
+          </ScrollView>
+          <Text style={styles.helper}>
+            Tap a preset to apply it. Excel template columns:
+            Name, Red, DeepRed, Cream, Gold (each a #RRGGBB hex).
+          </Text>
         </View>
       </ScrollView>
+
+      {/* Save-as-preset modal */}
+      <Modal
+        visible={saveModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSaveModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Save as Preset</Text>
+            <Text style={styles.modalSubtitle}>
+              Give this palette a name. You can apply it any time from the
+              Presets list.
+            </Text>
+            <View style={styles.modalSwatches}>
+              {(["red", "deepRed", "cream", "gold"] as const).map((k) => (
+                <View
+                  key={k}
+                  style={[styles.modalSwatch, { backgroundColor: draft[k] }]}
+                />
+              ))}
+            </View>
+            <TextInput
+              style={styles.modalInput}
+              value={saveName}
+              onChangeText={setSaveName}
+              placeholder="e.g. Diwali 2026"
+              placeholderTextColor={Colors.textMuted}
+              autoFocus
+              maxLength={60}
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setSaveModalVisible(false)}
+                style={[styles.btn, styles.btnGhost]}
+              >
+                <Text style={styles.btnGhostText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmSave}
+                style={[styles.btn, styles.btnPrimary]}
+              >
+                <Feather name="check" size={16} color="#FFF" />
+                <Text style={styles.btnPrimaryText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -288,6 +670,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     marginTop: 12,
+    flexWrap: "wrap",
   },
   btn: {
     flexDirection: "row",
@@ -298,17 +681,51 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   btnPrimary: { backgroundColor: "#16A34A" },
+  btnAccent: { backgroundColor: "#2563EB" },
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
   btnDisabled: { opacity: 0.5 },
   btnGhost: { borderWidth: 1, borderColor: Colors.border, backgroundColor: "#FFF" },
   btnGhostText: { color: Colors.text, fontWeight: "700", fontSize: 14 },
+  presetsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  ioRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  iconBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    backgroundColor: "#FFF",
+  },
+  iconBtnText: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  presetScroll: {
+    maxHeight: 360,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    backgroundColor: "#FAFAFA",
+  },
   presetRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 10,
+    paddingHorizontal: 10,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  presetMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
   },
   presetSwatches: { flexDirection: "row" },
   presetSwatch: {
@@ -318,5 +735,65 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     marginLeft: -1,
   },
-  presetName: { flex: 1, fontSize: 14, fontWeight: "700", color: Colors.text },
+  presetMeta: { flex: 1 },
+  presetName: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  presetTag: {
+    fontSize: 10,
+    color: "#2563EB",
+    fontWeight: "700",
+    marginTop: 2,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  deleteBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  helper: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 8,
+    lineHeight: 15,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 18,
+    gap: 10,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  modalSubtitle: { fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
+  modalSwatches: { flexDirection: "row", marginVertical: 4 },
+  modalSwatch: {
+    width: 28,
+    height: 28,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginLeft: -1,
+  },
+  modalInput: {
+    fontSize: 15,
+    color: Colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    backgroundColor: "#FAFAFA",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 4,
+  },
 });
