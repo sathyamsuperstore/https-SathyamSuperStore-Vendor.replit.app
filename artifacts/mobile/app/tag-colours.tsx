@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -92,8 +93,18 @@ export default function TagColoursScreen() {
 
   const [draft, setDraft] = useState<TagColors>(tagColors);
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [appliedAt, setAppliedAt] = useState<number | null>(null);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [saveName, setSaveName] = useState("");
+
+  // Auto-clear the "Applied" confirmation after 2.5s so the button
+  // returns to its normal state without the user having to do anything.
+  React.useEffect(() => {
+    if (appliedAt == null) return;
+    const t = setTimeout(() => setAppliedAt(null), 2500);
+    return () => clearTimeout(t);
+  }, [appliedAt]);
 
   React.useEffect(() => {
     setDraft(tagColors);
@@ -118,8 +129,18 @@ export default function TagColoursScreen() {
       Alert.alert("Invalid color", "Each color must be a 6-digit hex code (e.g. #C8102E).");
       return;
     }
-    await setTagColors(draft);
-  }, [draft, setTagColors, valid]);
+    if (applying) return;
+    try {
+      setApplying(true);
+      setAppliedAt(null);
+      await setTagColors(draft);
+      setAppliedAt(Date.now());
+    } catch (e) {
+      Alert.alert("Apply failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(false);
+    }
+  }, [applying, draft, setTagColors, valid]);
 
   const applyPreset = useCallback(
     async (colors: TagColors) => {
@@ -449,11 +470,25 @@ export default function TagColoursScreen() {
           <View style={styles.actionRow}>
             <Pressable
               onPress={apply}
-              style={[styles.btn, styles.btnPrimary, !valid && styles.btnDisabled]}
-              disabled={!valid}
+              style={[
+                styles.btn,
+                appliedAt != null ? styles.btnApplied : styles.btnPrimary,
+                (!valid || applying) && styles.btnDisabled,
+              ]}
+              disabled={!valid || applying}
             >
-              <Feather name="check" size={16} color="#FFF" />
-              <Text style={styles.btnPrimaryText}>Apply</Text>
+              {applying ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Feather
+                  name={appliedAt != null ? "check-circle" : "check"}
+                  size={16}
+                  color="#FFF"
+                />
+              )}
+              <Text style={styles.btnPrimaryText}>
+                {applying ? "Applying…" : appliedAt != null ? "Applied" : "Apply"}
+              </Text>
             </Pressable>
             <Pressable
               onPress={openSaveModal}
@@ -681,6 +716,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   btnPrimary: { backgroundColor: "#16A34A" },
+  btnApplied: { backgroundColor: "#15803D" },
   btnAccent: { backgroundColor: "#2563EB" },
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
   btnDisabled: { opacity: 0.5 },
