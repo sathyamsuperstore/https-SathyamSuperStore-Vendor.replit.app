@@ -201,16 +201,16 @@ export default function RPromoPrintScreen() {
       const k = rowKey(r);
       if (!selected.has(k)) continue;
       if (existingByKey.has(k)) continue;
-      // Map Rasi catalogue fields onto the PriceTag schema. Rasi has
-      // no separate "promo" — we use srate as both promotionPrice and
-      // sp so the tag renderer always has a price line. IGroup is
-      // surfaced as Category and Godown as Beat (closest analogues).
+      // Map Rasi catalogue fields onto the PriceTag schema. wrate is
+      // surfaced as the promotional price and srate as the regular
+      // shelf (SP) price. IGroup is surfaced as Category and Godown
+      // as Beat (closest analogues).
       additions.push({
         key: k,
         itemNo: r.code,
         description: r.item,
         mrp: r.mrp,
-        promotionPrice: r.srate,
+        promotionPrice: r.wrate,
         sp: r.srate,
         brand: r.brand || undefined,
         category: r.igroup || undefined,
