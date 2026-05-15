@@ -1,6 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  InteractionManager,
   Platform,
   ScrollView,
   StyleSheet,
@@ -81,13 +83,51 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
     setMounted((prev) => (prev.has(view) ? prev : new Set([...prev, view])));
   }, [view]);
 
+  // Visual feedback when switching to a heavy sub-screen (e.g. PriceTag
+  // Review). Tapping a chip used to look frozen because the chip's
+  // active state couldn't paint until the new screen finished its first
+  // render on the JS thread. We now optimistically mark the tapped chip
+  // active and overlay a spinner, then defer the actual route update
+  // one frame so the press visual paints first.
+  const [pending, setPending] = useState<string | null>(null);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Clear the pending indicator once the URL has caught up.
+    if (pending && pending === view) {
+      if (pendingTimer.current) clearTimeout(pendingTimer.current);
+      pendingTimer.current = null;
+      setPending(null);
+    }
+  }, [view, pending]);
+  useEffect(() => () => {
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+  }, []);
+
   function selectView(next: string) {
-    if (next === view) return;
-    // setParams merges, so other params the sub-screen reads (e.g. `q`
-    // seeded from a Stock Update item-no link into Promo) survive
-    // chip switches.
-    router.setParams({ view: next });
+    if (next === view || pending === next) return;
+    // Show the optimistic active state + overlay spinner immediately.
+    setPending(next);
+    // Defer the actual nav so the spinner paints first; otherwise the
+    // heavy sub-screen's mount blocks the JS thread before React has a
+    // chance to commit our pending state.
+    InteractionManager.runAfterInteractions(() => {
+      // setParams merges, so other params the sub-screen reads (e.g.
+      // `q` seeded from a Stock Update item-no link into Promo)
+      // survive chip switches.
+      router.setParams({ view: next });
+    });
+    // Hard timeout: if the new screen never commits (e.g. the user
+    // taps a different chip first), drop the pending state after 6s
+    // so the UI doesn't get stuck spinning.
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingTimer.current = setTimeout(() => {
+      setPending((p) => (p === next ? null : p));
+    }, 6000);
   }
+
+  // The chip we should *show* as active — pending wins so the user
+  // sees their tap take effect immediately.
+  const visualActive = pending ?? view;
 
   // Override the top inset for the body so sub-screens don't pad
   // again under the chip bar. Keep the real bottom/left/right insets
@@ -116,19 +156,32 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
           // we'd rather show them all than force a horizontal swipe.
           <View style={styles.chipWrap}>
             {views.map((v) => {
-              const active = v.key === view;
+              const active = v.key === visualActive;
+              const loading = pending === v.key;
               return (
                 <TouchableOpacity
                   key={v.key}
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => selectView(v.key)}
                   activeOpacity={0.85}
+                  disabled={pending != null}
                 >
-                  <Text
-                    style={[styles.chipText, active && styles.chipTextActive]}
-                  >
-                    {v.label}
-                  </Text>
+                  <View style={styles.chipInner}>
+                    {loading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={Colors.textInverse}
+                      />
+                    ) : null}
+                    <Text
+                      style={[
+                        styles.chipText,
+                        active && styles.chipTextActive,
+                      ]}
+                    >
+                      {v.label}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -140,19 +193,32 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
             contentContainerStyle={styles.chipRow}
           >
             {views.map((v) => {
-              const active = v.key === view;
+              const active = v.key === visualActive;
+              const loading = pending === v.key;
               return (
                 <TouchableOpacity
                   key={v.key}
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => selectView(v.key)}
                   activeOpacity={0.85}
+                  disabled={pending != null}
                 >
-                  <Text
-                    style={[styles.chipText, active && styles.chipTextActive]}
-                  >
-                    {v.label}
-                  </Text>
+                  <View style={styles.chipInner}>
+                    {loading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={Colors.textInverse}
+                      />
+                    ) : null}
+                    <Text
+                      style={[
+                        styles.chipText,
+                        active && styles.chipTextActive,
+                      ]}
+                    >
+                      {v.label}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -165,6 +231,9 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
           {views.map((v) => {
             if (!mounted.has(v.key)) return null;
             const active = v.key === view;
+            // The actual rendered active screen still tracks `view`
+            // (the URL) — we don't swap the body until the route
+            // updates. The pending overlay below covers the gap.
             return (
               <View
                 key={v.key}
@@ -188,6 +257,19 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
               </View>
             );
           })}
+          {pending && pending !== view ? (
+            <View
+              pointerEvents="auto"
+              style={[StyleSheet.absoluteFill, styles.pendingOverlay]}
+            >
+              <View style={styles.pendingCard}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.pendingText}>
+                  Loading {views.find((v) => v.key === pending)?.label ?? ""}…
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </View>
       </SafeAreaInsetsContext.Provider>
     </View>
@@ -238,5 +320,31 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   chipTextActive: { color: Colors.textInverse },
+  chipInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   body: { flex: 1 },
+  pendingOverlay: {
+    backgroundColor: "rgba(15,23,42,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pendingCard: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pendingText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+  },
 });
