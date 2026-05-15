@@ -592,8 +592,6 @@ export function renderSquareShowcaseHtml(
 
 export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  void RED;
   return `
   .tagSq {
     width: 540px; height: 540px;
@@ -671,11 +669,13 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     padding: 8px 26px;
     display: inline-flex; align-items: baseline; gap: 6px;
   }
+  /* Spec: big promo price text → red. Sits inside the deepRed price
+     box (priceBoxSq). */
   .tagSq .priceCurrencySq {
-    color: #FFF; font-size: 26px; font-weight: 900;
+    color: ${RED}; font-size: 26px; font-weight: 900;
   }
   .tagSq .priceValueSq {
-    color: #FFF; font-size: 48px; font-weight: 900; line-height: 1;
+    color: ${RED}; font-size: 48px; font-weight: 900; line-height: 1;
   }
   .tagSq .saveRowSq {
     display: flex; justify-content: center;
@@ -694,15 +694,27 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     font-size: 12px; color: #6B7280; font-weight: 700;
     letter-spacing: 0.3px;
   }
-  .tagSq .itemNoSq { color: #6B7280; }
+  /* Spec: item-no chip → deepRed. Rendered as a tinted pill so it
+     reads as a chip rather than plain text. */
+  .tagSq .itemNoSq {
+    color: ${DEEP_RED};
+    background: ${DEEP_RED}1A;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+  }
+  /* Hide tinted background when no item number is provided. */
+  .tagSq .itemNoSq:empty { background: transparent; padding: 0; }
   .tagSq .validTillSq { color: #6B7280; }
+  /* Spec: footer divider → deepRed. Tinted so the band stays soft
+     visually while still being theme-driven. */
   .tagSq .companySq {
     margin-top: auto;
     display: flex; align-items: center; justify-content: center;
     gap: 14px;
     padding: 8px 14px 10px;
-    background: rgba(122, 15, 25, 0.06);
-    border-top: 1px solid rgba(122, 15, 25, 0.18);
+    background: ${DEEP_RED}10;
+    border-top: 1px solid ${DEEP_RED}2E;
     text-align: center;
   }
   .tagSq .companyText { text-align: center; }
@@ -1006,12 +1018,24 @@ export function buildSquareMinimalCss(c: TagColors = DEFAULT_TAG_COLORS): string
     padding: 4px 18px;
     border-radius: 999px;
   }
+  /* Spec: footer chips → deepRed. Itemno + ValidTill rendered as
+     deepRed-tinted pills. */
   .tagSqMin .footerRowMin {
     display: flex; justify-content: space-between; align-items: center;
     padding: 4px 2px 0;
-    font-size: 12px; color: #6B7280; font-weight: 700;
+    font-size: 12px; font-weight: 800;
     letter-spacing: 0.3px;
   }
+  .tagSqMin .itemNoMin,
+  .tagSqMin .validTillMin {
+    color: ${DEEP_RED};
+    background: ${DEEP_RED}1A;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  /* Hide the tinted background on empty chips (nothing to anchor to). */
+  .tagSqMin .itemNoMin:empty,
+  .tagSqMin .validTillMin:empty { background: transparent; padding: 0; }
   .tagSqMin .storeBarMin {
     background: ${DEEP_RED};
     color: #FFF;
