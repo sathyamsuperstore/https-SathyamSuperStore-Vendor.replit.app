@@ -32,6 +32,7 @@ import { captureRef } from "react-native-view-shot";
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
 import { useApp, type PriceTagItem, type PriceTagStyle } from "@/context/AppContext";
+import { DEFAULT_TAG_COLORS, type TagColors } from "@workspace/pricetag-html";
 import { TitlePickerModal } from "@/components/TitlePickerModal";
 import { useAuth } from "@/context/AuthContext";
 import { pickFont, hasTamil } from "@/constants/typography";
@@ -59,10 +60,15 @@ import { pickFont, hasTamil } from "@/constants/typography";
 type Mode = "view" | "modify";
 
 // Style A's tile-art accent palette (matches the references).
-const RED = "#C8102E";
-const DEEP_RED = "#7A0F19";
-const CREAM = "#F8F2E4";
-const GOLD = "#B8860B";
+// Default brand palette. The on-screen tags + PDF CSS now read from
+// the user-customizable `tagColors` in AppContext (TagColours tab),
+// but a few non-tag UI elements (Feather icons, picker thumbs) still
+// reference these constants directly so the rest of the screen looks
+// consistent regardless of the user's tag palette.
+const RED = DEFAULT_TAG_COLORS.red;
+const DEEP_RED = DEFAULT_TAG_COLORS.deepRed;
+const CREAM = DEFAULT_TAG_COLORS.cream;
+const GOLD = DEFAULT_TAG_COLORS.gold;
 
 // ----------- Price helpers -----------
 
@@ -277,6 +283,7 @@ export default function PriceTagReviewScreen() {
     setPriceTagReviewShowLogo,
     priceTagReviewTitle,
     setPriceTagReviewTitle,
+    tagColors,
     titleList,
   } = useApp();
 
@@ -1069,7 +1076,7 @@ export default function PriceTagReviewScreen() {
       // each item rendered with `it.style ?? priceTagReviewStyle`. The
       // PDF builder reads `it.style` directly so we just pass the
       // screen-wide style as the fallback.
-      const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo);
+      const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo, tagColors);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
 
@@ -2449,6 +2456,8 @@ export function StyleATag({
   // exporter to stretch the tag to fill the 2:1 capture frame.
   cardStyle?: StyleProp<ViewStyle>;
 }) {
+  const { tagColors } = useApp();
+  const a = React.useMemo(() => makeAStyles(tagColors), [tagColors]);
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
   const off = offAmount(item);
@@ -2592,6 +2601,9 @@ export function StyleBTag({
   // exporter to stretch the tag to fill the 2:1 capture frame.
   cardStyle?: StyleProp<ViewStyle>;
 }) {
+  const { tagColors } = useApp();
+  const a = React.useMemo(() => makeAStyles(tagColors), [tagColors]);
+  const b = React.useMemo(() => makeBStyles(tagColors), [tagColors]);
   const { label, value } = priceFor(item);
   const mrp = fmt0(item.mrp);
   const off = offAmount(item);
@@ -2877,6 +2889,7 @@ function buildPdfHtml(
   items: PriceTagItem[],
   style: PriceTagStyle,
   showLogo: boolean,
+  colors: TagColors = DEFAULT_TAG_COLORS,
 ): string {
   // Per-item style support (PriceTag Review): each item can carry its
   // own `style` override. Items without an override fall back to the
@@ -2900,12 +2913,10 @@ function buildPdfHtml(
     stylesInUse.has("C") ||
     stylesInUse.has("D") ||
     stylesInUse.has("E");
+  const cssA = buildPdfCssA(colors);
+  const cssB = buildPdfCssB(colors);
   const styleCss =
-    needsA && needsB
-      ? `${PDF_CSS_A}\n${PDF_CSS_B}`
-      : needsB
-        ? PDF_CSS_B
-        : PDF_CSS_A;
+    needsA && needsB ? `${cssA}\n${cssB}` : needsB ? cssB : cssA;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -2996,10 +3007,14 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
 // Printer-friendly: white background, no large solid color fills
 // (the maroon image panel and red savings pill are the only colored
 // fills, and the savings pill is small enough to keep ink usage low).
-const PDF_CSS_A = `
+function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void RED;
+  return `
   .tagA {
     position: relative;
-    background: #FFFFFF;
+    background: ${CREAM};
     border: 1.5px solid ${DEEP_RED};
     border-radius: 8px;
     padding: 10px;
@@ -3101,6 +3116,7 @@ const PDF_CSS_A = `
     font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
   }
 `;
+}
 
 // ----- Style B HTML / CSS -----
 
@@ -3191,7 +3207,12 @@ function renderTagBHtml(
   `;
 }
 
-const PDF_CSS_B = `
+function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void DEEP_RED; void CREAM; void GOLD;
+  void RED;
+  return `
   .tagB {
     position: relative;
     background: #FFF;
@@ -3299,6 +3320,7 @@ const PDF_CSS_B = `
     padding: 4px; background: #FFF;
   }
 `;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -3661,8 +3683,14 @@ const styles = StyleSheet.create({
   pickerSep: { height: 1, backgroundColor: Colors.border },
 });
 
-// Style A — on-screen tag styles
-const a = StyleSheet.create({
+// Style A — on-screen tag styles. Factory so the StyleATag component
+// can re-derive the StyleSheet whenever the user's tag palette
+// changes (TagColours tab). Default = DEFAULT_TAG_COLORS so any
+// non-component caller still gets the original look.
+function makeAStyles(c: TagColors = DEFAULT_TAG_COLORS) {
+  const { red: _RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  void _RED;
+  return StyleSheet.create({
   card: {
     backgroundColor: CREAM,
     borderWidth: 2, borderColor: DEEP_RED,
@@ -3742,10 +3770,15 @@ const a = StyleSheet.create({
     fontSize: 9, fontWeight: "700", color: DEEP_RED,
     marginTop: -2, marginBottom: 4, textAlign: "left",
   },
-});
+  });
+}
+const a = makeAStyles();
 
-// Style B — on-screen tag styles
-const b = StyleSheet.create({
+// Style B — on-screen tag styles. Factory; see makeAStyles note.
+function makeBStyles(c: TagColors = DEFAULT_TAG_COLORS) {
+  const { red: RED, deepRed: _DEEP_RED, cream: _CREAM, gold: _GOLD } = c;
+  void _DEEP_RED; void _CREAM; void _GOLD;
+  return StyleSheet.create({
   card: {
     backgroundColor: "#FFF",
     borderWidth: 1.5, borderColor: RED,
@@ -3814,7 +3847,9 @@ const b = StyleSheet.create({
   // gap below the GOLD price row. Empty row that just provides the
   // top margin; the pill itself is rendered with Style A's a.offText.
   saveBadgeRow: { marginTop: 6 },
-});
+  });
+}
+const b = makeBStyles();
 
 // "Valid Till" vertical rail. A narrow, full-height column pinned to
 // the right edge of each tag card; the inner Text is rotated 90deg

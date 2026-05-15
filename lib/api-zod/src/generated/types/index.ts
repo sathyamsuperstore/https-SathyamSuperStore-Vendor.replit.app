@@ -15,3 +15,4 @@ export * from "./priceTagRenderInputAspect";
 export * from "./priceTagRenderResult";
 export * from "./priceTagRenderResultMimeType";
 export * from "./priceTagStyle";
+export * from "./tagColors";

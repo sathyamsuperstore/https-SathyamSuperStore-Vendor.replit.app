@@ -37,6 +37,21 @@ export interface PriceTagItem {
 }
 
 /**
+ * Customizable brand palette used by Style A/B/C/D/E pricetags (and the SQ showcase). All values are CSS hex strings (`#RRGGBB`).
+
+ */
+export interface TagColors {
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  red: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  deepRed: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  cream: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  gold: string;
+}
+
+/**
  * Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
 
  */
@@ -67,6 +82,7 @@ export interface PriceTagRenderInput {
    * @maximum 6
    */
   scale?: number;
+  colors?: TagColors;
   /** Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
    */
   aspect?: PriceTagRenderInputAspect;

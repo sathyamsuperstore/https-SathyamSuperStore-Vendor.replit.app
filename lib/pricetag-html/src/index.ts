@@ -7,7 +7,8 @@
 // Single source of truth so the JPEG and PDF outputs always match.
 
 export { LOGO_BASE64 } from "./logo";
-export type { PriceTagStyle, PriceTagRenderItem } from "./types";
+export type { PriceTagStyle, PriceTagRenderItem, TagColors } from "./types";
+export { DEFAULT_TAG_COLORS } from "./types";
 export {
   fmt0,
   toNum,
@@ -22,8 +23,9 @@ export {
   DEEP_RED,
   GOLD,
   CREAM,
-  PDF_CSS_A,
-  PDF_CSS_B,
+  buildPdfCssA,
+  buildPdfCssB,
+  buildPdfCssSq,
   renderTagAHtml,
   renderTagBHtml,
   renderTagHtmlForStyle,
@@ -31,5 +33,4 @@ export {
   buildPdfHtml,
   buildSingleTagHtml,
   buildSquareShowcaseHtml,
-  PDF_CSS_SQ,
 } from "./render";

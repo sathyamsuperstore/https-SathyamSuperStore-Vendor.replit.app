@@ -25,6 +25,19 @@ export const renderPriceTagBodyWidthPxMax = 1200;
 
 export const renderPriceTagBodyScaleMax = 6;
 
+export const renderPriceTagBodyColorsRedRegExp = new RegExp(
+  "^#[0-9A-Fa-f]{6}$",
+);
+export const renderPriceTagBodyColorsDeepRedRegExp = new RegExp(
+  "^#[0-9A-Fa-f]{6}$",
+);
+export const renderPriceTagBodyColorsCreamRegExp = new RegExp(
+  "^#[0-9A-Fa-f]{6}$",
+);
+export const renderPriceTagBodyColorsGoldRegExp = new RegExp(
+  "^#[0-9A-Fa-f]{6}$",
+);
+
 export const RenderPriceTagBody = zod.object({
   item: zod.object({
     itemNo: zod.string(),
@@ -66,6 +79,17 @@ export const RenderPriceTagBody = zod.object({
     .optional()
     .describe(
       "Device scale factor used by Chromium (default 4). Higher = crisper output but slower \/ larger file.\n",
+    ),
+  colors: zod
+    .object({
+      red: zod.string().regex(renderPriceTagBodyColorsRedRegExp),
+      deepRed: zod.string().regex(renderPriceTagBodyColorsDeepRedRegExp),
+      cream: zod.string().regex(renderPriceTagBodyColorsCreamRegExp),
+      gold: zod.string().regex(renderPriceTagBodyColorsGoldRegExp),
+    })
+    .optional()
+    .describe(
+      "Customizable brand palette used by Style A\/B\/C\/D\/E pricetags (and the SQ showcase). All values are CSS hex strings (`#RRGGBB`).\n",
     ),
   aspect: zod
     .enum(["banner", "square"])

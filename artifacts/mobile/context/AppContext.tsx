@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DEFAULT_TITLES } from "@/data/defaultTitles";
+import { DEFAULT_TAG_COLORS, type TagColors } from "@workspace/pricetag-html";
 import { Alert, Platform } from "react-native";
 
 const SESSION_KEY = "@currentUserId";
@@ -243,6 +244,12 @@ interface AppContextType {
   setPriceTagReviewShowLogo: (show: boolean) => Promise<void>;
   priceTagReviewTitle: string;
   setPriceTagReviewTitle: (title: string) => Promise<void>;
+  // Brand-color palette applied to all Style A/B/C/D/E pricetags
+  // (on-screen preview, PDF export, and server-rendered JPEG). Empty
+  // / corrupt values fall back to DEFAULT_TAG_COLORS.
+  tagColors: TagColors;
+  setTagColors: (colors: TagColors) => Promise<void>;
+  resetTagColors: () => Promise<void>;
   // User-managed catalogue of punchy banner titles, surfaced on the
   // TitleList tab. Seeded with ~400 defaults on first launch and then
   // freely editable (add / edit / delete + Excel import / export).
@@ -497,6 +504,8 @@ const PRICE_TAG_REVIEW_KEY = "@priceTagReviewItems";
 const PRICE_TAG_REVIEW_STYLE_KEY = "@priceTagReviewStyle";
 const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
 const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
+// Brand palette JSON: { red, deepRed, cream, gold } as #RRGGBB.
+const TAG_COLORS_KEY = "@tagColors";
 // Persisted user-managed banner-title catalogue. Seeded once with the
 // 400 defaults; after that the user owns the list (add / edit /
 // delete / Excel import). A separate "@titleListSeeded" flag stops
@@ -587,6 +596,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagReviewStyle, setPriceTagReviewStyleState] = useState<PriceTagStyle>("A");
   const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
   const [priceTagReviewTitle, setPriceTagReviewTitleState] = useState<string>("");
+  const [tagColors, setTagColorsState] = useState<TagColors>(DEFAULT_TAG_COLORS);
   const [titleList, setTitleListState] = useState<TitleListItem[]>([]);
   const titleListRef = useRef<TitleListItem[]>([]);
   useEffect(() => {
@@ -607,7 +617,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -628,6 +638,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PRICE_TAG_REVIEW_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
         AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
+        AsyncStorage.getItem(TAG_COLORS_KEY),
         AsyncStorage.getItem(TITLE_LIST_KEY),
         AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
         AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
@@ -756,6 +767,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (typeof priceTagReviewTitleData === "string") {
         setPriceTagReviewTitleState(priceTagReviewTitleData.slice(0, 256));
+      }
+
+      // Tag-color palette. Validate every key is a #RRGGBB hex string;
+      // any drift falls back to the default for that slot so a corrupt
+      // value can't break tag rendering.
+      if (tagColorsData) {
+        try {
+          const parsed = JSON.parse(tagColorsData);
+          const hex = /^#[0-9A-Fa-f]{6}$/;
+          const pick = (k: keyof TagColors): string =>
+            typeof parsed?.[k] === "string" && hex.test(parsed[k])
+              ? parsed[k]
+              : DEFAULT_TAG_COLORS[k];
+          setTagColorsState({
+            red: pick("red"),
+            deepRed: pick("deepRed"),
+            cream: pick("cream"),
+            gold: pick("gold"),
+          });
+        } catch {
+          // Non-fatal: keep defaults.
+        }
       }
 
       // Last data-download timestamp. Stored as a stringified number;
@@ -1234,6 +1267,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagReviewTitleState(clean);
   }
 
+  async function setTagColors(colors: TagColors) {
+    await AsyncStorage.setItem(TAG_COLORS_KEY, JSON.stringify(colors));
+    setTagColorsState(colors);
+  }
+
+  async function resetTagColors() {
+    await AsyncStorage.removeItem(TAG_COLORS_KEY);
+    setTagColorsState(DEFAULT_TAG_COLORS);
+  }
+
   // ----- TitleList helpers -----
   async function saveTitleList(items: TitleListItem[]) {
     await AsyncStorage.setItem(TITLE_LIST_KEY, JSON.stringify(items));
@@ -1401,6 +1444,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagReviewShowLogo,
         priceTagReviewTitle,
         setPriceTagReviewTitle,
+        tagColors,
+        setTagColors,
+        resetTagColors,
         titleList,
         saveTitleList,
         addTitle,

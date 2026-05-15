@@ -138,7 +138,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     return;
   }
 
-  const { item, style, showLogo, widthPx: rawWidth, scale: rawScale, aspect } = parsed.data;
+  const { item, style, showLogo, widthPx: rawWidth, scale: rawScale, aspect, colors } = parsed.data;
 
   const safety = isImageUriSafe(item.imageUri);
   if (!safety.ok) {
@@ -158,14 +158,14 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
         item as PriceTagRenderItem,
         showLogo,
         LOGO_BASE64,
-        { widthPx },
+        { widthPx, colors },
       )
     : buildSingleTagHtml(
         item as PriceTagRenderItem,
         style as PriceTagStyle,
         showLogo,
         LOGO_BASE64,
-        { widthPx },
+        { widthPx, colors },
       );
 
   let page;

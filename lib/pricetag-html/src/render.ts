@@ -1,4 +1,5 @@
-import type { PriceTagRenderItem, PriceTagStyle } from "./types";
+import type { PriceTagRenderItem, PriceTagStyle, TagColors } from "./types";
+import { DEFAULT_TAG_COLORS } from "./types";
 import {
   fmt0,
   priceFor,
@@ -8,12 +9,13 @@ import {
   escapeHtml,
 } from "./helpers";
 
-// Brand palette — kept verbatim from the mobile PriceTag Review screen
-// so the JPEG output matches the PDF exactly.
-export const RED = "#C8102E";
-export const DEEP_RED = "#7A0F19";
-export const CREAM = "#F8F2E4";
-export const GOLD = "#B8860B";
+// Brand palette defaults — used when callers don't pass a custom
+// `colors` payload. Kept as named constants so existing imports
+// (`RED`, `DEEP_RED`, ...) continue to work.
+export const RED = DEFAULT_TAG_COLORS.red;
+export const DEEP_RED = DEFAULT_TAG_COLORS.deepRed;
+export const CREAM = DEFAULT_TAG_COLORS.cream;
+export const GOLD = DEFAULT_TAG_COLORS.gold;
 
 // ----- Style A HTML / CSS -----
 
@@ -81,10 +83,14 @@ export function renderTagAHtml(
 }
 
 // Printer-friendly: white background, no large solid color fills.
-export const PDF_CSS_A = `
+export function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void RED; // Style A's red accents come via DEEP_RED; RED is reserved for B/C/D/E.
+  return `
   .tagA {
     position: relative;
-    background: #FFFFFF;
+    background: ${CREAM};
     border: 1.5px solid ${DEEP_RED};
     border-radius: 8px;
     padding: 10px;
@@ -181,6 +187,7 @@ export const PDF_CSS_A = `
     font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
   }
 `;
+}
 
 // ----- Style B HTML / CSS -----
 
@@ -265,7 +272,12 @@ export function renderTagBHtml(
   `;
 }
 
-export const PDF_CSS_B = `
+export function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void DEEP_RED; void CREAM; void GOLD; // referenced via PDF_CSS_A bundle.
+  void RED;
+  return `
   .tagB {
     position: relative;
     background: #FFF;
@@ -356,6 +368,7 @@ export const PDF_CSS_B = `
     padding: 4px; background: #FFF;
   }
 `;
+}
 
 // Maps a (item, style) pair to the appropriate tag HTML — preserves
 // the exact mapping from artifacts/mobile/app/pricetag-review.tsx.
@@ -394,6 +407,7 @@ export function buildPdfHtml(
   style: PriceTagStyle,
   showLogo: boolean,
   logoDataUri: string,
+  colors: TagColors = DEFAULT_TAG_COLORS,
 ): string {
   const effStyleFor = (it: PriceTagRenderItem): PriceTagStyle =>
     it.style ?? style;
@@ -410,12 +424,10 @@ export function buildPdfHtml(
     stylesInUse.has("C") ||
     stylesInUse.has("D") ||
     stylesInUse.has("E");
+  const cssA = buildPdfCssA(colors);
+  const cssB = buildPdfCssB(colors);
   const styleCss =
-    needsA && needsB
-      ? `${PDF_CSS_A}\n${PDF_CSS_B}`
-      : needsB
-        ? PDF_CSS_B
-        : PDF_CSS_A;
+    needsA && needsB ? `${cssA}\n${cssB}` : needsB ? cssB : cssA;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -499,7 +511,11 @@ export function renderSquareShowcaseHtml(
   `;
 }
 
-export const PDF_CSS_SQ = `
+export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
+  const { red: RED, deepRed: DEEP_RED, cream: CREAM, gold: GOLD } = c;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void RED;
+  return `
   .tagSq {
     width: 540px; height: 540px;
     background: linear-gradient(180deg, ${CREAM} 0%, #F2E5C2 100%);
@@ -602,6 +618,7 @@ export const PDF_CSS_SQ = `
   .tagSq .itemNoSq { color: #6B7280; }
   .tagSq .validTillSq { color: #6B7280; }
 `;
+}
 
 // Square 1:1 wrapper for the server-side JPEG renderer. The body is
 // sized exactly widthPx × widthPx so Chromium clips a perfect square.
@@ -609,9 +626,10 @@ export function buildSquareShowcaseHtml(
   item: PriceTagRenderItem,
   showLogo: boolean,
   logoDataUri: string,
-  opts: { widthPx?: number } = {},
+  opts: { widthPx?: number; colors?: TagColors } = {},
 ): string {
   const widthPx = opts.widthPx ?? 540;
+  const colors = opts.colors ?? DEFAULT_TAG_COLORS;
   const tagHtml = renderSquareShowcaseHtml(item, showLogo, logoDataUri);
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -627,7 +645,7 @@ export function buildSquareShowcaseHtml(
   body { width: ${widthPx}px; height: ${widthPx}px; }
   .tamil { font-family: "Noto Sans Tamil", -apple-system, "Segoe UI", sans-serif; }
   .tagSq { width: ${widthPx}px !important; height: ${widthPx}px !important; }
-  ${PDF_CSS_SQ}
+  ${buildPdfCssSq(colors)}
 </style>
 </head><body>${tagHtml}</body></html>`;
 }
@@ -641,19 +659,18 @@ export function buildSingleTagHtml(
   style: PriceTagStyle,
   showLogo: boolean,
   logoDataUri: string,
-  opts: { widthPx?: number } = {},
+  opts: { widthPx?: number; colors?: TagColors } = {},
 ): string {
   const widthPx = opts.widthPx ?? 380;
+  const colors = opts.colors ?? DEFAULT_TAG_COLORS;
   const tagHtml = renderTagHtmlForStyle(item, style, showLogo, logoDataUri);
   const needsA = style === "A" || style === "D" || style === "E";
   const needsB =
     style === "B" || style === "C" || style === "D" || style === "E";
+  const cssA = buildPdfCssA(colors);
+  const cssB = buildPdfCssB(colors);
   const styleCss =
-    needsA && needsB
-      ? `${PDF_CSS_A}\n${PDF_CSS_B}`
-      : needsB
-        ? PDF_CSS_B
-        : PDF_CSS_A;
+    needsA && needsB ? `${cssA}\n${cssB}` : needsB ? cssB : cssA;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />

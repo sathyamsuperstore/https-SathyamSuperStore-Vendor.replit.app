@@ -145,6 +145,7 @@ export default function PriceTagImgScreen() {
     priceTagReviewItems,
     priceTagReviewStyle,
     priceTagReviewShowLogo,
+    tagColors,
   } = useApp();
 
   // The 2:1 banner Showcase strips promotionToDate so the side rail
@@ -227,6 +228,7 @@ export default function PriceTagImgScreen() {
           widthPx: isShowcaseSq ? 540 : 380,
           scale: isShowcaseSq ? 2 : 5,
           aspect: isShowcaseSq ? "square" : "banner",
+          colors: tagColors,
         }),
       });
       if (!renderRes.ok) {
@@ -252,7 +254,7 @@ export default function PriceTagImgScreen() {
     } finally {
       if (seq === renderSeq.current) setRendering(false);
     }
-  }, [item, isShowcaseSq, priceTagReviewShowLogo]);
+  }, [item, isShowcaseSq, priceTagReviewShowLogo, tagColors]);
 
   useEffect(() => {
     if (!isShowcaseAny) return;

@@ -8,6 +8,7 @@
 import type { PriceTagItem } from "./priceTagItem";
 import type { PriceTagRenderInputAspect } from "./priceTagRenderInputAspect";
 import type { PriceTagStyle } from "./priceTagStyle";
+import type { TagColors } from "./tagColors";
 
 export interface PriceTagRenderInput {
   item: PriceTagItem;
@@ -28,6 +29,7 @@ export interface PriceTagRenderInput {
    * @maximum 6
    */
   scale?: number;
+  colors?: TagColors;
   /** Output aspect ratio. `banner` (default) uses the existing tight-clipped tag layout (~2:1). `square` renders the dedicated Instagram-friendly 1:1 showcase template (`buildSquareShowcaseHtml`) and clips to widthPx × widthPx.
    */
   aspect?: PriceTagRenderInputAspect;

@@ -7,6 +7,7 @@ import PriceTagPreviewScreen from "../pricetag-preview";
 import PriceTagReviewScreen from "../pricetag-review";
 import PriceTagImgScreen from "../pricetag-img";
 import TitleListScreen from "../title-list";
+import TagColoursScreen from "../tag-colours";
 
 export default function CatalogHubScreen() {
   return (
@@ -43,6 +44,11 @@ export default function CatalogHubScreen() {
           key: "titleList",
           label: "TitleList",
           render: () => <TitleListScreen />,
+        },
+        {
+          key: "tagColours",
+          label: "TagColours",
+          render: () => <TagColoursScreen />,
         },
         {
           key: "brand",
