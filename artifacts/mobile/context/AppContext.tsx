@@ -278,12 +278,52 @@ interface AppContextType {
   // straight from the upstream sheet rather than the device clock.
   setDataDownloadTimeValue: (ms: number) => Promise<void>;
   clearDataDownloadTime: () => Promise<void>;
+  // Company / store identity (name, address, GST, etc.) shown on
+  // headers, exports and invoices. Edited from the "Company Details"
+  // tab and persisted as JSON. Falls back to DEFAULT_COMPANY_DETAILS
+  // when the stored value is missing or corrupt.
+  companyDetails: CompanyDetails;
+  setCompanyDetails: (details: CompanyDetails) => Promise<void>;
+  resetCompanyDetails: () => Promise<void>;
   // True once the initial AsyncStorage hydration has finished (success or
   // failure). Screens that key off `orders`/`suppliers` use this to avoid
   // flashing an empty/"not found" state on a browser refresh while the
   // first load is still in flight.
   hydrated: boolean;
 }
+
+// Company / store identity captured on the Company Details tab. All
+// fields are free-text strings — phone numbers stay strings so the
+// "+91…" prefix is preserved, and IDs like GST / FSSAI keep leading
+// zeros. Optional fields default to empty strings (never undefined)
+// so consumers don't need to null-check.
+export interface CompanyDetails {
+  companyName: string;
+  address1: string;
+  address2: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
+  mobile: string;
+  whatsapp: string;
+  gstNo: string;
+  fssaiNo: string;
+}
+
+export const DEFAULT_COMPANY_DETAILS: CompanyDetails = {
+  companyName: "Sathyam Super Store",
+  address1: "2A Mettupalayam Road",
+  address2: "Cheran Nagar",
+  city: "Coimbatore",
+  state: "TN",
+  country: "India",
+  pincode: "641029",
+  mobile: "+919788144868",
+  whatsapp: "+919788144868",
+  gstNo: "",
+  fssaiNo: "",
+};
 
 export interface MrpEntry {
   itemNo: string;
@@ -531,6 +571,8 @@ const TITLE_LIST_SEEDED_KEY = "@titleListSeeded";
 // and after a successful Promo Excel import. Surfaced on the
 // Dashboard so users see the data snapshot age at a glance.
 const DATA_DOWNLOAD_TIME_KEY = "@dataDownloadTime";
+// Company / store identity JSON. See CompanyDetails for the shape.
+const COMPANY_DETAILS_KEY = "@companyDetails";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -623,6 +665,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [rodeoItems, setRodeoItems] = useState<RodeoItem[]>([]);
   const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
+  const [companyDetails, setCompanyDetailsState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -631,7 +674,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -657,6 +700,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(TITLE_LIST_KEY),
         AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
         AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
+        AsyncStorage.getItem(COMPANY_DETAILS_KEY),
       ]);
 
       const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
@@ -851,6 +895,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (dataDownloadTimeData) {
         const n = Number(dataDownloadTimeData);
         if (Number.isFinite(n) && n > 0) setDataDownloadTime(n);
+      }
+
+      // Company details. Merge with defaults so any missing field
+      // (e.g. from an older app version that didn't persist GST/FSSAI)
+      // still gets a sane string instead of `undefined`. A corrupt
+      // payload silently falls back to the full default object.
+      if (companyDetailsData) {
+        try {
+          const parsed = JSON.parse(companyDetailsData);
+          if (parsed && typeof parsed === "object") {
+            const merged: CompanyDetails = { ...DEFAULT_COMPANY_DETAILS };
+            for (const k of Object.keys(DEFAULT_COMPANY_DETAILS) as (keyof CompanyDetails)[]) {
+              const v = (parsed as Record<string, unknown>)[k];
+              if (typeof v === "string") merged[k] = v;
+            }
+            setCompanyDetailsState(merged);
+          }
+        } catch {
+          // Non-fatal: keep defaults.
+        }
       }
 
       if (sessionData) {
@@ -1425,6 +1489,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDataDownloadTime(null);
   }
 
+  // ----- Company details helpers -----
+  async function setCompanyDetails(details: CompanyDetails) {
+    // Normalise to strings; trim long inputs so an accidental paste
+    // can't bloat AsyncStorage. 200 chars per field is plenty for
+    // every real address line, GST or FSSAI number.
+    const trim = (v: unknown): string =>
+      typeof v === "string" ? v.slice(0, 200) : "";
+    const next: CompanyDetails = {
+      companyName: trim(details.companyName),
+      address1: trim(details.address1),
+      address2: trim(details.address2),
+      city: trim(details.city),
+      state: trim(details.state),
+      country: trim(details.country),
+      pincode: trim(details.pincode),
+      mobile: trim(details.mobile),
+      whatsapp: trim(details.whatsapp),
+      gstNo: trim(details.gstNo),
+      fssaiNo: trim(details.fssaiNo),
+    };
+    await AsyncStorage.setItem(COMPANY_DETAILS_KEY, JSON.stringify(next));
+    setCompanyDetailsState(next);
+  }
+
+  async function resetCompanyDetails() {
+    await AsyncStorage.removeItem(COMPANY_DETAILS_KEY);
+    setCompanyDetailsState(DEFAULT_COMPANY_DETAILS);
+  }
+
   async function deleteOrder(id: string) {
     await saveOrders(orders.filter((o) => o.id !== id));
   }
@@ -1546,6 +1639,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDataDownloadTimeNow,
         setDataDownloadTimeValue,
         clearDataDownloadTime,
+        companyDetails,
+        setCompanyDetails,
+        resetCompanyDetails,
         hydrated,
       }}
     >

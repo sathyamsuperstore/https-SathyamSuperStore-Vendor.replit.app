@@ -297,6 +297,27 @@ export default function AdmnHubScreen() {
       </View>
 
       <View style={[styles.section, { marginTop: 16 }]}>
+        <Text style={styles.sectionTitle}>Settings</Text>
+        <Text style={styles.sectionSub}>
+          Edit the store identity (name, address, GST, FSSAI, contact
+          numbers) used across the app.
+        </Text>
+        <TouchableOpacity
+          style={styles.importBtn}
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/company-details" as any);
+          }}
+          activeOpacity={0.85}
+        >
+          <Feather name="briefcase" size={16} color={Colors.primary} />
+          <Text style={styles.importBtnText} numberOfLines={1}>
+            Company Details
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.section, { marginTop: 16 }]}>
         <Text style={styles.sectionTitle}>Excel Import</Text>
         <Text style={styles.sectionSub}>
           Open the importer for each table. Importing replaces or merges
