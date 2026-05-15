@@ -343,15 +343,15 @@ export const DEFAULT_COMPANY_DETAILS: CompanyDetails = {
 // to CompanyDetails. Edited from the "CompanyR Details" tab and kept
 // in its own AsyncStorage slot so neither profile clobbers the other.
 export const DEFAULT_COMPANY_DETAILS_R: CompanyDetails = {
-  companyName: "Rasi Super Store",
-  address1: "",
-  address2: "",
+  companyName: "Rasi Stores",
+  address1: "2 Mettupalayam Road",
+  address2: "Cheran Nagar",
   city: "Coimbatore",
   state: "TN",
   country: "India",
-  pincode: "",
-  mobile: "",
-  whatsapp: "",
+  pincode: "641029",
+  mobile: "+919751263868",
+  whatsapp: "+919171868222",
   gstNo: "",
   fssaiNo: "",
 };
