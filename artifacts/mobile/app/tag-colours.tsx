@@ -97,6 +97,12 @@ export default function TagColoursScreen() {
   const [appliedAt, setAppliedAt] = useState<number | null>(null);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [saveName, setSaveName] = useState("");
+  // Tracks which preset row is mid-apply (spinner) and which was most
+  // recently applied (green check + row highlight). Without these the
+  // tap on a preset looks like nothing happens because the rest of the
+  // page only re-syncs `draft` via a useEffect a moment later.
+  const [applyingPreset, setApplyingPreset] = useState<string | null>(null);
+  const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
 
   // Auto-clear the "Applied" confirmation after 2.5s so the button
   // returns to its normal state without the user having to do anything.
@@ -105,6 +111,13 @@ export default function TagColoursScreen() {
     const t = setTimeout(() => setAppliedAt(null), 2500);
     return () => clearTimeout(t);
   }, [appliedAt]);
+
+  // Same auto-clear for the per-preset "Applied" highlight.
+  React.useEffect(() => {
+    if (appliedPreset == null) return;
+    const t = setTimeout(() => setAppliedPreset(null), 2500);
+    return () => clearTimeout(t);
+  }, [appliedPreset]);
 
   React.useEffect(() => {
     setDraft(tagColors);
@@ -143,10 +156,27 @@ export default function TagColoursScreen() {
   }, [applying, draft, setTagColors, valid]);
 
   const applyPreset = useCallback(
-    async (colors: TagColors) => {
-      await setTagColors(colors);
+    async (name: string, colors: TagColors) => {
+      if (applyingPreset) return;
+      try {
+        setApplyingPreset(name);
+        setAppliedPreset(null);
+        // Sync the draft swatches/inputs immediately so the user sees
+        // the new colors flow into the editor on the same frame as the
+        // tap, rather than waiting for the tagColors useEffect.
+        setDraft(colors);
+        await setTagColors(colors);
+        setAppliedPreset(name);
+      } catch (e) {
+        Alert.alert(
+          "Apply failed",
+          e instanceof Error ? e.message : String(e),
+        );
+      } finally {
+        setApplyingPreset(null);
+      }
     },
-    [setTagColors],
+    [applyingPreset, setTagColors],
   );
 
   const reset = useCallback(() => {
@@ -537,10 +567,18 @@ export default function TagColoursScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {allPresets.map((p) => (
-              <View key={`${p.isCustom ? "c" : "b"}|${p.name}`} style={styles.presetRow}>
+              <View
+                key={`${p.isCustom ? "c" : "b"}|${p.name}`}
+                style={[
+                  styles.presetRow,
+                  appliedPreset === p.name && styles.presetRowApplied,
+                  applyingPreset === p.name && styles.presetRowApplying,
+                ]}
+              >
                 <Pressable
-                  onPress={() => applyPreset(p.colors)}
+                  onPress={() => applyPreset(p.name, p.colors)}
                   style={styles.presetMain}
+                  disabled={applyingPreset != null}
                 >
                   <View style={styles.presetSwatches}>
                     {(["red", "deepRed", "cream", "gold"] as const).map((k) => (
@@ -559,7 +597,14 @@ export default function TagColoursScreen() {
                     ) : null}
                   </View>
                 </Pressable>
-                {p.isCustom ? (
+                {applyingPreset === p.name ? (
+                  <ActivityIndicator size="small" color={Colors.text} />
+                ) : appliedPreset === p.name ? (
+                  <View style={styles.appliedBadge}>
+                    <Feather name="check-circle" size={14} color="#FFF" />
+                    <Text style={styles.appliedBadgeText}>Applied</Text>
+                  </View>
+                ) : p.isCustom ? (
                   <Pressable
                     onPress={() => confirmDeleteCustom(p.name)}
                     style={styles.deleteBtn}
@@ -756,6 +801,27 @@ const styles = StyleSheet.create({
     gap: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+  },
+  presetRowApplying: {
+    backgroundColor: "#EEF2FF",
+  },
+  presetRowApplied: {
+    backgroundColor: "#ECFDF5",
+  },
+  appliedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#16A34A",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  appliedBadgeText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
   presetMain: {
     flex: 1,
