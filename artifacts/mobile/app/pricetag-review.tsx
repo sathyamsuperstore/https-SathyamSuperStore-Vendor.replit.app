@@ -3884,28 +3884,19 @@ function makeBStyles(c: TagColors = DEFAULT_TAG_COLORS) {
     backgroundColor: RED, paddingVertical: 6,
     flexDirection: "row",
     alignItems: "center", justifyContent: "center",
-    // Reserve room on the right for the absolutely-positioned green
-    // edit button so the centered title can never slide under it
-    // (or visually collide with the red remove ✕ that sits at the
-    // slot's top-right corner) when the user picks a long custom
-    // title from TitleList. Symmetric left padding keeps the title
-    // optically centered.
-    paddingLeft: 32,
-    paddingRight: 32,
-    position: "relative",
+    // Symmetric horizontal padding keeps the title+edit-button pair
+    // optically centered. The green edit button now sits inline next
+    // to the title (centered as a group) instead of pinned to the
+    // right edge, so it can never collide with the red ✕ remove
+    // button at the slot's top-right corner.
+    paddingHorizontal: 28,
+    gap: 8,
   },
   bannerEditBtn: {
-    // Anchored to a fixed position on the right edge of the banner —
-    // independent of title length — so picking a longer title from
-    // TitleList no longer drags the green button into the red ✕
-    // remove button.
-    position: "absolute",
-    right: 6,
-    top: 0,
-    bottom: 0,
-    alignSelf: "center",
+    // Inline next to the centered title text — visually anchored to
+    // the middle of the banner, far from the red ✕ remove button at
+    // the slot's top-right corner.
     width: 22, height: 22, borderRadius: 11,
-    marginVertical: "auto",
     backgroundColor: "#16A34A",
     borderWidth: 1, borderColor: "#FFFFFF",
     alignItems: "center", justifyContent: "center",
