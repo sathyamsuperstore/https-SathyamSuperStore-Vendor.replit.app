@@ -2,7 +2,6 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 const TOKEN_KEY = "vendor_portal_session_token";
-const FIRST_RUN_KEY = "vendor_portal_first_run_seen";
 
 // SecureStore is unavailable on web; fall back to localStorage. Web
 // is only used for development previews so this is acceptable.
@@ -37,28 +36,6 @@ export async function storeToken(token: string): Promise<void> {
 
 export async function clearStoredToken(): Promise<void> {
   await store.deleteItemAsync(TOKEN_KEY);
-}
-
-// "First install" flag — used by PinGate to skip the Admin PIN
-// prompt the very first time the app is launched on a device.
-// After it's marked seen, subsequent launches without a stored
-// session token fall back to the normal PIN gate.
-export async function isFirstRunSeen(): Promise<boolean> {
-  try {
-    const v = await store.getItemAsync(FIRST_RUN_KEY);
-    return v === "1";
-  } catch {
-    return false;
-  }
-}
-
-export async function markFirstRunSeen(): Promise<void> {
-  try {
-    await store.setItemAsync(FIRST_RUN_KEY, "1");
-  } catch {
-    // Best-effort — if persistence fails the user may see the PIN
-    // gate on next launch, which is the safer default.
-  }
 }
 
 // Build a URL pointing at our api-server. Mirrors the helper in

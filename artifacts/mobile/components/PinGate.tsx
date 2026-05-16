@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type ReactNode } from "react";
+import React, { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,20 +14,10 @@ import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
 
 export function PinGate({ children }: { children: ReactNode }) {
-  const { token, ready, loginWithPin, firstRunBypass, acknowledgeFirstRun } =
-    useAuth();
+  const { token, ready, loginWithPin } = useAuth();
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // First-time install: silently mark the bypass as acknowledged so
-  // the next launch behaves normally, and let the user straight into
-  // the app without being prompted for the Admin PIN.
-  useEffect(() => {
-    if (ready && !token && firstRunBypass) {
-      void acknowledgeFirstRun();
-    }
-  }, [ready, token, firstRunBypass, acknowledgeFirstRun]);
 
   if (!ready) {
     return (
@@ -37,7 +27,7 @@ export function PinGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (token || firstRunBypass) return <>{children}</>;
+  if (token) return <>{children}</>;
 
   async function submit() {
     if (busy) return;
