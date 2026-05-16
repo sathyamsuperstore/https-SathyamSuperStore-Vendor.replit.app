@@ -306,8 +306,14 @@ export default function PriceTagImgScreen() {
         return;
       }
 
-      // Native: write base64 to a stable cache file, then push it into
-      // the photo library via the existing MediaLibrary flow below.
+      // Native: write base64 to a stable cache file, then open the
+      // system share sheet so the user can pick WhatsApp / Drive /
+      // Photos / Files / etc themselves. We deliberately do NOT save
+      // silently into the photo library here — that produced a
+      // confusing "Saved to Photos" toast in production APK builds
+      // where users couldn't tell where the file went. The share
+      // sheet matches the Expo Go behaviour and gives the user
+      // explicit control over the destination.
       const dir = FileSystem.cacheDirectory ?? "";
       if (!dir) throw new Error("No writable cache directory available.");
       const saveUri = dir + filename;
@@ -320,50 +326,51 @@ export default function PriceTagImgScreen() {
         encoding: "base64" as any,
       });
 
-      let savedViaLibrary = false;
-      try {
-        const perm = await MediaLibrary.requestPermissionsAsync(false, [
-          "photo",
-        ]);
-        if (!perm.granted) {
-          Alert.alert(
-            "Permission needed",
-            "Allow access to your photo library so the image can be saved.",
-          );
-          return;
-        }
-        const asset = await MediaLibrary.createAssetAsync(saveUri);
-        const ALBUM = "Sathyam PriceTags";
-        try {
-          const album = await MediaLibrary.getAlbumAsync(ALBUM);
-          if (album) {
-            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-          } else {
-            await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
-          }
-        } catch {
-          /* album write failed; asset is still in library */
-        }
-        savedViaLibrary = true;
-      } catch (libErr: any) {
-        const canShare = await Sharing.isAvailableAsync().catch(() => false);
-        if (!canShare) throw libErr;
+      const canShare = await Sharing.isAvailableAsync().catch(() => false);
+      if (canShare) {
         await Sharing.shareAsync(saveUri, {
           mimeType: "image/jpeg",
           dialogTitle: filename,
           UTI: "public.jpeg",
         });
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => {});
+        // No follow-up alert — the share sheet is the user's
+        // confirmation and any "saved" toast comes from the chosen
+        // app (WhatsApp / Drive / Photos / etc).
+        return;
       }
 
+      // Fallback: share sheet unavailable on this device — fall back
+      // to the legacy MediaLibrary save so the file still lands
+      // somewhere the user can find it.
+      const perm = await MediaLibrary.requestPermissionsAsync(false, [
+        "photo",
+      ]);
+      if (!perm.granted) {
+        Alert.alert(
+          "Permission needed",
+          "Allow access to your photo library so the image can be saved.",
+        );
+        return;
+      }
+      const asset = await MediaLibrary.createAssetAsync(saveUri);
+      const ALBUM = "Sathyam PriceTags";
+      try {
+        const album = await MediaLibrary.getAlbumAsync(ALBUM);
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        } else {
+          await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+        }
+      } catch {
+        /* album write failed; asset is still in library */
+      }
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success,
       ).catch(() => {});
-      Alert.alert(
-        savedViaLibrary ? "Saved to Photos" : "Saved",
-        savedViaLibrary
-          ? `${filename}\nAlbum: Sathyam PriceTags`
-          : `${filename}\nUse the share sheet to save to Photos or Files.`,
-      );
+      Alert.alert("Saved to Photos", `${filename}\nAlbum: Sathyam PriceTags`);
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save image.");
     } finally {
