@@ -181,6 +181,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeFilter, setActiveFilter] = useState<OrderStatus | "all">("all");
   const [showStock, setShowStock] = useState(false);
+  const [hideZero, setHideZero] = useState(false);
   const [activeBrands, setActiveBrands] = useState<string[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
@@ -604,7 +605,7 @@ function OrdersView({ topPt }: { topPt: number }) {
         const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
         const _pad2 = (n: number) => String(n).padStart(2, "0");
         const _ts2 = `${_pad2(now.getDate())}${_pad2(now.getMonth() + 1)}${now.getFullYear()} ${_pad2(now.getHours())}${_pad2(now.getMinutes())}`;
-        const pdfFileName = `Sathyam Super Store - ${_ts2}`;
+        const pdfFileName = `Sathyam Super Store Order ${_ts2}`;
         const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
@@ -867,6 +868,8 @@ function OrdersView({ topPt }: { topPt: number }) {
               order={item}
               showStock={showStock}
               onToggleStock={() => setShowStock((v) => !v)}
+              hideZero={hideZero}
+              onToggleHideZero={() => setHideZero((v) => !v)}
               activeBrands={activeBrands}
               activeCategories={activeCategories}
             />
@@ -1119,12 +1122,16 @@ function VendorOrderCard({
   order,
   showStock,
   onToggleStock,
+  hideZero,
+  onToggleHideZero,
   activeBrands,
   activeCategories,
 }: {
   order: Order;
   showStock: boolean;
   onToggleStock: () => void;
+  hideZero: boolean;
+  onToggleHideZero: () => void;
   activeBrands: string[];
   activeCategories: string[];
 }) {
@@ -1143,8 +1150,11 @@ function VendorOrderCard({
     if (activeCategories.length > 0) {
       items = items.filter((it) => it.category != null && activeCategories.includes(it.category));
     }
+    if (hideZero) {
+      items = items.filter((it) => Number(it.quantity) > 0);
+    }
     return items;
-  }, [order.items, activeBrands, activeCategories]);
+  }, [order.items, activeBrands, activeCategories, hideZero]);
 
   function handleStatusChange(newStatus: OrderStatus) {
     if (newStatus === order.status) return;
@@ -1337,6 +1347,20 @@ function VendorOrderCard({
               />
               <Text style={[cardStyles.stockToggleText, showStock && cardStyles.stockToggleTextOn]}>
                 Hide Stock
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[cardStyles.stockToggleBtn, hideZero && cardStyles.stockToggleBtnOn]}
+              onPress={onToggleHideZero}
+              activeOpacity={0.75}
+            >
+              <Feather
+                name={hideZero ? "eye-off" : "eye"}
+                size={13}
+                color={hideZero ? Colors.primary : Colors.textMuted}
+              />
+              <Text style={[cardStyles.stockToggleText, hideZero && cardStyles.stockToggleTextOn]}>
+                Hide 0
               </Text>
             </TouchableOpacity>
           </View>
