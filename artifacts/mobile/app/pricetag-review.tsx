@@ -3147,7 +3147,7 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
      description row and the MRP row, slightly right of center. */
   .tagA .watermark {
     position: absolute;
-    top: 35%; left: 50%;
+    top: 40%; left: 38.75%;
     width: 12.5%; height: auto;
     opacity: 0.45;
     pointer-events: none;
@@ -4058,7 +4058,7 @@ const watermarkStyles = StyleSheet.create({
   // the description row and the MRP row, slightly left of center.
   layerA: {
     position: "absolute",
-    top: 45, left: 200,
+    top: 53, left: 155,
     alignItems: "flex-start",
     justifyContent: "flex-start",
   },
