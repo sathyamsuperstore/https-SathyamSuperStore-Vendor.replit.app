@@ -228,6 +228,11 @@ interface AppContextType {
   // user's last choice sticks across app restarts. Default: true.
   priceTagShowLogo: boolean;
   setPriceTagShowLogo: (show: boolean) => Promise<void>;
+  // Independent toggle (next to Show Logo): draws an additional
+  // large centered 30%-opacity Sathyam Super Store logo behind every
+  // Style A price tag (on-screen + PDF). Default: false.
+  priceTagShowWatermark: boolean;
+  setPriceTagShowWatermark: (show: boolean) => Promise<void>;
   // Optional free-text title prepended to the PDF export filename
   // ("Sathyam Super Store Promo - <title> DDMMYY HHMM.pdf"). Empty
   // string means no title set. Persisted so it survives app restarts.
@@ -245,6 +250,9 @@ interface AppContextType {
   setPriceTagReviewStyle: (style: PriceTagStyle) => Promise<void>;
   priceTagReviewShowLogo: boolean;
   setPriceTagReviewShowLogo: (show: boolean) => Promise<void>;
+  // Mirrors priceTagShowWatermark for the Review screen.
+  priceTagReviewShowWatermark: boolean;
+  setPriceTagReviewShowWatermark: (show: boolean) => Promise<void>;
   // Square (1:1) showcase layout variant. "detailed" prints the
   // full company-details footer (address, GST, FSSAI). "minimal"
   // prints just a slim store-name + WhatsApp bar at the bottom and
@@ -593,6 +601,7 @@ const PRICE_TAG_STYLE_KEY = "@priceTagStyle";
 // each price tag. Stored as the literal string "1" (show) or "0"
 // (hide); anything missing/unknown falls back to the default (show).
 const PRICE_TAG_SHOW_LOGO_KEY = "@priceTagShowLogo";
+const PRICE_TAG_SHOW_WATERMARK_KEY = "@priceTagShowWatermark";
 // Optional free-text PDF export title. Stored as the raw user
 // string (trimmed); empty string == "no title set".
 const PRICE_TAG_TITLE_KEY = "@priceTagTitle";
@@ -600,6 +609,7 @@ const PRICE_TAG_TITLE_KEY = "@priceTagTitle";
 const PRICE_TAG_REVIEW_KEY = "@priceTagReviewItems";
 const PRICE_TAG_REVIEW_STYLE_KEY = "@priceTagReviewStyle";
 const PRICE_TAG_REVIEW_SHOW_LOGO_KEY = "@priceTagReviewShowLogo";
+const PRICE_TAG_REVIEW_SHOW_WATERMARK_KEY = "@priceTagReviewShowWatermark";
 const PRICE_TAG_SQUARE_VARIANT_KEY = "@priceTagSquareVariant";
 const PRICE_TAG_REVIEW_TITLE_KEY = "@priceTagReviewTitle";
 // Brand palette JSON: { red, deepRed, cream, gold } as #RRGGBB.
@@ -695,6 +705,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagItems, setPriceTagItems] = useState<PriceTagItem[]>([]);
   const [priceTagStyle, setPriceTagStyleState] = useState<PriceTagStyle>("A");
   const [priceTagShowLogo, setPriceTagShowLogoState] = useState<boolean>(true);
+  const [priceTagShowWatermark, setPriceTagShowWatermarkState] = useState<boolean>(false);
   const [priceTagTitle, setPriceTagTitleState] = useState<string>("");
   // Mirror so the per-item helpers (image set, remove) can read the
   // latest list without depending on a possibly-stale closure.
@@ -706,6 +717,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [priceTagReviewItems, setPriceTagReviewItems] = useState<PriceTagItem[]>([]);
   const [priceTagReviewStyle, setPriceTagReviewStyleState] = useState<PriceTagStyle>("A");
   const [priceTagReviewShowLogo, setPriceTagReviewShowLogoState] = useState<boolean>(true);
+  const [priceTagReviewShowWatermark, setPriceTagReviewShowWatermarkState] = useState<boolean>(false);
   const [priceTagSquareVariant, setPriceTagSquareVariantState] = useState<
     "detailed" | "minimal"
   >("minimal");
@@ -828,6 +840,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (priceTagShowLogoData === "1") {
         setPriceTagShowLogoState(true);
       }
+
+      // Hydrate the independent Style A watermark toggle. Loaded
+      // lazily (outside the big Promise.all) to avoid touching the
+      // already-long destructure.
+      try {
+        const wm = await AsyncStorage.getItem(PRICE_TAG_SHOW_WATERMARK_KEY);
+        if (wm === "1") setPriceTagShowWatermarkState(true);
+        else if (wm === "0") setPriceTagShowWatermarkState(false);
+      } catch {}
+      try {
+        const wmR = await AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_WATERMARK_KEY);
+        if (wmR === "1") setPriceTagReviewShowWatermarkState(true);
+        else if (wmR === "0") setPriceTagReviewShowWatermarkState(false);
+      } catch {}
 
       // Optional PDF title. Cap at the same 256-char limit the UI
       // enforces so a tampered storage value can't blow past it.
@@ -1432,6 +1458,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPriceTagShowLogoState(show);
   }
 
+  async function setPriceTagShowWatermark(show: boolean) {
+    await AsyncStorage.setItem(PRICE_TAG_SHOW_WATERMARK_KEY, show ? "1" : "0");
+    setPriceTagShowWatermarkState(show);
+  }
+
   async function setPriceTagTitle(title: string) {
     const clean = title.slice(0, 256);
     await AsyncStorage.setItem(PRICE_TAG_TITLE_KEY, clean);
@@ -1475,6 +1506,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function setPriceTagReviewShowLogo(show: boolean) {
     await AsyncStorage.setItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY, show ? "1" : "0");
     setPriceTagReviewShowLogoState(show);
+  }
+
+  async function setPriceTagReviewShowWatermark(show: boolean) {
+    await AsyncStorage.setItem(PRICE_TAG_REVIEW_SHOW_WATERMARK_KEY, show ? "1" : "0");
+    setPriceTagReviewShowWatermarkState(show);
   }
 
   async function setPriceTagSquareVariant(v: "detailed" | "minimal") {
@@ -1743,6 +1779,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagStyle,
         priceTagShowLogo,
         setPriceTagShowLogo,
+        priceTagShowWatermark,
+        setPriceTagShowWatermark,
         priceTagTitle,
         setPriceTagTitle,
         priceTagReviewItems,
@@ -1754,6 +1792,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPriceTagReviewStyle,
         priceTagReviewShowLogo,
         setPriceTagReviewShowLogo,
+        priceTagReviewShowWatermark,
+        setPriceTagReviewShowWatermark,
         priceTagSquareVariant,
         setPriceTagSquareVariant,
         priceTagReviewTitle,

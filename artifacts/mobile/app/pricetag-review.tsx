@@ -281,6 +281,8 @@ export default function PriceTagReviewScreen() {
     setPriceTagReviewStyle,
     priceTagReviewShowLogo,
     setPriceTagReviewShowLogo,
+    priceTagReviewShowWatermark,
+    setPriceTagReviewShowWatermark,
     priceTagSquareVariant,
     setPriceTagSquareVariant,
     priceTagReviewTitle,
@@ -1078,7 +1080,7 @@ export default function PriceTagReviewScreen() {
       // each item rendered with `it.style ?? priceTagReviewStyle`. The
       // PDF builder reads `it.style` directly so we just pass the
       // screen-wide style as the fallback.
-      const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo, tagColors);
+      const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo, tagColors, priceTagReviewShowWatermark);
       const { uri } = await Print.printToFileAsync({ html });
       if (Platform.OS === "web") return;
 
@@ -1605,7 +1607,31 @@ export default function PriceTagReviewScreen() {
             />
           </TouchableOpacity>
           <Text style={styles.logoToggleHint}>
-            {priceTagReviewShowLogo ? "Watermark on (30%)" : "Watermark off"}
+            {priceTagReviewShowLogo ? "Logo on" : "Logo off"}
+          </Text>
+          {/* Independent second toggle — adds a big centered 30%-opacity
+              watermark behind every Style A tag (preview + PDF). */}
+          <Text style={[styles.logoToggleLabel, { marginLeft: 12 }]}>Watermark</Text>
+          <TouchableOpacity
+            style={[
+              styles.logoToggleSwitch,
+              priceTagReviewShowWatermark && styles.logoToggleSwitchOn,
+            ]}
+            onPress={() => setPriceTagReviewShowWatermark(!priceTagReviewShowWatermark)}
+            activeOpacity={0.85}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: priceTagReviewShowWatermark }}
+            accessibilityLabel="Show centered watermark behind Style A price tags"
+          >
+            <View
+              style={[
+                styles.logoToggleKnob,
+                priceTagReviewShowWatermark && styles.logoToggleKnobOn,
+              ]}
+            />
+          </TouchableOpacity>
+          <Text style={styles.logoToggleHint}>
+            {priceTagReviewShowWatermark ? "30% bg" : "Off"}
           </Text>
         </View>
 
@@ -2461,6 +2487,7 @@ export default function PriceTagReviewScreen() {
                       item={it}
                       busy={false}
                       showLogo={priceTagReviewShowLogo}
+                      showWatermark={priceTagReviewShowWatermark}
                       onAddImage={() => {}}
                       onRemoveImage={() => {}}
                       onRemoveBackground={() => {}}
@@ -2521,12 +2548,13 @@ export default function PriceTagReviewScreen() {
 // tile size, so we stack instead and keep heights bounded.
 
 export function StyleATag({
-  item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
+  item, busy, showLogo, showWatermark, onAddImage, onRemoveImage, onRemoveBackground,
   cardStyle,
 }: {
   item: PriceTagItem;
   busy: boolean;
   showLogo: boolean;
+  showWatermark?: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
@@ -2543,14 +2571,25 @@ export function StyleATag({
 
   return (
     <View style={[a.card, cardStyle]}>
-      {/* Logo watermark — top-right corner. pointerEvents="none" lets
-          taps fall through to the price/image controls underneath.
-          Style A uses layerA (no top banner to clear). */}
+      {/* Centered background watermark — drawn first so it sits
+          behind all other content. 30% opacity. */}
+      {showWatermark && (
+        <View pointerEvents="none" style={watermarkStyles.layerACenter}>
+          <Image
+            source={{ uri: LOGO_BASE64 }}
+            style={watermarkStyles.imageABg}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+      {/* Show-Logo badge — moved from the top-right corner to the
+          gap between the description row and the MRP row, slightly
+          left of center. Size bumped 50% (28 → 42). */}
       {showLogo && (
         <View pointerEvents="none" style={watermarkStyles.layerA}>
           <Image
             source={{ uri: LOGO_BASE64 }}
-            style={watermarkStyles.image}
+            style={watermarkStyles.imageA}
             resizeMode="contain"
           />
         </View>
@@ -2909,6 +2948,7 @@ function renderTagHtmlForStyle(
   it: PriceTagItem,
   style: PriceTagStyle,
   showLogo: boolean,
+  showWatermark: boolean = false,
 ): string {
   if (style === "B") {
     return renderTagBHtml(
@@ -2960,7 +3000,7 @@ function renderTagHtmlForStyle(
       true,  // showStyleASaveBadge
     );
   }
-  return renderTagAHtml(it, showLogo);
+  return renderTagAHtml(it, showLogo, showWatermark);
 }
 
 function buildPdfHtml(
@@ -2968,13 +3008,14 @@ function buildPdfHtml(
   style: PriceTagStyle,
   showLogo: boolean,
   colors: TagColors = DEFAULT_TAG_COLORS,
+  showWatermark: boolean = false,
 ): string {
   // Per-item style support (PriceTag Review): each item can carry its
   // own `style` override. Items without an override fall back to the
   // screen-wide `style` parameter.
   const effStyleFor = (it: PriceTagItem): PriceTagStyle => it.style ?? style;
   const tagsHtml = items
-    .map((it) => renderTagHtmlForStyle(it, effStyleFor(it), showLogo))
+    .map((it) => renderTagHtmlForStyle(it, effStyleFor(it), showLogo, showWatermark))
     .join("");
 
   // CSS bundling — work out which stylesheets the document actually
@@ -3023,7 +3064,7 @@ function buildPdfHtml(
 
 // ----- Style A HTML / CSS -----
 
-function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
+function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: boolean = false): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
   const off = offAmount(it);
@@ -3044,6 +3085,9 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
   const watermark = showLogo
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
     : "";
+  const watermarkBg = showWatermark
+    ? `<img class="watermarkBg" src="${LOGO_BASE64}" alt="" />`
+    : "";
 
   const validTill = it.promotionToDate
     ? `<div class="validTillA"><span>Valid Till: ${escapeHtml(
@@ -3053,6 +3097,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean): string {
 
   return `
     <div class="tagA">
+      ${watermarkBg}
       ${watermark}
       ${validTill}
       <div class="descA">${descSpan}</div>
@@ -3100,18 +3145,29 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* Sathyam-Super-Store logo — pinned to the top-right of the tag.
-     Style A has no top banner, so we use a small inset directly at
-     the corner. Width reduced to 6% (~25% of the previous 24%). */
+  /* Sathyam-Super-Store logo — moved out of the top-right corner
+     and into the gap between the description row and the MRP row,
+     slightly left of center. Width bumped 50% (6% → 9%). */
   .tagA .watermark {
     position: absolute;
-    top: 4px; right: 4px;
-    width: 6%; height: auto;
+    top: 28%; left: 22%;
+    width: 9%; height: auto;
     opacity: 0.45;
     pointer-events: none;
     z-index: 2;
   }
-  .tagA > *:not(.watermark) { position: relative; z-index: 1; }
+  /* Independent centered background watermark (Watermark toggle).
+     Sits behind everything at 30% opacity. */
+  .tagA .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagA > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   /* Vertical "Valid Till" rail — narrow column on the right edge
      with the text rotated 90deg so it reads top-to-bottom. */
   .tagA .validTillA {
@@ -4016,11 +4072,20 @@ function formatValidTill(raw: string): string {
 //     logo is offset down to clear it.
 // Width was reduced to 6% (~25% of the previous 24%) per design.
 const watermarkStyles = StyleSheet.create({
+  // Style A — moved out of the top-right corner into the gap between
+  // the description row and the MRP row, slightly left of center.
   layerA: {
     position: "absolute",
-    top: 4, right: 4,
-    alignItems: "flex-end",
+    top: 40, left: 110,
+    alignItems: "flex-start",
     justifyContent: "flex-start",
+  },
+  // Centered full-card overlay for the new Watermark toggle.
+  layerACenter: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   layerB: {
     position: "absolute",
@@ -4032,6 +4097,18 @@ const watermarkStyles = StyleSheet.create({
     width: 28,
     height: 28,
     opacity: 0.45,
+  },
+  // Style A badge — 50% larger than `image` (28 → 42).
+  imageA: {
+    width: 42,
+    height: 42,
+    opacity: 0.45,
+  },
+  // Centered watermark — large + faded.
+  imageABg: {
+    width: 140,
+    height: 140,
+    opacity: 0.30,
   },
 });
 
