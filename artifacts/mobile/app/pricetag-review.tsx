@@ -289,6 +289,7 @@ export default function PriceTagReviewScreen() {
     setPriceTagReviewTitle,
     tagColors,
     titleList,
+    companyDetails,
   } = useApp();
 
   // Style E ("Customize Me") banner-title picker. While non-null we
@@ -340,6 +341,19 @@ export default function PriceTagReviewScreen() {
   const [bgAllRunning, setBgAllRunning] = useState(false);
   const { token: authToken, logout } = useAuth();
   const [exporting, setExporting] = useState(false);
+
+  // ----- Auto Banner Download -----
+  // When ON, tapping "Banner 2:1" or "Banner SQ" skips the single-tag
+  // picker and instead processes every item in priceTagReviewItems
+  // sequentially: render on server → write to cache → share, repeat.
+  // The toggle is a local UI preference; we don't persist it because
+  // it controls a workflow choice rather than a tag appearance.
+  const [autoBannerDownload, setAutoBannerDownload] = useState(false);
+  // While an auto-batch is running we surface { done, total } so the
+  // Banner button can show "Auto 3/12…" instead of just a spinner.
+  const [bannerAutoProgress, setBannerAutoProgress] = useState<
+    { done: number; total: number } | null
+  >(null);
 
   // ----- PNG export ("PNG's" red button) -----
   // Two-step modal: step 1 picks the item, step 2 picks Phone vs
@@ -1193,6 +1207,295 @@ export default function PriceTagReviewScreen() {
     }
   }
 
+  // -------- Auto Banner Download (showcase / showcase-sq) --------
+  //
+  // Sequentially renders every item in priceTagReviewItems as a
+  // server-side JPEG (Banner 2:1 or Banner SQ) and pops the share
+  // sheet for each one. Memory hygiene mirrors the chunked PDF
+  // export: we inline ONE item's image as a data: URI at a time,
+  // hand it to the server, then drop the reference before moving
+  // on. A 400 ms pause between iterations gives the JS bridge and
+  // native WebView/share teardown time to free memory before the
+  // next render. Cancelling a single share sheet does NOT abort
+  // the remaining items.
+
+  // Mirror of `toServerImageUri` in pricetag-img.tsx — the server
+  // renderer can't read device-local file:// URIs so we have to
+  // inline the bytes ourselves. http(s) and data: pass through.
+  async function toServerImageUriLocal(
+    uri: string | undefined | null,
+  ): Promise<string | undefined> {
+    if (!uri) return undefined;
+    if (uri.startsWith("data:")) return uri;
+    if (uri.startsWith("http://") || uri.startsWith("https://")) return uri;
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: "base64" as any,
+      });
+      const lower = uri.toLowerCase();
+      const mime = lower.endsWith(".png")
+        ? "image/png"
+        : lower.endsWith(".webp")
+          ? "image/webp"
+          : "image/jpeg";
+      return `data:${mime};base64,${base64}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Filename for an auto-exported Banner JPEG. Matches the contract
+  // used by the single-tag flow in pricetag-img.tsx
+  // (`Description_MRP_Promo[_SQUARE].jpg`) so files from both flows
+  // sort/group identically in the gallery.
+  function bannerFilenameFor(
+    item: PriceTagItem,
+    opts?: { square?: boolean },
+  ): string {
+    const clean = (raw: string) =>
+      raw
+        .replace(/[\/\\:*?"<>|\r\n\t\u0000-\u001F]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "") || "_";
+    const desc = clean((item.description ?? "PriceTag").trim() || "PriceTag");
+    const mrp =
+      item.mrp !== "" && item.mrp !== undefined ? clean(fmt0(item.mrp)) : "";
+    const promo =
+      item.promotionPrice !== "" && item.promotionPrice !== undefined
+        ? clean(fmt0(item.promotionPrice))
+        : "";
+    const squareTag = opts?.square ? "_SQUARE" : "";
+    const tail = `_${mrp}_${promo}${squareTag}.jpg`;
+    const MAX = 200;
+    const trimmed =
+      desc.length + tail.length > MAX
+        ? desc.slice(0, Math.max(1, MAX - tail.length))
+        : desc;
+    return `${trimmed}${tail}`;
+  }
+
+  async function autoExportBanners(
+    layout: "showcase" | "showcase-sq",
+  ): Promise<void> {
+    if (priceTagReviewItems.length === 0) return;
+    if (bannerAutoProgress) return; // already running
+
+    // Web has no native share sheet — fall back to the single-tag
+    // picker flow which already handles browser downloads. Avoids
+    // queueing N browser print dialogs back-to-back.
+    if (Platform.OS === "web") {
+      setImgPickerLayout(layout);
+      setPngPickerOpen(true);
+      return;
+    }
+
+    const isSq = layout === "showcase-sq";
+    const total = priceTagReviewItems.length;
+    setBannerAutoProgress({ done: 0, total });
+
+    // Defer per-item failures into a summary at the end of the run.
+    // Surfacing a blocking Alert mid-loop would force the user to
+    // dismiss N popups for a network outage — instead we collect
+    // and report once. `mediaLibrarySaved` doubles as the fallback
+    // counter when Sharing isn't available on this device.
+    const failures: { index: number; name: string; reason: string }[] = [];
+    let sharedCount = 0;
+    let mediaLibrarySaved = 0;
+    let permissionDenied = false;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const item = priceTagReviewItems[i];
+        setBannerAutoProgress({ done: i, total });
+
+        // The 2:1 banner Showcase strips promotionToDate to mirror
+        // the single-tag flow's behaviour; the 1:1 Showcase SQ keeps
+        // it (shown horizontally at the bottom).
+        const renderItem = isSq
+          ? item
+          : { ...item, promotionToDate: undefined };
+
+        try {
+          // Per-item image inlining — bounded memory regardless of N.
+          const safeImageUri = await toServerImageUriLocal(item.imageUri);
+
+          const renderRes = await fetch(apiUrl("/api/pricetag/render"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              item: {
+                itemNo: renderItem.itemNo,
+                description: renderItem.description,
+                mrp: renderItem.mrp,
+                promotionPrice: renderItem.promotionPrice,
+                sp: renderItem.sp,
+                eligibleQty: renderItem.eligibleQty,
+                promoSortCode: renderItem.promoSortCode,
+                imageUri: safeImageUri,
+                promotionToDate: renderItem.promotionToDate,
+                customTitle: renderItem.customTitle,
+              },
+              style: "E",
+              showLogo: priceTagReviewShowLogo,
+              // SQ format intentionally disables the centered
+              // watermark to mirror the single-tag flow.
+              showWatermark: isSq ? false : priceTagReviewShowWatermark,
+              widthPx: isSq ? 540 : 380,
+              scale: isSq ? 2 : 5,
+              aspect: isSq ? "square" : "banner",
+              colors: tagColors,
+              // Company identity only travels with SQ — banner has
+              // no footer band to render it in.
+              ...(isSq
+                ? { companyDetails, squareVariant: priceTagSquareVariant }
+                : {}),
+            }),
+          });
+          if (!renderRes.ok) {
+            const text = await renderRes.text().catch(() => "");
+            throw new Error(
+              `Render failed (${renderRes.status})${text ? `: ${text.slice(0, 120)}` : ""}`,
+            );
+          }
+          const payload = (await renderRes.json()) as {
+            base64?: string;
+            mimeType?: string;
+          };
+          if (!payload?.base64) {
+            throw new Error("Server returned no image bytes");
+          }
+
+          // Write to cache under the human-readable filename so the
+          // share sheet picks it up. We delete any stale file at the
+          // same path first so repeated exports overwrite cleanly.
+          const filename = bannerFilenameFor(item, { square: isSq });
+          const dir = FileSystem.cacheDirectory ?? "";
+          if (!dir) throw new Error("No writable cache directory available.");
+          const saveUri = dir + filename;
+          try {
+            await FileSystem.deleteAsync(saveUri, { idempotent: true });
+          } catch {
+            /* ignore */
+          }
+          await FileSystem.writeAsStringAsync(saveUri, payload.base64, {
+            encoding: "base64" as any,
+          });
+
+          const canShare = await Sharing.isAvailableAsync().catch(() => false);
+          if (canShare) {
+            // Per-item try/catch: a single dismissed share sheet must
+            // not abort the remaining batch the user has waited for.
+            try {
+              await Sharing.shareAsync(saveUri, {
+                mimeType: "image/jpeg",
+                dialogTitle: filename,
+                UTI: "public.jpeg",
+              });
+              sharedCount += 1;
+            } catch {
+              /* user cancelled — file is in cache, continue */
+              sharedCount += 1;
+            }
+          } else {
+            // Fallback (matches pricetag-img.tsx single-tag flow):
+            // save directly to the "Sathyam PriceTags" album so each
+            // tag still lands somewhere deterministic on devices
+            // without a share sheet. Permission is requested once;
+            // if denied we stop trying MediaLibrary for subsequent
+            // items but the cache files still exist.
+            try {
+              if (!permissionDenied) {
+                const perm = await MediaLibrary.requestPermissionsAsync(
+                  false,
+                  ["photo"],
+                );
+                if (!perm.granted) {
+                  permissionDenied = true;
+                  throw new Error("Photo library permission denied.");
+                }
+                const asset = await MediaLibrary.createAssetAsync(saveUri);
+                const ALBUM = "Sathyam PriceTags";
+                try {
+                  const album = await MediaLibrary.getAlbumAsync(ALBUM);
+                  if (album) {
+                    await MediaLibrary.addAssetsToAlbumAsync(
+                      [asset],
+                      album,
+                      false,
+                    );
+                  } else {
+                    await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+                  }
+                } catch {
+                  /* album write failed; asset is still in library */
+                }
+                mediaLibrarySaved += 1;
+              }
+            } catch (libErr: any) {
+              failures.push({
+                index: i,
+                name: filename,
+                reason: libErr?.message ?? "Could not save to Photos.",
+              });
+            }
+          }
+        } catch (itemErr: any) {
+          // Collect per-item failures into a summary shown at the
+          // end of the run instead of blocking with N alerts.
+          failures.push({
+            index: i,
+            name: item.description ?? `Tag ${i + 1}`,
+            reason: itemErr?.message ?? "Could not export this tag.",
+          });
+        }
+
+        setBannerAutoProgress({ done: i + 1, total });
+
+        // Breather between items — gives RN/native time to release
+        // the previous render's memory before the next fetch + write.
+        if (i < total - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+      // End-of-run summary — single popup instead of N mid-loop
+      // alerts. Distinguishes between sharing path, fallback save,
+      // and outright failures so the user knows what landed where.
+      const okCount = sharedCount + mediaLibrarySaved;
+      const failCount = failures.length;
+      if (failCount === 0) {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => {});
+        const where =
+          mediaLibrarySaved > 0
+            ? "Saved to Photos · Album: Sathyam PriceTags"
+            : "Shared via the system share sheet";
+        Alert.alert(
+          "Auto banner export complete",
+          `${okCount} of ${total} tag${total === 1 ? "" : "s"} exported.\n${where}.`,
+        );
+      } else {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Warning,
+        ).catch(() => {});
+        // Cap the listed failures so the alert body stays readable
+        // on small screens; the rest are summarised numerically.
+        const preview = failures
+          .slice(0, 5)
+          .map((f) => `• ${f.name}: ${f.reason}`)
+          .join("\n");
+        const more =
+          failures.length > 5 ? `\n…and ${failures.length - 5} more.` : "";
+        Alert.alert(
+          okCount > 0 ? "Auto banner export partial" : "Auto banner export failed",
+          `${okCount} of ${total} exported · ${failCount} failed.\n\n${preview}${more}`,
+        );
+      }
+    } finally {
+      setBannerAutoProgress(null);
+    }
+  }
+
   // -------- PNG export (768×384, ≤295 KB) --------
   //
   // Filename contract:
@@ -1584,47 +1887,88 @@ export default function PriceTagReviewScreen() {
                 style={[
                   styles.exportBtn,
                   (priceTagReviewItems.length === 0 ||
-                    priceTagReviewStyle === "A") && styles.exportBtnDisabled,
+                    priceTagReviewStyle === "A" ||
+                    bannerAutoProgress !== null) &&
+                    styles.exportBtnDisabled,
                 ]}
                 onPress={() => {
-                  setImgPickerLayout("showcase");
-                  setPngPickerOpen(true);
+                  // Auto Banner Download takes over the entire batch
+                  // when enabled — otherwise fall back to the single-
+                  // tag picker flow.
+                  if (autoBannerDownload) {
+                    void autoExportBanners("showcase");
+                  } else {
+                    setImgPickerLayout("showcase");
+                    setPngPickerOpen(true);
+                  }
                 }}
                 disabled={
                   priceTagReviewItems.length === 0 ||
-                  priceTagReviewStyle === "A"
+                  priceTagReviewStyle === "A" ||
+                  bannerAutoProgress !== null
                 }
                 accessibilityLabel={
                   priceTagReviewStyle === "A"
                     ? "Banner 2:1 is only available for Styles B–E"
-                    : "Open a single tag in the 2:1 banner layout"
+                    : autoBannerDownload
+                      ? "Auto-export every tag as a 2:1 banner"
+                      : "Open a single tag in the 2:1 banner layout"
                 }
               >
-                <Feather name="star" size={14} color={Colors.textInverse} />
-                <Text style={styles.exportBtnText}>Banner 2:1</Text>
+                {bannerAutoProgress ? (
+                  <ActivityIndicator size="small" color={Colors.textInverse} />
+                ) : (
+                  <Feather name="star" size={14} color={Colors.textInverse} />
+                )}
+                <Text style={styles.exportBtnText}>
+                  {bannerAutoProgress
+                    ? `Auto ${bannerAutoProgress.done}/${bannerAutoProgress.total}…`
+                    : autoBannerDownload
+                      ? "Auto Banner 2:1"
+                      : "Banner 2:1"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.exportBtn,
                   (priceTagReviewItems.length === 0 ||
-                    priceTagReviewStyle === "A") && styles.exportBtnDisabled,
+                    priceTagReviewStyle === "A" ||
+                    bannerAutoProgress !== null) &&
+                    styles.exportBtnDisabled,
                 ]}
                 onPress={() => {
-                  setImgPickerLayout("showcase-sq");
-                  setPngPickerOpen(true);
+                  if (autoBannerDownload) {
+                    void autoExportBanners("showcase-sq");
+                  } else {
+                    setImgPickerLayout("showcase-sq");
+                    setPngPickerOpen(true);
+                  }
                 }}
                 disabled={
                   priceTagReviewItems.length === 0 ||
-                  priceTagReviewStyle === "A"
+                  priceTagReviewStyle === "A" ||
+                  bannerAutoProgress !== null
                 }
                 accessibilityLabel={
                   priceTagReviewStyle === "A"
                     ? "Banner SQ is only available for Styles B–E"
-                    : "Open a single tag in the square (1:1) banner layout"
+                    : autoBannerDownload
+                      ? "Auto-export every tag as a square (1:1) banner"
+                      : "Open a single tag in the square (1:1) banner layout"
                 }
               >
-                <Feather name="square" size={14} color={Colors.textInverse} />
-                <Text style={styles.exportBtnText}>Banner SQ</Text>
+                {bannerAutoProgress ? (
+                  <ActivityIndicator size="small" color={Colors.textInverse} />
+                ) : (
+                  <Feather name="square" size={14} color={Colors.textInverse} />
+                )}
+                <Text style={styles.exportBtnText}>
+                  {bannerAutoProgress
+                    ? `Auto ${bannerAutoProgress.done}/${bannerAutoProgress.total}…`
+                    : autoBannerDownload
+                      ? "Auto Banner SQ"
+                      : "Banner SQ"}
+                </Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -1745,6 +2089,42 @@ export default function PriceTagReviewScreen() {
             {priceTagSquareVariant === "minimal"
               ? "Store name + WhatsApp bar"
               : "Address, GST, FSSAI"}
+          </Text>
+        </View>
+
+        {/* Auto Banner Download — when ON, tapping Banner 2:1 or
+            Banner SQ processes every item in the review sequentially
+            (render → share) instead of opening the single-tag picker.
+            Memory-safe (one tag at a time, 400ms breather between)
+            so it handles large lists without the PDF-style OOM. */}
+        <View style={styles.logoToggleBar}>
+          <Text style={styles.logoToggleLabel}>Auto Banner Download</Text>
+          <TouchableOpacity
+            style={[
+              styles.logoToggleSwitch,
+              autoBannerDownload && styles.logoToggleSwitchOn,
+            ]}
+            onPress={() => {
+              if (bannerAutoProgress) return;
+              setAutoBannerDownload(!autoBannerDownload);
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: autoBannerDownload }}
+            accessibilityLabel="Auto-export every tag when tapping Banner 2:1 or Banner SQ"
+            disabled={bannerAutoProgress !== null}
+          >
+            <View
+              style={[
+                styles.logoToggleKnob,
+                autoBannerDownload && styles.logoToggleKnobOn,
+              ]}
+            />
+          </TouchableOpacity>
+          <Text style={styles.logoToggleHint}>
+            {autoBannerDownload
+              ? `Will export all ${priceTagReviewItems.length} tag${priceTagReviewItems.length === 1 ? "" : "s"} one-by-one`
+              : "Pick one tag at a time"}
           </Text>
         </View>
 
