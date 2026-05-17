@@ -226,7 +226,10 @@ export default function PriceTagImgScreen() {
           },
           style: "E",
           showLogo: priceTagReviewShowLogo,
-          showWatermark: priceTagReviewShowWatermark,
+          // Square (1:1) banners don't support the centered watermark
+          // (intentionally hidden in the toggle UI for SQ formats),
+          // so force-disable it for SQ requests regardless of toggle.
+          showWatermark: isShowcaseSq ? false : priceTagReviewShowWatermark,
           // Square: 540 × scale 2 → 1080×1080 (Instagram).
           // Banner: 380 × scale 5 → 1900×~ (matches existing flow).
           widthPx: isShowcaseSq ? 540 : 380,

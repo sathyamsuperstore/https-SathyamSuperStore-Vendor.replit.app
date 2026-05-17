@@ -3376,9 +3376,9 @@ function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
      sits just under the red top banner without overlapping it. */
   .tagB .watermark {
     position: absolute;
-    top: 30px; right: 30px;
+    top: 45px; right: 20px;
     width: 50px; height: 50px;
-    opacity: 0.45;
+    opacity: 1.0;
     pointer-events: none;
     z-index: 2;
   }
@@ -3386,7 +3386,7 @@ function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 38%; height: auto;
+    width: 25%; height: auto;
     opacity: 0.30;
     pointer-events: none;
     z-index: 0;
@@ -4108,7 +4108,7 @@ const watermarkStyles = StyleSheet.create({
   },
   layerB: {
     position: "absolute",
-    top: 30, right: 30,
+    top: 45, right: 20,
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
@@ -4124,16 +4124,16 @@ const watermarkStyles = StyleSheet.create({
     height: 50,
     opacity: 0.45,
   },
-  // Style B/C/D/E corner badge — sized 50×50 at top:30/right:30.
+  // Style B/C/D/E corner badge — sized 50×50 at top:45/right:20.
   imageB: {
     width: 50,
     height: 50,
-    opacity: 0.45,
+    opacity: 1.0,
   },
-  // Centered watermark — large + faded.
+  // Centered watermark — ~25% of card width (card ≈ 380px) + faded.
   imageABg: {
-    width: 140,
-    height: 140,
+    width: 95,
+    height: 95,
     opacity: 0.30,
   },
 });
