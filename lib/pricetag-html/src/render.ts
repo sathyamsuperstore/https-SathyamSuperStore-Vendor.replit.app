@@ -311,12 +311,11 @@ export function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
     page-break-inside: avoid;
     display: flex; flex-direction: column;
   }
-  /* Banner 2:1 (single-tag server export) — corner logo nudged
-     further down and tighter to the right edge so it clears the
-     taller top banner used at the 1900px output width. */
+  /* Banner 2:1 (single-tag server export) — corner logo tucked
+     just under the red top banner, tight to the right edge. */
   .tagB .watermark {
     position: absolute;
-    top: 80px; right: 15px;
+    top: 50px; right: 15px;
     width: 50px; height: 50px;
     opacity: 1.0;
     pointer-events: none;
@@ -640,12 +639,12 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
     overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* Banner SQ Detailed — corner logo dropped to 90px so it sits
-     clear of the taller red top bar (which spans the full 540px
-     width and runs ~70px tall at the 1080px output size). */
+  /* Banner SQ Detailed — corner logo sits just under the red
+     top bar which spans the full 540px width at the 1080px
+     output size. */
   .tagSq .watermark {
     position: absolute;
-    top: 90px; right: 20px;
+    top: 70px; right: 20px;
     width: 50px; height: 50px;
     opacity: 1.0;
     pointer-events: none;
