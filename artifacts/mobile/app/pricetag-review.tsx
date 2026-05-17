@@ -2646,21 +2646,19 @@ export function StyleATag({
         </View>
       </View>
 
+      {/* Valid Till — placed above the dotted Item-No footer with
+          no rotation, per design. */}
+      {item.promotionToDate ? (
+        <Text style={validTillStyles.inlineA}>
+          Valid Till: {formatValidTill(item.promotionToDate)}
+        </Text>
+      ) : null}
+
       <Text style={a.itemNoFooter}>
         Item No: {item.itemNo || "—"}
         {item.eligibleQty !== undefined && item.eligibleQty !== "" ? `   ·   Elig Qty: ${fmt0(item.eligibleQty)}` : ""}
         {item.promoSortCode ? `   ·   Sort: ${item.promoSortCode}` : ""}
       </Text>
-
-      {/* Valid Till — vertical rail on the right edge. Rendered last
-          so it paints on top of the watermark and any overflow. */}
-      {item.promotionToDate ? (
-        <View pointerEvents="none" style={validTillStyles.railA}>
-          <Text style={validTillStyles.textA}>
-            Valid Till: {formatValidTill(item.promotionToDate)}
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -3090,16 +3088,15 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
     : "";
 
   const validTill = it.promotionToDate
-    ? `<div class="validTillA"><span>Valid Till: ${escapeHtml(
+    ? `<div class="validTillA">Valid Till: ${escapeHtml(
         (it.promotionToDate || "").trim().replace(/\//g, "-"),
-      )}</span></div>`
+      )}</div>`
     : "";
 
   return `
     <div class="tagA">
       ${watermarkBg}
       ${watermark}
-      ${validTill}
       <div class="descA">${descSpan}</div>
       ${minQtyA ? `<div class="minQtyA">* Minimum Purchase Qty: ${escapeHtml(minQtyA)}</div>` : ""}
       <div class="bodyRowA">
@@ -3122,6 +3119,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
           <div class="imgPanelA">${img}</div>
         </div>
       </div>
+      ${validTill}
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}${it.promoSortCode ? `   ·   Sort: ${escapeHtml(it.promoSortCode)}` : ""}</div>
     </div>
   `;
@@ -3145,13 +3143,12 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* Sathyam-Super-Store logo — moved out of the top-right corner
-     and into the gap between the description row and the MRP row,
-     slightly left of center. Width bumped 50% (6% → 9%). */
+  /* Sathyam-Super-Store logo — tucked into the gap between the
+     description row and the MRP row, slightly right of center. */
   .tagA .watermark {
     position: absolute;
-    top: 28%; left: 22%;
-    width: 9%; height: auto;
+    top: 35%; left: 50%;
+    width: 12.5%; height: auto;
     opacity: 0.45;
     pointer-events: none;
     z-index: 2;
@@ -3168,21 +3165,12 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     z-index: 0;
   }
   .tagA > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
-  /* Vertical "Valid Till" rail — narrow column on the right edge
-     with the text rotated 90deg so it reads top-to-bottom. */
+  /* "Valid Till" — inline, sits just above the dotted Item-No
+     footer with no rotation. */
   .tagA .validTillA {
-    position: absolute;
-    top: 0; right: 2px; bottom: 0;
-    width: 14px;
-    display: flex; align-items: center; justify-content: center;
-    z-index: 2; pointer-events: none;
-  }
-  .tagA .validTillA span {
-    display: inline-block;
-    transform: rotate(90deg);
-    white-space: nowrap;
     font-size: 8px; color: #94795E; font-weight: 600;
     letter-spacing: 0.3px;
+    margin-top: 4px;
   }
   .descA {
     font-size: 13px; font-weight: 800; color: ${DEEP_RED};
@@ -4018,19 +4006,13 @@ const b = makeBStyles();
 // `itemNoFooter` so the new label matches the existing footer
 // typography.
 const validTillStyles = StyleSheet.create({
-  railA: {
-    position: "absolute",
-    top: 0, bottom: 0, right: 2,
-    width: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  textA: {
+  // Style A: inline label placed just above the dotted Item-No
+  // footer. No rotation per latest design.
+  inlineA: {
     fontSize: 8, color: "#94795E", fontWeight: "600",
     letterSpacing: 0.3,
-    transform: [{ rotate: "90deg" }],
-    width: 200,
-    textAlign: "center",
+    marginTop: 4,
+    textAlign: "left",
   },
   // Style B: rail on the LEFT edge. Text rotated -90deg so it reads
   // bottom-to-top — the natural orientation for a left-edge label
@@ -4076,7 +4058,7 @@ const watermarkStyles = StyleSheet.create({
   // the description row and the MRP row, slightly left of center.
   layerA: {
     position: "absolute",
-    top: 40, left: 110,
+    top: 45, left: 200,
     alignItems: "flex-start",
     justifyContent: "flex-start",
   },
@@ -4098,10 +4080,11 @@ const watermarkStyles = StyleSheet.create({
     height: 28,
     opacity: 0.45,
   },
-  // Style A badge — 50% larger than `image` (28 → 42).
+  // Style A badge — sized 50×50 and tucked into the gap between
+  // the description row and the MRP row, slightly right of center.
   imageA: {
-    width: 42,
-    height: 42,
+    width: 50,
+    height: 50,
     opacity: 0.45,
   },
   // Centered watermark — large + faded.
