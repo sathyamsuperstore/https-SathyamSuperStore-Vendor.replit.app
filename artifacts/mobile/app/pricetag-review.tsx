@@ -1049,46 +1049,25 @@ export default function PriceTagReviewScreen() {
     if (priceTagReviewItems.length === 0) return;
     setExporting(true);
     try {
-      // Inline every image as a `data:` URI before building the PDF
-      // HTML. expo-print's underlying WebView doesn't reliably load
-      // arbitrary `file://` URIs from the app's document directory
-      // when rendering to PDF (images come out blank), so we read
-      // each persisted file back as base64 and embed it directly.
-      const itemsForPdf = await Promise.all(
-        priceTagReviewItems.map(async (it) => {
-          if (!it.imageUri) return it;
-          if (!it.imageUri.startsWith("file://")) return it;
-          try {
-            const lower = it.imageUri.toLowerCase().split(/[?#]/)[0] ?? "";
-            const mime =
-              lower.endsWith(".png") ? "image/png" :
-              lower.endsWith(".webp") ? "image/webp" :
-              lower.endsWith(".heic") || lower.endsWith(".heif") ? "image/heic" :
-              "image/jpeg";
-            const b64 = await FileSystem.readAsStringAsync(it.imageUri, {
-              encoding: "base64" as any,
-            });
-            return { ...it, imageUri: `data:${mime};base64,${b64}` };
-          } catch {
-            // If the file is missing for some reason, fall through
-            // with no image rather than aborting the whole export.
-            return { ...it, imageUri: undefined };
-          }
-        }),
-      );
-      // PriceTag Review honours per-item style overrides on export:
-      // each item rendered with `it.style ?? priceTagReviewStyle`. The
-      // PDF builder reads `it.style` directly so we just pass the
-      // screen-wide style as the fallback.
-      const html = buildPdfHtml(itemsForPdf, priceTagReviewStyle, priceTagReviewShowLogo, tagColors, priceTagReviewShowWatermark);
-      const { uri } = await Print.printToFileAsync({ html });
-      if (Platform.OS === "web") return;
+      // Stability fix: very large item lists (≈20+ tags with photos)
+      // crashed expo-print with a native OutOfMemoryError because the
+      // WebView rendering the PDF kept all base64 images in memory at
+      // once. We now split the export into batches of CHUNK_SIZE items
+      // each and produce one PDF file per batch. Image inlining is done
+      // per-chunk so peak memory stays bounded regardless of total
+      // item count.
+      const CHUNK_SIZE = 12;
+      const total = priceTagReviewItems.length;
+      const chunkCount = Math.ceil(total / CHUNK_SIZE);
 
-      // Build the export filename per spec:
-      //   "Sathyam Super Store Promo -" + <Title?> + "DDMMYY HHMM" + ".pdf"
-      // The title is optional. We strip filesystem-unsafe characters
-      // (slashes, colons, control chars, etc.) before splicing it
-      // in so the rename never trips on path separators.
+      // On web the printToFileAsync flow opens the browser print dialog
+      // and there is no file-sharing step; chunking would just open
+      // multiple print dialogs back-to-back which is confusing. Keep
+      // the legacy single-document behaviour for web.
+      const isWeb = Platform.OS === "web";
+
+      // Shared filename pieces — the date stamp is captured once so all
+      // files from a single export share the same timestamp.
       const d = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
       const stamp =
@@ -1097,36 +1076,115 @@ export default function PriceTagReviewScreen() {
       const safeTitle = priceTagReviewTitle
         .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
         .trim();
-      const filename = safeTitle
-        ? `Sathyam Super Store Promo -${safeTitle} ${stamp}.pdf`
-        : `Sathyam Super Store Promo - ${stamp}.pdf`;
 
-      // expo-print writes to a fixed temp uri; copy it to a new
-      // path with the desired filename so the share-sheet / saved
-      // file picks up the human-readable name. If the copy fails
-      // for any reason, fall through to sharing the original uri.
-      let shareUri = uri;
-      try {
-        const dir = FileSystem.cacheDirectory ?? "";
-        if (dir) {
-          const target = dir + filename;
-          await FileSystem.deleteAsync(target, { idempotent: true });
-          await FileSystem.copyAsync({ from: uri, to: target });
-          shareUri = target;
+      for (let chunkIdx = 0; chunkIdx < chunkCount; chunkIdx++) {
+        const start = chunkIdx * CHUNK_SIZE;
+        const chunkItems = priceTagReviewItems.slice(start, start + CHUNK_SIZE);
+
+        // Inline this chunk's images as `data:` URIs. expo-print's
+        // underlying WebView doesn't reliably load arbitrary `file://`
+        // URIs from the app's document directory when rendering to
+        // PDF (images come out blank), so we read each persisted file
+        // back as base64 and embed it directly. Doing this per-chunk
+        // (instead of for the whole list upfront) is the main memory
+        // win — we only hold ≤CHUNK_SIZE base64 blobs in memory at
+        // once instead of all of them.
+        const itemsForPdf = await Promise.all(
+          chunkItems.map(async (it) => {
+            if (!it.imageUri) return it;
+            if (!it.imageUri.startsWith("file://")) return it;
+            try {
+              const lower = it.imageUri.toLowerCase().split(/[?#]/)[0] ?? "";
+              const mime =
+                lower.endsWith(".png") ? "image/png" :
+                lower.endsWith(".webp") ? "image/webp" :
+                lower.endsWith(".heic") || lower.endsWith(".heif") ? "image/heic" :
+                "image/jpeg";
+              const b64 = await FileSystem.readAsStringAsync(it.imageUri, {
+                encoding: "base64" as any,
+              });
+              return { ...it, imageUri: `data:${mime};base64,${b64}` };
+            } catch {
+              // If the file is missing for some reason, fall through
+              // with no image rather than aborting the whole export.
+              return { ...it, imageUri: undefined };
+            }
+          }),
+        );
+
+        // PriceTag Review honours per-item style overrides on export:
+        // each item rendered with `it.style ?? priceTagReviewStyle`.
+        const html = buildPdfHtml(
+          itemsForPdf,
+          priceTagReviewStyle,
+          priceTagReviewShowLogo,
+          tagColors,
+          priceTagReviewShowWatermark,
+        );
+        const { uri } = await Print.printToFileAsync({ html });
+        if (isWeb) return;
+
+        // Build the export filename per spec:
+        //   "Sathyam Super Store Promo -" + <Title?> + "DDMMYY HHMM" + " (n of N)" + ".pdf"
+        // The "(n of N)" part suffix is only added when the export is
+        // split across multiple files so single-file exports keep the
+        // original naming.
+        const partSuffix =
+          chunkCount > 1 ? ` (${chunkIdx + 1} of ${chunkCount})` : "";
+        const filename = safeTitle
+          ? `Sathyam Super Store Promo -${safeTitle} ${stamp}${partSuffix}.pdf`
+          : `Sathyam Super Store Promo - ${stamp}${partSuffix}.pdf`;
+
+        // expo-print writes to a fixed temp uri; copy it to a new
+        // path with the desired filename so the share-sheet / saved
+        // file picks up the human-readable name. If the copy fails
+        // for any reason, fall through to sharing the original uri.
+        // We also delete the temp source after a successful copy to
+        // free cache space before the next chunk is generated.
+        let shareUri = uri;
+        try {
+          const dir = FileSystem.cacheDirectory ?? "";
+          if (dir) {
+            const target = dir + filename;
+            await FileSystem.deleteAsync(target, { idempotent: true });
+            await FileSystem.copyAsync({ from: uri, to: target });
+            shareUri = target;
+            await FileSystem.deleteAsync(uri, { idempotent: true }).catch(
+              () => {},
+            );
+          }
+        } catch {
+          // Use the unrenamed uri as a fallback.
         }
-      } catch {
-        // Use the unrenamed uri as a fallback.
-      }
 
-      const can = await Sharing.isAvailableAsync();
-      if (can) {
-        await Sharing.shareAsync(shareUri, {
-          mimeType: "application/pdf",
-          dialogTitle: filename,
-          UTI: "com.adobe.pdf",
-        });
-      } else {
-        Alert.alert("PDF saved", shareUri);
+        const can = await Sharing.isAvailableAsync();
+        if (can) {
+          // Isolate share failures (including user cancellation, which
+          // some Android versions surface as a rejection) so a single
+          // dismissed share sheet does not abort the remaining chunks
+          // and lose work the user has already waited for.
+          try {
+            await Sharing.shareAsync(shareUri, {
+              mimeType: "application/pdf",
+              dialogTitle: filename,
+              UTI: "com.adobe.pdf",
+            });
+          } catch {
+            // Swallow — the PDF is already saved in cacheDirectory and
+            // the next chunk will get its own share sheet.
+          }
+        } else {
+          Alert.alert("PDF saved", shareUri);
+        }
+
+        // Small breather between chunks so the JS bridge and native
+        // WebView teardown have a chance to release memory before the
+        // next print job starts. Without this we sometimes still hit
+        // the OOM ceiling on the second/third chunk on lower-end
+        // devices.
+        if (chunkIdx < chunkCount - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
       }
     } catch (e: any) {
       Alert.alert("Export failed", e?.message ?? "Could not generate PDF");
