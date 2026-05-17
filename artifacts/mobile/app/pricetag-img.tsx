@@ -145,6 +145,7 @@ export default function PriceTagImgScreen() {
     priceTagReviewItems,
     priceTagReviewStyle,
     priceTagReviewShowLogo,
+    priceTagReviewShowWatermark,
     tagColors,
     companyDetails,
     priceTagSquareVariant,
@@ -225,6 +226,7 @@ export default function PriceTagImgScreen() {
           },
           style: "E",
           showLogo: priceTagReviewShowLogo,
+          showWatermark: priceTagReviewShowWatermark,
           // Square: 540 × scale 2 → 1080×1080 (Instagram).
           // Banner: 380 × scale 5 → 1900×~ (matches existing flow).
           widthPx: isShowcaseSq ? 540 : 380,
@@ -265,6 +267,7 @@ export default function PriceTagImgScreen() {
     item,
     isShowcaseSq,
     priceTagReviewShowLogo,
+    priceTagReviewShowWatermark,
     tagColors,
     companyDetails,
     priceTagSquareVariant,

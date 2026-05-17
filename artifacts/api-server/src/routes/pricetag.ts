@@ -144,6 +144,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
     item,
     style,
     showLogo,
+    showWatermark,
     widthPx: rawWidth,
     scale: rawScale,
     aspect,
@@ -177,6 +178,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
           whatsappLogoDataUri: WHATSAPP_LOGO_BASE64,
           appStoreLogoDataUri: APPSTORE_LOGO_BASE64,
           variant: squareVariant,
+          showWatermark,
         },
       )
     : buildSingleTagHtml(
@@ -184,7 +186,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
         style as PriceTagStyle,
         showLogo,
         LOGO_BASE64,
-        { widthPx, colors },
+        { widthPx, colors, showWatermark },
       );
 
   let page;

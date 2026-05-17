@@ -28,6 +28,7 @@ export function renderTagAHtml(
   it: PriceTagRenderItem,
   showLogo: boolean,
   logoDataUri: string,
+  showWatermark: boolean = false,
 ): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -49,6 +50,9 @@ export function renderTagAHtml(
   const watermark = showLogo
     ? `<img class="watermark" src="${logoDataUri}" alt="" />`
     : "";
+  const watermarkBg = showWatermark
+    ? `<img class="watermarkBg" src="${logoDataUri}" alt="" />`
+    : "";
 
   const validTill = it.promotionToDate
     ? `<div class="validTillA"><span>Valid Till: ${escapeHtml(
@@ -58,6 +62,7 @@ export function renderTagAHtml(
 
   return `
     <div class="tagA">
+      ${watermarkBg}
       ${watermark}
       ${validTill}
       <div class="descA">${descSpan}</div>
@@ -111,7 +116,16 @@ export function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     pointer-events: none;
     z-index: 2;
   }
-  .tagA > *:not(.watermark) { position: relative; z-index: 1; }
+  .tagA .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagA > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   .tagA .validTillA {
     position: absolute;
     top: 0; right: 2px; bottom: 0;
@@ -207,6 +221,7 @@ export function renderTagBHtml(
   showStyleAPriceRow: boolean = false,
   validTillTopLeft: boolean = false,
   showStyleASaveBadge: boolean = false,
+  showWatermark: boolean = false,
 ): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -225,6 +240,9 @@ export function renderTagBHtml(
   const watermark = showLogo
     ? `<img class="watermark" src="${logoDataUri}" alt="" />`
     : "";
+  const watermarkBg = showWatermark
+    ? `<img class="watermarkBg" src="${logoDataUri}" alt="" />`
+    : "";
 
   const validTillText = it.promotionToDate
     ? `Valid Till: ${escapeHtml(
@@ -242,6 +260,7 @@ export function renderTagBHtml(
 
   return `
     <div class="tagB">
+      ${watermarkBg}
       ${watermark}
       ${validTillRail}
       <div class="topBannerB">${escapeHtml(bannerLabel)}</div>
@@ -294,13 +313,22 @@ export function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
   }
   .tagB .watermark {
     position: absolute;
-    top: 44px; right: 4px;
-    width: 6%; height: auto;
+    top: 30px; right: 30px;
+    width: 50px; height: 50px;
     opacity: 0.45;
     pointer-events: none;
     z-index: 2;
   }
-  .tagB > *:not(.watermark) { position: relative; z-index: 1; }
+  .tagB .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagB > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   .tagB .validTillB {
     position: absolute;
     top: 0; left: 2px; bottom: 0;
@@ -383,15 +411,16 @@ export function renderTagHtmlForStyle(
   style: PriceTagStyle,
   showLogo: boolean,
   logoDataUri: string,
+  showWatermark: boolean = false,
 ): string {
   if (style === "B") {
-    return renderTagBHtml(it, showLogo, logoDataUri, "LOW PRICES", true, true, false, false, true);
+    return renderTagBHtml(it, showLogo, logoDataUri, "LOW PRICES", true, true, false, false, true, false, showWatermark);
   }
   if (style === "C") {
-    return renderTagBHtml(it, showLogo, logoDataUri, "Buy 1 Get 1 Free", true, false, false, false, true);
+    return renderTagBHtml(it, showLogo, logoDataUri, "Buy 1 Get 1 Free", true, false, false, false, true, false, showWatermark);
   }
   if (style === "D") {
-    return renderTagBHtml(it, showLogo, logoDataUri, "RED Tag Sale", false, false, true, true, true, true);
+    return renderTagBHtml(it, showLogo, logoDataUri, "RED Tag Sale", false, false, true, true, true, true, showWatermark);
   }
   if (style === "E") {
     return renderTagBHtml(
@@ -399,10 +428,10 @@ export function renderTagHtmlForStyle(
       showLogo,
       logoDataUri,
       it.customTitle?.trim() || "Edit Title",
-      false, false, true, true, true, true,
+      false, false, true, true, true, true, showWatermark,
     );
   }
-  return renderTagAHtml(it, showLogo, logoDataUri);
+  return renderTagAHtml(it, showLogo, logoDataUri, showWatermark);
 }
 
 // Multi-tag PDF wrapper (kept here for parity with the mobile PDF
@@ -413,11 +442,12 @@ export function buildPdfHtml(
   showLogo: boolean,
   logoDataUri: string,
   colors: TagColors = DEFAULT_TAG_COLORS,
+  showWatermark: boolean = false,
 ): string {
   const effStyleFor = (it: PriceTagRenderItem): PriceTagStyle =>
     it.style ?? style;
   const tagsHtml = items
-    .map((it) => renderTagHtmlForStyle(it, effStyleFor(it), showLogo, logoDataUri))
+    .map((it) => renderTagHtmlForStyle(it, effStyleFor(it), showLogo, logoDataUri, showWatermark))
     .join("");
 
   const stylesInUse = new Set<PriceTagStyle>(items.map(effStyleFor));
@@ -474,6 +504,7 @@ export function renderSquareShowcaseHtml(
     company?: CompanyDetails;
     whatsappLogoDataUri?: string;
     appStoreLogoDataUri?: string;
+    showWatermark?: boolean;
   } = {},
 ): string {
   const { value } = priceFor(it);
@@ -496,6 +527,9 @@ export function renderSquareShowcaseHtml(
     : "";
   const watermark = showLogo
     ? `<img class="watermark" src="${logoDataUri}" alt="" />`
+    : "";
+  const watermarkBg = opts.showWatermark
+    ? `<img class="watermarkBg" src="${logoDataUri}" alt="" />`
     : "";
 
   // Compose the company footer band only when at least one
@@ -568,6 +602,7 @@ export function renderSquareShowcaseHtml(
 
   return `
     <div class="tagSq">
+      ${watermarkBg}
       ${watermark}
       <div class="topBarSq">${escapeHtml(title)}</div>
       <div class="imgRowSq">
@@ -604,12 +639,22 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   }
   .tagSq .watermark {
     position: absolute;
-    top: 10px; right: 12px;
-    width: 70px; height: auto;
+    top: 30px; right: 30px;
+    width: 50px; height: 50px;
     opacity: 0.55;
     pointer-events: none;
     z-index: 3;
   }
+  .tagSq .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagSq > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   .tagSq .topBarSq {
     background: ${DEEP_RED};
     color: #FFF;
@@ -774,6 +819,7 @@ export function buildSquareShowcaseHtml(
     whatsappLogoDataUri?: string;
     appStoreLogoDataUri?: string;
     variant?: "detailed" | "minimal";
+    showWatermark?: boolean;
   } = {},
 ): string {
   const widthPx = opts.widthPx ?? 540;
@@ -785,11 +831,13 @@ export function buildSquareShowcaseHtml(
           company: opts.company,
           whatsappLogoDataUri: opts.whatsappLogoDataUri,
           appStoreLogoDataUri: opts.appStoreLogoDataUri,
+          showWatermark: opts.showWatermark,
         })
       : renderSquareShowcaseHtml(item, showLogo, logoDataUri, {
           company: opts.company,
           whatsappLogoDataUri: opts.whatsappLogoDataUri,
           appStoreLogoDataUri: opts.appStoreLogoDataUri,
+          showWatermark: opts.showWatermark,
         });
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
@@ -830,6 +878,7 @@ export function renderSquareMinimalHtml(
     company?: CompanyDetails;
     whatsappLogoDataUri?: string;
     appStoreLogoDataUri?: string;
+    showWatermark?: boolean;
   } = {},
 ): string {
   const { value } = priceFor(it);
@@ -852,6 +901,9 @@ export function renderSquareMinimalHtml(
     : "";
   const watermark = showLogo
     ? `<img class="watermark" src="${logoDataUri}" alt="" />`
+    : "";
+  const watermarkBg = opts.showWatermark
+    ? `<img class="watermarkBg" src="${logoDataUri}" alt="" />`
     : "";
 
   const tr = (s?: string): string => (typeof s === "string" ? s.trim() : "");
@@ -881,6 +933,7 @@ export function renderSquareMinimalHtml(
     <div class="tagSqMin">
       <div class="topBarMin">${escapeHtml(title)}</div>
       <div class="bodyMin">
+        ${watermarkBg}
         ${watermark}
         <div class="imgRowMin">
           <div class="imgFrameMin">${img}</div>
@@ -934,12 +987,22 @@ export function buildSquareMinimalCss(c: TagColors = DEFAULT_TAG_COLORS): string
   }
   .tagSqMin .watermark {
     position: absolute;
-    top: 8px; right: 12px;
-    width: 60px; height: auto;
+    top: 30px; right: 30px;
+    width: 50px; height: 50px;
     opacity: 0.45;
     pointer-events: none;
     z-index: 3;
   }
+  .tagSqMin .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagSqMin .bodyMin > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   .tagSqMin .imgRowMin {
     flex: 1;
     min-height: 0;
@@ -1069,11 +1132,12 @@ export function buildSingleTagHtml(
   style: PriceTagStyle,
   showLogo: boolean,
   logoDataUri: string,
-  opts: { widthPx?: number; colors?: TagColors } = {},
+  opts: { widthPx?: number; colors?: TagColors; showWatermark?: boolean } = {},
 ): string {
   const widthPx = opts.widthPx ?? 380;
   const colors = opts.colors ?? DEFAULT_TAG_COLORS;
-  const tagHtml = renderTagHtmlForStyle(item, style, showLogo, logoDataUri);
+  const showWatermark = opts.showWatermark ?? false;
+  const tagHtml = renderTagHtmlForStyle(item, style, showLogo, logoDataUri, showWatermark);
   const needsA = style === "A" || style === "D" || style === "E";
   const needsB =
     style === "B" || style === "C" || style === "D" || style === "E";

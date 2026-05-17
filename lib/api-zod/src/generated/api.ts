@@ -64,6 +64,12 @@ export const RenderPriceTagBody = zod.object({
   showLogo: zod
     .boolean()
     .describe("Whether to overlay the Sathyam Super Store watermark logo."),
+  showWatermark: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Whether to render a large centered low-opacity logo behind the tag content (independent of the small top-right `showLogo` badge). Applies to Style A\/B\/C\/D\/E and Square\/Banner outputs.\n",
+    ),
   widthPx: zod
     .number()
     .min(renderPriceTagBodyWidthPxMin)

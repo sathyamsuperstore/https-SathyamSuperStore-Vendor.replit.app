@@ -1862,6 +1862,7 @@ export default function PriceTagReviewScreen() {
                   item={it}
                   busy={isBusy}
                   showLogo={priceTagReviewShowLogo}
+                  showWatermark={priceTagReviewShowWatermark}
                   onAddImage={() => handleAddImage(it.key)}
                   onRemoveImage={() => removeImage(it.key)}
                   onRemoveBackground={() => removeBackgroundFor(it.key)}
@@ -2508,6 +2509,7 @@ export default function PriceTagReviewScreen() {
                     item={it}
                     busy={false}
                     showLogo={priceTagReviewShowLogo}
+                    showWatermark={priceTagReviewShowWatermark}
                     onAddImage={() => {}}
                     onRemoveImage={() => {}}
                     onRemoveBackground={() => {}}
@@ -2673,7 +2675,7 @@ export function StyleATag({
 // banner.
 
 export function StyleBTag({
-  item, busy, showLogo, onAddImage, onRemoveImage, onRemoveBackground,
+  item, busy, showLogo, showWatermark = false, onAddImage, onRemoveImage, onRemoveBackground,
   bannerLabel = "LOW PRICES",
   onEditTitle,
   showPriceRow = true,
@@ -2687,6 +2689,7 @@ export function StyleBTag({
   item: PriceTagItem;
   busy: boolean;
   showLogo: boolean;
+  showWatermark?: boolean;
   onAddImage: () => void;
   onRemoveImage: () => void;
   onRemoveBackground: () => void;
@@ -2727,14 +2730,25 @@ export function StyleBTag({
 
   return (
     <View style={[b.card, cardStyle]}>
-      {/* Logo watermark — see note in StyleATag. Styles B/C/D use
-          layerB so the logo sits just under the red top banner
-          rather than overlapping it. */}
+      {/* Centered background watermark — same big faded logo as
+          Style A's Watermark toggle, rendered behind the tag content. */}
+      {showWatermark && (
+        <View pointerEvents="none" style={watermarkStyles.layerACenter}>
+          <Image
+            source={{ uri: LOGO_BASE64 }}
+            style={watermarkStyles.imageABg}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+      {/* Top-right corner logo — sized 50×50, offset 30px from the
+          top-right so it sits comfortably inside the red top banner
+          area without dominating the tag. */}
       {showLogo && (
         <View pointerEvents="none" style={watermarkStyles.layerB}>
           <Image
             source={{ uri: LOGO_BASE64 }}
-            style={watermarkStyles.image}
+            style={watermarkStyles.imageB}
             resizeMode="contain"
           />
         </View>
@@ -2958,6 +2972,8 @@ function renderTagHtmlForStyle(
       false, // showStyleAMrpRow
       false, // showStyleAPriceRow
       true,  // validTillTopLeft — match Style C orientation
+      false, // showStyleASaveBadge
+      showWatermark,
     );
   }
   if (style === "C") {
@@ -2970,6 +2986,8 @@ function renderTagHtmlForStyle(
       false, // showStyleAMrpRow
       false, // showStyleAPriceRow
       true,  // validTillTopLeft
+      false, // showStyleASaveBadge
+      showWatermark,
     );
   }
   if (style === "D") {
@@ -2983,6 +3001,7 @@ function renderTagHtmlForStyle(
       true,  // showStyleAPriceRow
       true,  // validTillTopLeft
       true,  // showStyleASaveBadge
+      showWatermark,
     );
   }
   if (style === "E") {
@@ -2996,6 +3015,7 @@ function renderTagHtmlForStyle(
       true,  // showStyleAPriceRow
       true,  // validTillTopLeft
       true,  // showStyleASaveBadge
+      showWatermark,
     );
   }
   return renderTagAHtml(it, showLogo, showWatermark);
@@ -3255,10 +3275,14 @@ function renderTagBHtml(
   showStyleAPriceRow: boolean = false,
   // Styles C/D show Valid Till as a horizontal gray line below the
   // top banner instead of the rotated left-edge rail.
+  // (showStyleASaveBadge param appended after validTillTopLeft below)
   validTillTopLeft: boolean = false,
   // Style D "SAVE ₹XX" pill — re-uses Style A's filled DEEP_RED
   // .offA badge. Off by default so B/C output is unchanged.
   showStyleASaveBadge: boolean = false,
+  // Watermark toggle — adds a large centered low-opacity logo
+  // behind the tag content (independent of the corner `showLogo`).
+  showWatermark: boolean = false,
 ): string {
   const { label, value } = priceFor(it);
   const mrp = fmt0(it.mrp);
@@ -3277,6 +3301,9 @@ function renderTagBHtml(
   const watermark = showLogo
     ? `<img class="watermark" src="${LOGO_BASE64}" alt="" />`
     : "";
+  const watermarkBg = showWatermark
+    ? `<img class="watermarkBg" src="${LOGO_BASE64}" alt="" />`
+    : "";
 
   const validTillText = it.promotionToDate
     ? `Valid Till: ${escapeHtml(
@@ -3294,6 +3321,7 @@ function renderTagBHtml(
 
   return `
     <div class="tagB">
+      ${watermarkBg}
       ${watermark}
       ${validTillRail}
       <div class="topBannerB">${escapeHtml(bannerLabel)}</div>
@@ -3348,13 +3376,22 @@ function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
      sits just under the red top banner without overlapping it. */
   .tagB .watermark {
     position: absolute;
-    top: 44px; right: 4px;
-    width: 6%; height: auto;
+    top: 30px; right: 30px;
+    width: 50px; height: 50px;
     opacity: 0.45;
     pointer-events: none;
     z-index: 2;
   }
-  .tagB > *:not(.watermark) { position: relative; z-index: 1; }
+  .tagB .watermarkBg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38%; height: auto;
+    opacity: 0.30;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .tagB > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
   /* "Valid Till" rail for Style B — left edge, rotated -90deg so
      the text reads bottom-to-top (natural for a left-edge label). */
   .tagB .validTillB {
@@ -4071,7 +4108,7 @@ const watermarkStyles = StyleSheet.create({
   },
   layerB: {
     position: "absolute",
-    top: 32, right: 4,
+    top: 30, right: 30,
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
@@ -4083,6 +4120,12 @@ const watermarkStyles = StyleSheet.create({
   // Style A badge — sized 50×50 and tucked into the gap between
   // the description row and the MRP row, slightly right of center.
   imageA: {
+    width: 50,
+    height: 50,
+    opacity: 0.45,
+  },
+  // Style B/C/D/E corner badge — sized 50×50 at top:30/right:30.
+  imageB: {
     width: 50,
     height: 50,
     opacity: 0.45,

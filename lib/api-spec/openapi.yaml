@@ -139,6 +139,12 @@ components:
         showLogo:
           type: boolean
           description: Whether to overlay the Sathyam Super Store watermark logo.
+        showWatermark:
+          type: boolean
+          description: >
+            Whether to render a large centered low-opacity logo behind the
+            tag content (independent of the small top-right `showLogo`
+            badge). Applies to Style A/B/C/D/E and Square/Banner outputs.
         widthPx:
           type: integer
           minimum: 200

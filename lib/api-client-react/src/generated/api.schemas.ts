@@ -98,6 +98,9 @@ export interface PriceTagRenderInput {
   style: PriceTagStyle;
   /** Whether to overlay the Sathyam Super Store watermark logo. */
   showLogo: boolean;
+  /** Whether to render a large centered low-opacity logo behind the tag content (independent of the small top-right `showLogo` badge). Applies to Style A/B/C/D/E and Square/Banner outputs.
+   */
+  showWatermark?: boolean;
   /**
    * Natural CSS body width in pixels (default 380, mirrors the PDF grid column). Output JPEG width = widthPx × scale.
 
