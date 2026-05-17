@@ -2582,18 +2582,6 @@ export function StyleATag({
           />
         </View>
       )}
-      {/* Show-Logo badge — moved from the top-right corner to the
-          gap between the description row and the MRP row, slightly
-          left of center. Size bumped 50% (28 → 42). */}
-      {showLogo && (
-        <View pointerEvents="none" style={watermarkStyles.layerA}>
-          <Image
-            source={{ uri: LOGO_BASE64 }}
-            style={watermarkStyles.imageA}
-            resizeMode="contain"
-          />
-        </View>
-      )}
       {/* Row 1 — description, full width, in the same red as MRP */}
       <Text
         style={[a.desc, { fontFamily: pickFont(item.description, "bold") }]}
@@ -2643,6 +2631,19 @@ export function StyleATag({
               tone="light"
             />
           </View>
+          {/* Store-logo stamp — sits in the empty area directly
+              below the product image. Guaranteed not to collide
+              with the price, MRP, SAVE pill, dotted line, Valid
+              Till or Item-No row. */}
+          {showLogo && (
+            <View pointerEvents="none" style={watermarkStyles.layerA}>
+              <Image
+                source={{ uri: LOGO_BASE64 }}
+                style={watermarkStyles.imageA}
+                resizeMode="contain"
+              />
+            </View>
+          )}
         </View>
       </View>
 
@@ -3096,7 +3097,6 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
   return `
     <div class="tagA">
       ${watermarkBg}
-      ${watermark}
       <div class="descA">${descSpan}</div>
       ${minQtyA ? `<div class="minQtyA">* Minimum Purchase Qty: ${escapeHtml(minQtyA)}</div>` : ""}
       <div class="bodyRowA">
@@ -3117,6 +3117,7 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
         </div>
         <div class="bodyRightA">
           <div class="imgPanelA">${img}</div>
+          ${watermark}
         </div>
       </div>
       ${validTill}
@@ -3143,15 +3144,15 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* Sathyam-Super-Store logo — tucked into the gap between the
-     description row and the MRP row, slightly right of center. */
+  /* Sathyam-Super-Store logo — inline stamp under the product
+     image. Centered in the right column; flows with layout so it
+     can never overlap price/MRP/SAVE/footer content. */
   .tagA .watermark {
-    position: absolute;
-    top: 40%; left: 38.75%;
-    width: 12.5%; height: auto;
-    opacity: 0.45;
+    display: block;
+    margin: 6px auto 0;
+    width: 60%; height: auto;
+    opacity: 0.85;
     pointer-events: none;
-    z-index: 2;
   }
   /* Independent centered background watermark (Watermark toggle).
      Sits behind everything at 30% opacity. */
@@ -3164,7 +3165,7 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     pointer-events: none;
     z-index: 0;
   }
-  .tagA > *:not(.watermark):not(.watermarkBg) { position: relative; z-index: 1; }
+  .tagA > *:not(.watermarkBg) { position: relative; z-index: 1; }
   /* "Valid Till" — inline, sits just above the dotted Item-No
      footer with no rotation. */
   .tagA .validTillA {
@@ -4054,13 +4055,14 @@ function formatValidTill(raw: string): string {
 //     logo is offset down to clear it.
 // Width was reduced to 6% (~25% of the previous 24%) per design.
 const watermarkStyles = StyleSheet.create({
-  // Style A — moved out of the top-right corner into the gap between
-  // the description row and the MRP row, slightly left of center.
+  // Style A — inline stamp inside the right column, sitting just
+  // below the product image. Not absolute; flows with the layout
+  // so it never overlaps the price/MRP/SAVE/footer content.
   layerA: {
-    position: "absolute",
-    top: 53, left: 155,
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
   },
   // Centered full-card overlay for the new Watermark toggle.
   layerACenter: {
@@ -4080,12 +4082,11 @@ const watermarkStyles = StyleSheet.create({
     height: 28,
     opacity: 0.45,
   },
-  // Style A badge — sized 50×50 and tucked into the gap between
-  // the description row and the MRP row, slightly right of center.
+  // Style A badge — small store-logo stamp under the product image.
   imageA: {
-    width: 50,
-    height: 50,
-    opacity: 0.45,
+    width: 60,
+    height: 36,
+    opacity: 0.85,
   },
   // Centered watermark — large + faded.
   imageABg: {
