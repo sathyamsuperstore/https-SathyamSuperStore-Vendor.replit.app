@@ -2364,7 +2364,7 @@ const PDF_CSS_A = `
      description row and the MRP row, slightly right of center. */
   .tagA .watermark {
     position: absolute;
-    top: 44%; left: 36.25%;
+    top: 30%; left: 35%;
     width: 12.5%; height: auto;
     opacity: 0.45;
     pointer-events: none;
@@ -3165,7 +3165,7 @@ const watermarkStyles = StyleSheet.create({
   // the description row and the MRP row, slightly left of center.
   layerA: {
     position: "absolute",
-    top: 58, left: 145,
+    top: 40, left: 140,
     alignItems: "flex-start",
     justifyContent: "flex-start",
   },
