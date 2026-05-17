@@ -166,6 +166,15 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
   const widthPx = rawWidth ?? (isSquare ? 540 : 380);
   const scale = rawScale ?? 4;
 
+  // Banner SQ defensively force-disables the background watermark
+  // server-side. The 1:1 layout has too little vertical breathing
+  // room for the big faded logo behind the content — at the 1080px
+  // Instagram output it clashes with the price block. Mobile callers
+  // already pass `showWatermark: false` for SQ; enforcing it here
+  // means future callers (or a slipped client toggle) can't
+  // accidentally re-enable it.
+  const effShowWatermark = isSquare ? false : showWatermark;
+
   const html = isSquare
     ? buildSquareShowcaseHtml(
         item as PriceTagRenderItem,
@@ -178,7 +187,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
           whatsappLogoDataUri: WHATSAPP_LOGO_BASE64,
           appStoreLogoDataUri: APPSTORE_LOGO_BASE64,
           variant: squareVariant,
-          showWatermark,
+          showWatermark: effShowWatermark,
         },
       )
     : buildSingleTagHtml(
@@ -186,7 +195,7 @@ router.post("/pricetag/render", renderLimit, async (req, res) => {
         style as PriceTagStyle,
         showLogo,
         LOGO_BASE64,
-        { widthPx, colors, showWatermark },
+        { widthPx, colors, showWatermark: effShowWatermark },
       );
 
   let page;
