@@ -3376,7 +3376,7 @@ function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
      sits just under the red top banner without overlapping it. */
   .tagB .watermark {
     position: absolute;
-    top: 45px; right: 20px;
+    top: 50px; right: 20px;
     width: 50px; height: 50px;
     opacity: 1.0;
     pointer-events: none;
@@ -4108,7 +4108,7 @@ const watermarkStyles = StyleSheet.create({
   },
   layerB: {
     position: "absolute",
-    top: 45, right: 20,
+    top: 50, right: 20,
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },

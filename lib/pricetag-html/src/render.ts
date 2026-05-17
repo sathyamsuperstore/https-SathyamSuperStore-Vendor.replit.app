@@ -313,7 +313,7 @@ export function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
   }
   .tagB .watermark {
     position: absolute;
-    top: 40px; right: 20px;
+    top: 50px; right: 20px;
     width: 50px; height: 50px;
     opacity: 1.0;
     pointer-events: none;
@@ -323,7 +323,7 @@ export function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 25%; height: auto;
+    width: 20%; height: auto;
     opacity: 0.30;
     pointer-events: none;
     z-index: 0;
@@ -639,7 +639,7 @@ export function buildPdfCssSq(c: TagColors = DEFAULT_TAG_COLORS): string {
   }
   .tagSq .watermark {
     position: absolute;
-    top: 40px; right: 20px;
+    top: 60px; right: 20px;
     width: 50px; height: 50px;
     opacity: 1.0;
     pointer-events: none;
