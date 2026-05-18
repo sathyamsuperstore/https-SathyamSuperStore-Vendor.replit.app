@@ -303,7 +303,11 @@ function formatCell(field: string, value: string | number | undefined): string {
     if (INTEGER_FIELDS.has(field) || Number.isInteger(value)) return String(value);
     return value.toFixed(2);
   }
-  return String(value);
+  // Trim trailing/leading whitespace. Upstream Excel exports
+  // routinely pad description cells with stray spaces which, on a
+  // narrow card, push the visible text past the wrap point and
+  // make long descriptions look truncated even when they aren't.
+  return String(value).trim();
 }
 
 // `mode` lets the same screen power both the live Promo tab and the
@@ -1713,7 +1717,7 @@ export default function PromoScreen({
                     </View>
                   ) : null;
                 })()}
-                <Text style={styles.itemDescText} numberOfLines={2}>
+                <Text style={styles.itemDescText}>
                   {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
                 </Text>
               </View>
