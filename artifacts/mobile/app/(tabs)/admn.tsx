@@ -39,7 +39,6 @@ export default function AdmnHubScreen() {
     rasiItems,
     clearAllSuppliers,
     clearAllAppUsers,
-    clearPromoBatch,
     clearMrpBatch,
     clearLatestPurchases,
     clearAllOrders,
@@ -148,15 +147,10 @@ export default function AdmnHubScreen() {
       confirmMessage: (n) =>
         `Remove all ${n} order${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
-    {
-      key: "promo",
-      label: "Promo",
-      count: promoEntries.length,
-      onConfirm: clearPromoBatch,
-      confirmTitle: "Delete All Promo Entries?",
-      confirmMessage: (n) =>
-        `Remove all ${n} promo entr${n === 1 ? "y" : "ies"}? This cannot be undone.`,
-    },
+    // "Delete all Promo" intentionally removed — the Promo tab's
+    // Re-Import already replaces the live data safely while preserving
+    // a snapshot for Compare. A destructive wipe with no snapshot has
+    // no legitimate use case here.
     {
       key: "rodeo-items",
       label: "RodeoItems",
@@ -211,7 +205,13 @@ export default function AdmnHubScreen() {
       route: "/(tabs)/latest-purchases",
     },
     { key: "orders", label: "Place Orders", route: "/order/import" },
-    { key: "promo", label: "Promo", route: "/(tabs)/promo" },
+    // Promo: route carries `autoImport=1` so the Promo tab opens the
+    // Excel file picker immediately on mount (one less tap than the
+    // user having to find and press "Re-Import" once the tab loads).
+    // After import the tab asks "Compare Promotion changes?" — Yes
+    // jumps to /promo-compare, No falls through to the existing
+    // post-import navigation (Data Download Time tab).
+    { key: "promo", label: "Promo", route: "/(tabs)/promo?autoImport=1" },
     { key: "rodeo-items", label: "RodeoItems", route: "/rodeo/import" },
     { key: "rasi-items", label: "Rasi Items", route: "/(tabs)/rasi-items" },
     // "DownloadTime" doesn't import a workbook — it just stamps the

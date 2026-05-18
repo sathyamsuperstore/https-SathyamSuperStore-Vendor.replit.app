@@ -471,7 +471,10 @@ export default function PromoScreen({
   // with that value and clear any active vendor/brand/category/multi-MRP
   // filters so the targeted item isn't accidentally hidden. Re-runs
   // whenever the param value changes so repeat taps re-focus.
-  const params = useLocalSearchParams<{ q?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    q?: string | string[];
+    autoImport?: string | string[];
+  }>();
   const qParam = Array.isArray(params.q) ? params.q[0] : params.q;
   useEffect(() => {
     if (typeof qParam === "string" && qParam.trim() !== "") {
@@ -483,6 +486,31 @@ export default function PromoScreen({
       setMissingPromo(false);
     }
   }, [qParam]);
+
+  // Auto-import trigger from the Admin hub. When the user taps
+  // "Promo" under Excel Import on /(tabs)/admn, the route includes
+  // `?autoImport=1` — we open the same file picker as the in-tab
+  // Re-Import button on mount, skipping the snapshot confirmation
+  // (the hub button is itself an explicit "import" gesture, the
+  // user shouldn't be re-prompted before the file picker opens),
+  // and ask "Compare Promotion changes?" after success. The
+  // `autoImportTriggeredRef` guard makes sure StrictMode double
+  // mounts (and any future re-renders where the param survives in
+  // the URL) only run the picker once per navigation.
+  const autoImportParam = Array.isArray(params.autoImport)
+    ? params.autoImport[0]
+    : params.autoImport;
+  const autoImportTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (autoImportParam === "1" && !autoImportTriggeredRef.current) {
+      autoImportTriggeredRef.current = true;
+      void pickAndImport({ promptCompareAfter: true });
+    }
+    // pickAndImport is defined later in this component (function
+    // declaration, hoisted) — depending only on autoImportParam
+    // here is intentional, the picker call is one-shot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoImportParam]);
   // Import progress: 0-100 with a human-readable phase label. Same
   // pattern as the MRP import — the parsing loop yields to the event
   // loop in chunks so the bar can actually paint while we work.
@@ -1079,7 +1107,14 @@ export default function PromoScreen({
     ]);
   }
 
-  async function pickAndImport() {
+  async function pickAndImport(
+    opts: { promptCompareAfter?: boolean } = {},
+  ) {
+    // Capture whether there was anything to snapshot *before* the
+    // import overwrites the live list. If livePromoEntries was empty
+    // there's nothing to compare against post-import, so we skip the
+    // "Compare changes?" prompt even when the caller asked for it.
+    const hadPrevBeforeImport = livePromoEntries.length > 0;
     try {
       setLoading(true);
       setErrors([]);
@@ -1291,7 +1326,32 @@ export default function PromoScreen({
         // Non-fatal: the Promo rows are already saved; the user can
         // re-stamp the time manually from the Admin tab if needed.
       }
-      router.replace("/(tabs)/data-download-time");
+      // Hub-initiated imports (autoImport=1) offer a one-shot
+      // shortcut to /promo-compare. Only show the prompt if there
+      // was a snapshot worth diffing — a first-ever import has
+      // nothing to compare against. If declined (or no snapshot
+      // exists, or the import was triggered from the in-tab
+      // Re-Import button) we fall through to the long-standing
+      // post-import behaviour: stamp the Data Download Time and
+      // jump to that tab.
+      const goCompare = () => router.replace("/promo-compare");
+      const goDefault = () => router.replace("/(tabs)/data-download-time");
+      if (opts.promptCompareAfter && hadPrevBeforeImport) {
+        const title = "Compare Promotion Changes?";
+        const msg =
+          "A snapshot of the previous Promo list was saved. Open Compare to see what changed?";
+        if (Platform.OS === "web") {
+          if (window.confirm(msg)) goCompare();
+          else goDefault();
+        } else {
+          Alert.alert(title, msg, [
+            { text: "No", style: "cancel", onPress: goDefault },
+            { text: "Yes", onPress: goCompare },
+          ]);
+        }
+      } else {
+        goDefault();
+      }
     } catch (e: any) {
       setErrors([e?.message ?? "Failed to import file"]);
     } finally {
