@@ -463,6 +463,18 @@ export const PROMO_FIELDS = [
   // imported from the Excel header "Promo CR Date". Stored as a
   // "DD/MM/YYYY" string by the Promo importer.
   "Promo CR Date",
+  // Free-text back-office note attached to a promo line. Optional.
+  // Imported from the Excel column "Internal Notes". Surfaced on
+  // the Promo / PromoPrev row cards and (read-only) under Item
+  // Description on the Orders, My Orders and StockUpd row cards.
+  // Deliberately NOT included in any PDF or PNG price-tag export.
+  "Internal Notes",
+  // Optional per-promo quantity cap. When set, the price tag
+  // renders an "Offer Limit Qty : N" line in Gold; the cashier
+  // bills any quantity above N at the SP rate instead of the
+  // Promotion Price. Stored as an integer; blank/0/missing means
+  // no cap and the price-tag line is omitted.
+  "Limit Qty",
 ] as const;
 
 // Same flexible row shape as Latest Purchases — numbers stay numbers,

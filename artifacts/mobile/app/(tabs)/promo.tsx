@@ -51,6 +51,9 @@ const NUMERIC_FIELDS = new Set<string>([
   // Wholesale / purchase cost per unit. Decimal so values like 12.50
   // survive the round trip through Excel.
   "Cost",
+  // Per-promo quantity cap. Integer; coerce numerics so a cell of
+  // 3 or "3" both land as 3 and an empty cell stays blank.
+  "Limit Qty",
 ]);
 
 // Date columns. Excel surfaces these as JS Date objects (cellDates:true),
@@ -65,7 +68,7 @@ const DATE_FIELDS = new Set<string>([
 // Columns that NoofBatches-style values should display as integers, even
 // though they're stored as numbers (it's an integer field per the
 // schema). Other numeric fields use 2dp.
-const INTEGER_FIELDS = new Set<string>(["NoofBatches"]);
+const INTEGER_FIELDS = new Set<string>(["NoofBatches", "Limit Qty"]);
 
 // Columns that should always render with two decimal places, even when
 // the underlying value is a whole number (e.g. Cost of 12 displays as
@@ -1721,6 +1724,26 @@ export default function PromoScreen({
                   {formatCell(CARD_LINE_1_RIGHT, head[CARD_LINE_1_RIGHT])}
                 </Text>
               </View>
+              {/*
+                Optional back-office "Internal Notes" line. Rendered
+                immediately under the item description because the
+                user explicitly flagged it as info that may inform
+                whether to print a price tag at all (e.g. "stop
+                printing, vendor pulled the offer"). Hidden entirely
+                when blank so the card height matches the legacy
+                layout for rows without notes. Plain read-only Text;
+                editing happens upstream in Excel.
+              */}
+              {(() => {
+                const notes = formatCell("Internal Notes", head["Internal Notes"]);
+                if (!notes) return null;
+                return (
+                  <View style={styles.internalNotesRow}>
+                    <Text style={styles.fieldLabel}>Internal Notes</Text>
+                    <Text style={styles.internalNotesText}>{notes}</Text>
+                  </View>
+                );
+              })()}
               <View style={styles.cardLine2}>
                 <Text style={styles.fieldLabel}>{CARD_LINE_2}</Text>
                 <Text style={styles.fieldValueLg}>
@@ -2981,6 +3004,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     gap: 8,
+  },
+  // Internal Notes line — sits between the item description and the
+  // vendor row. flexDirection: row with the label baseline-aligned
+  // to the note keeps it visually consistent with cardLine2 below.
+  // `flexShrink: 1` on the value lets long notes wrap to multiple
+  // lines instead of being clipped to the available card width.
+  internalNotesRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    marginTop: 2,
+  },
+  internalNotesText: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 13,
+    fontStyle: "italic",
+    color: Colors.text,
+    lineHeight: 17,
   },
   cardLine3: {
     flexDirection: "row",
