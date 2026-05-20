@@ -67,6 +67,14 @@ export interface OrderItem {
   sortNo?: number;
   newStockQty?: number;
   notes?: string;
+  // Snapshot of the Promo row's "Internal Notes" cell at the moment
+  // this order was created. Frozen on the OrderItem so it stays
+  // stable across later Promo re-imports (the user explicitly
+  // wanted lookup to NOT be live — buyers shouldn't see a note
+  // mutate after the order is placed). Optional / blank when the
+  // matching Promo row has no Internal Notes (or no Promo row
+  // exists at all for this Item No at order-creation time).
+  internalNotes?: string;
 }
 
 // Brand and Category are free-text fields, so "Acme", "acme", and "Acme " can
@@ -499,6 +507,14 @@ export interface PriceTagItem {
   // eligible for the promotional price. Optional so legacy items
   // pre-dating this field still load.
   eligibleQty?: string | number;
+  // Optional Limit Qty from the source Promo row — caps how many
+  // units a single customer can buy at the promotional price. When
+  // present and > 0 the printed tag renders an "Offer Limit Qty : N"
+  // line in Gold at the bottom-right of Style A / B (and the C/D/E
+  // variants that wrap Style B). Internal Notes is intentionally
+  // NOT carried into the PriceTagItem — it is store-private and
+  // must never appear on printed tags.
+  limitQty?: string | number;
   // Optional free-text sort/grouping code from the source Promo row.
   // Carried through so the printed tag and the picker can show it
   // without re-querying the Promo entries.
@@ -1319,13 +1335,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers(suppliers.filter((s) => !idSet.has(s.id)));
   }
 
+  // Snapshot helper: copies "Internal Notes" from the current Promo
+  // entries onto each OrderItem at order-creation time. Lookup key
+  // is the Item No prefix of `item.name` ("ITEM123 - Description"),
+  // matched case-insensitively against the Promo row's "Item No"
+  // cell. Honors the Promo tab's first-wins dedupe (multiple
+  // batches with the same Item No share the same Internal Notes,
+  // so the first non-blank value is the canonical one). Only fills
+  // fields that aren't already set so callers can override if they
+  // ever need to. No-op when promoEntries is empty or no row
+  // matches — leaving internalNotes undefined is fine since the
+  // display sites all gate on truthiness.
+  function snapshotInternalNotes(items: OrderItem[]): OrderItem[] {
+    const list = promoEntriesRef.current;
+    if (list.length === 0) return items;
+    const byItemNo = new Map<string, string>();
+    for (const p of list) {
+      const k = String(p["Item No"] ?? "").trim().toUpperCase();
+      if (!k) continue;
+      const note = String(p["Internal Notes"] ?? "").trim();
+      if (!note) continue;
+      if (!byItemNo.has(k)) byItemNo.set(k, note);
+    }
+    if (byItemNo.size === 0) return items;
+    return items.map((it) => {
+      if (it.internalNotes) return it;
+      const itemNo = it.name.includes(" - ")
+        ? it.name.split(" - ")[0].trim().toUpperCase()
+        : "";
+      const note = itemNo ? byItemNo.get(itemNo) : undefined;
+      return note ? { ...it, internalNotes: note } : it;
+    });
+  }
+
   async function addOrder(order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) {
     const now = new Date().toISOString();
+    const items = snapshotInternalNotes(order.items);
     const newOrder: Order = {
       ...order,
+      items,
       id: generateId(),
       orderNumber: generateOrderNumber(),
-      totalAmount: calculateTotal(order.items),
+      totalAmount: calculateTotal(items),
       createdAt: now,
       updatedAt: now,
     };
@@ -1334,14 +1385,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function addOrdersBatch(orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) {
     const now = new Date().toISOString();
-    const newOrders: Order[] = orderInputs.map((order) => ({
-      ...order,
-      id: generateId(),
-      orderNumber: generateOrderNumber(),
-      totalAmount: calculateTotal(order.items),
-      createdAt: now,
-      updatedAt: now,
-    }));
+    const newOrders: Order[] = orderInputs.map((order) => {
+      const items = snapshotInternalNotes(order.items);
+      return {
+        ...order,
+        items,
+        id: generateId(),
+        orderNumber: generateOrderNumber(),
+        totalAmount: calculateTotal(items),
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
     await saveOrders([...newOrders, ...orders]);
   }
 
@@ -1386,11 +1441,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const end = Math.min(start + CHUNK, total);
       for (let i = start; i < end; i++) {
         const order = orderInputs[i];
+        const items = snapshotInternalNotes(order.items);
         accumulatedNew.push({
           ...order,
+          items,
           id: generateId(),
           orderNumber: generateOrderNumber(),
-          totalAmount: calculateTotal(order.items),
+          totalAmount: calculateTotal(items),
           createdAt: now,
           updatedAt: now,
         });

@@ -255,6 +255,11 @@ export default function PromoPrintScreen() {
         mrp: s(r["MRP"]),
         promotionPrice: s(r["PromotionPrice"]),
         eligibleQty: s(r["EligibleQty"]) || undefined,
+        // Limit Qty is store-policy data carried from the Promo
+        // import; the renderer gates display on numeric > 0 so an
+        // empty / blank cell never produces an "Offer Limit Qty: 0"
+        // line. Internal Notes is intentionally NOT mapped here.
+        limitQty: s(r["Limit Qty"]) || undefined,
         promoSortCode: s(r["PromoSortCode"]) || undefined,
         sp: s(r["SP"]),
         brand: s(r["Brand"]) || undefined,

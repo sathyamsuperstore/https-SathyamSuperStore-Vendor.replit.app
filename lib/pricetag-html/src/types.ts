@@ -60,6 +60,12 @@ export interface PriceTagRenderItem {
   promotionPrice: string | number;
   sp: string | number;
   eligibleQty?: string | number;
+  // Optional Limit Qty from the source Promo row. When > 0 the
+  // server-side PNG renderer paints "Offer Limit Qty : N" in Gold
+  // at the right-bottom of Style A / B (and the C/D/E variants
+  // that wrap Style B). Internal Notes is intentionally absent —
+  // it is store-private and must never appear on printed tags.
+  limitQty?: string | number;
   promoSortCode?: string;
   imageUri?: string;
   promotionToDate?: string;

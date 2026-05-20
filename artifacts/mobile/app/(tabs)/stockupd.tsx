@@ -502,6 +502,15 @@ function StockUpdCard({
                       {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
                       {item.min != null ? `  ·  Min ${item.min}` : ""}
                     </Text>
+                    {/* Internal Notes (frozen Promo snapshot at order
+                        creation) — sits directly under the description
+                        so the cashier sees it before the editable Notes
+                        line. Hidden when blank. */}
+                    {item.internalNotes ? (
+                      <Text style={cardSt.itemInternalNotes}>
+                        Internal Notes: {item.internalNotes}
+                      </Text>
+                    ) : null}
                     {item.notes ? (
                       <Text style={cardSt.itemNotes}>📝 {item.notes}</Text>
                     ) : null}
@@ -574,6 +583,33 @@ function StockUpdCard({
                 {showNotes && (
                   <View style={cardSt.notesInputRow}>
                     <Text style={cardSt.inputLabel}>Notes</Text>
+                    {/* Green "copy Internal Notes -> Notes" shortcut.
+                        Only rendered when this item actually has an
+                        Internal Notes value worth copying. Tapping it
+                        just primes the editable Notes draft for this
+                        item id — the user is free to tweak the text
+                        afterwards and persistence still happens on
+                        "Save Changes" via handleSave. No-op if the
+                        draft is already equal to the source, so
+                        repeated taps don't clobber in-progress edits
+                        silently. */}
+                    {item.internalNotes ? (
+                      <TouchableOpacity
+                        style={cardSt.copyNotesBtn}
+                        onPress={() =>
+                          setNoteEdits((prev) => ({
+                            ...prev,
+                            [item.id]: item.internalNotes ?? "",
+                          }))
+                        }
+                        accessibilityLabel="Copy Internal Notes into Notes"
+                      >
+                        <Feather name="copy" size={11} color="#FFFFFF" />
+                        <Text style={cardSt.copyNotesBtnText}>
+                          Copy Internal
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <TextInput
                       style={cardSt.notesInput}
                       value={noteVal}
@@ -739,12 +775,31 @@ const cardSt = StyleSheet.create({
   promoValue: { fontSize: 11, fontWeight: "700", color: Colors.text },
   itemMeta: { fontSize: 17, color: Colors.textMuted, marginTop: 1 },
   itemNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
+  itemInternalNotes: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   notesInputRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
     paddingLeft: 34,
     paddingRight: 4,
+  },
+  // Green pill that copies the frozen Internal Notes value into
+  // the editable Notes draft. Sized to fit alongside the "Notes"
+  // label and the multiline input without crowding either.
+  copyNotesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#16A34A",
+  },
+  copyNotesBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   notesInput: {
     flex: 1,

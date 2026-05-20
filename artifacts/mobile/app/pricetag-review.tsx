@@ -1330,6 +1330,7 @@ export default function PriceTagReviewScreen() {
                 promotionPrice: renderItem.promotionPrice,
                 sp: renderItem.sp,
                 eligibleQty: renderItem.eligibleQty,
+                limitQty: renderItem.limitQty,
                 promoSortCode: renderItem.promoSortCode,
                 imageUri: safeImageUri,
                 promotionToDate: renderItem.promotionToDate,
@@ -3578,9 +3579,44 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
         </div>
       </div>
       ${validTill}
+      ${limitQtyHtmlA(it)}
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}${it.promoSortCode ? `   ·   Sort: ${escapeHtml(it.promoSortCode)}` : ""}</div>
     </div>
   `;
+}
+
+// Render the right-aligned, Gold "Offer Limit Qty : N" line that
+// sits just above the item-no footer on Style A. Gated on a
+// positive integer so empty/blank/0 cells don't render anything.
+// Kept as a helper so Style B (and the C/D/E variants that wrap
+// Style B) can reuse the same logic without duplication.
+// Internal Notes is intentionally never read here.
+function limitQtyTextFor(it: PriceTagItem): string {
+  const raw = it.limitQty;
+  if (raw === undefined || raw === null || raw === "") return "";
+  // Strict: full-string integer match. Reject "3abc", "1.5", "-2",
+  // " 3 " with extra junk, NaN, etc. This mirrors what the user
+  // is allowed to enter as Limit Qty in the Excel importer (a
+  // plain positive integer) and prevents accidental partial parses.
+  let n: number;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw)) return "";
+    n = raw;
+  } else {
+    const s = String(raw).trim();
+    if (!/^\d+$/.test(s)) return "";
+    n = parseInt(s, 10);
+  }
+  if (n <= 0) return "";
+  return `Offer Limit Qty : ${n}`;
+}
+function limitQtyHtmlA(it: PriceTagItem): string {
+  const t = limitQtyTextFor(it);
+  return t ? `<div class="limitQtyA">${escapeHtml(t)}</div>` : "";
+}
+function limitQtyHtmlB(it: PriceTagItem): string {
+  const t = limitQtyTextFor(it);
+  return t ? `<div class="limitQtyB">${escapeHtml(t)}</div>` : "";
 }
 
 // Printer-friendly: white background, no large solid color fills
@@ -3695,6 +3731,16 @@ function buildPdfCssA(c: TagColors = DEFAULT_TAG_COLORS): string {
     border-top: 1px dashed #C8B89F;
     font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
   }
+  /* "Offer Limit Qty : N" — Gold, right-aligned, sits just above
+     the dotted item-no footer. Font size deliberately matches the
+     item-no footer so it reads as part of the same baseline strip
+     without competing with the price column. */
+  .limitQtyA {
+    text-align: right;
+    font-size: 9px; color: ${GOLD}; font-weight: 800;
+    letter-spacing: 0.4px;
+    margin-top: 4px;
+  }
 `;
 }
 
@@ -3790,6 +3836,7 @@ function renderTagBHtml(
         </div>
       </div>
       <div class="bottomBannerB">${descSpan}</div>
+      ${limitQtyHtmlB(it)}
       <div class="itemFooterB">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}${it.promoSortCode ? `   ·   Sort: ${escapeHtml(it.promoSortCode)}` : ""}</div>
     </div>
   `;
@@ -3915,6 +3962,17 @@ function buildPdfCssB(c: TagColors = DEFAULT_TAG_COLORS): string {
     text-align: center;
     font-size: 9px; color: #94A3B8; font-weight: 600;
     padding: 4px; background: #FFF;
+  }
+  /* Style B "Offer Limit Qty : N" — Gold, right-aligned, sits in
+     the bottom strip between the red bottom banner and the white
+     item-no footer. Same 9px size as itemFooterB so it lines up
+     visually with the item-no baseline. */
+  .limitQtyB {
+    text-align: right;
+    font-size: 9px; color: ${GOLD}; font-weight: 800;
+    letter-spacing: 0.4px;
+    padding: 4px 6px 0 6px;
+    background: #FFF;
   }
 `;
 }

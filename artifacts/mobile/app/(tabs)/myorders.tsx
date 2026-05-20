@@ -1417,6 +1417,14 @@ function VendorOrderCard({
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
                   <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
+                  {/* Internal Notes (snapshotted from Promo at order
+                      creation) sits directly under the description so
+                      buyers see it before the editable Notes line. */}
+                  {item.internalNotes ? (
+                    <Text style={cardStyles.itemInternalNotes}>
+                      Internal Notes: {item.internalNotes}
+                    </Text>
+                  ) : null}
                   {item.notes ? (
                     <Text style={cardStyles.itemNotes}>📝 {item.notes}</Text>
                   ) : null}
@@ -1693,6 +1701,7 @@ const cardStyles = StyleSheet.create({
   td: { fontSize: 12, color: Colors.text },
   itemNo: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
   itemNotes: { fontSize: 11, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
+  itemInternalNotes: { fontSize: 11, color: Colors.textSecondary, fontStyle: "italic", marginTop: 3 },
   right: { flex: 1, textAlign: "right" },
   price: { color: Colors.primary, fontWeight: "700" },
   notes: {

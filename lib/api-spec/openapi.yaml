@@ -92,6 +92,7 @@ components:
         promotionPrice: { type: ["string", "number"] }
         sp: { type: ["string", "number"] }
         eligibleQty: { type: ["string", "number"] }
+        limitQty: { type: ["string", "number"] }
         promoSortCode: { type: string }
         imageUri:
           type: string

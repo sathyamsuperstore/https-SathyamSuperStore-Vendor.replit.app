@@ -26,6 +26,7 @@ export interface PriceTagItem {
   promotionPrice: string | number;
   sp: string | number;
   eligibleQty?: string | number;
+  limitQty?: string | number;
   promoSortCode?: string;
   /** Image source for the tag. Accepts a `data:` URI (recommended for reliability — the server doesn't fetch external URLs) or an absolute http(s) URL Chromium can load.
    */

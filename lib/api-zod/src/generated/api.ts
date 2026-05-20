@@ -46,6 +46,7 @@ export const RenderPriceTagBody = zod.object({
     promotionPrice: zod.union([zod.string(), zod.number()]),
     sp: zod.union([zod.string(), zod.number()]),
     eligibleQty: zod.union([zod.string(), zod.number()]).optional(),
+    limitQty: zod.union([zod.string(), zod.number()]).optional(),
     promoSortCode: zod.string().optional(),
     imageUri: zod
       .string()

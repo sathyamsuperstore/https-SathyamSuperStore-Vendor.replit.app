@@ -2418,9 +2418,41 @@ function renderTagAHtml(it: PriceTagItem, showLogo: boolean, showWatermark: bool
         </div>
       </div>
       ${validTill}
+      ${limitQtyHtmlA(it)}
       <div class="itemFooterA">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}${it.promoSortCode ? `   ·   Sort: ${escapeHtml(it.promoSortCode)}` : ""}</div>
     </div>
   `;
+}
+
+// "Offer Limit Qty : N" — Gold, right-aligned, gated on a positive
+// integer. Sits just above the item-no footer on Style A and just
+// above itemFooterB on Style B (and the C/D/E variants that wrap
+// Style B). Internal Notes is intentionally never read here.
+function limitQtyTextFor(it: PriceTagItem): string {
+  const raw = it.limitQty;
+  if (raw === undefined || raw === null || raw === "") return "";
+  // Strict: full-string integer match. Rejects "3abc", "1.5",
+  // "-2", NaN, etc. Limit Qty in the Promo importer is a plain
+  // positive integer, so partial parses should never render.
+  let n: number;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw)) return "";
+    n = raw;
+  } else {
+    const s = String(raw).trim();
+    if (!/^\d+$/.test(s)) return "";
+    n = parseInt(s, 10);
+  }
+  if (n <= 0) return "";
+  return `Offer Limit Qty : ${n}`;
+}
+function limitQtyHtmlA(it: PriceTagItem): string {
+  const t = limitQtyTextFor(it);
+  return t ? `<div class="limitQtyA">${escapeHtml(t)}</div>` : "";
+}
+function limitQtyHtmlB(it: PriceTagItem): string {
+  const t = limitQtyTextFor(it);
+  return t ? `<div class="limitQtyB">${escapeHtml(t)}</div>` : "";
 }
 
 // Printer-friendly: white background, no large solid color fills
@@ -2531,6 +2563,15 @@ const PDF_CSS_A = `
     border-top: 1px dashed #C8B89F;
     font-size: 9px; color: #94795E; font-weight: 600; letter-spacing: 0.3px;
   }
+  /* "Offer Limit Qty : N" — Gold, right-aligned, sits just above
+     the dotted item-no footer. Font size matches itemFooterA so it
+     reads as part of the same baseline strip. */
+  .limitQtyA {
+    text-align: right;
+    font-size: 9px; color: ${GOLD}; font-weight: 800;
+    letter-spacing: 0.4px;
+    margin-top: 4px;
+  }
 `;
 
 // ----- Style B HTML / CSS -----
@@ -2624,6 +2665,7 @@ function renderTagBHtml(
         </div>
       </div>
       <div class="bottomBannerB">${descSpan}</div>
+      ${limitQtyHtmlB(it)}
       <div class="itemFooterB">Item No: ${escapeHtml(it.itemNo || "—")}${it.eligibleQty !== undefined && it.eligibleQty !== "" ? `   ·   Elig Qty: ${escapeHtml(fmt0(it.eligibleQty))}` : ""}${it.promoSortCode ? `   ·   Sort: ${escapeHtml(it.promoSortCode)}` : ""}</div>
     </div>
   `;
@@ -2744,6 +2786,16 @@ const PDF_CSS_B = `
     text-align: center;
     font-size: 9px; color: #94A3B8; font-weight: 600;
     padding: 4px; background: #FFF;
+  }
+  /* Style B "Offer Limit Qty : N" — Gold, right-aligned, sits in
+     the bottom strip between the red bottom banner and the white
+     item-no footer. Same 9px size as itemFooterB. */
+  .limitQtyB {
+    text-align: right;
+    font-size: 9px; color: ${GOLD}; font-weight: 800;
+    letter-spacing: 0.4px;
+    padding: 4px 6px 0 6px;
+    background: #FFF;
   }
 `;
 

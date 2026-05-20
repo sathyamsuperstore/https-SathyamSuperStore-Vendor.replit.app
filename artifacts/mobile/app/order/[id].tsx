@@ -489,6 +489,24 @@ export default function OrderDetailScreen() {
             <Text style={styles.itemSortNo}>#{item.sortNo}</Text>
           ) : null}
           <Text style={styles.itemName}>{item.name}</Text>
+          {/*
+            Read-only Internal Notes + Notes display. Internal Notes
+            was snapshotted from the matching Promo row at order
+            creation (frozen — not live). The notes TextInput below
+            remains the editing surface; this block exists so users
+            scanning the item list can see both notes without
+            scrolling to the input.
+          */}
+          {item.internalNotes ? (
+            <Text style={styles.itemInternalNotes}>
+              Internal Notes: {item.internalNotes}
+            </Text>
+          ) : null}
+          {item.notes ? (
+            <Text style={styles.itemNotesReadOnly}>
+              Notes: {item.notes}
+            </Text>
+          ) : null}
           {item.brand ? (
             <Text style={styles.itemBrand}>{item.brand}</Text>
           ) : null}
@@ -947,6 +965,18 @@ const styles = StyleSheet.create({
   itemInfo: { flex: 1, marginRight: 12 },
   itemSortNo: { fontSize: 10, fontWeight: "700", color: Colors.textMuted, marginBottom: 1 },
   itemName: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
+  itemInternalNotes: {
+    fontSize: 12,
+    fontStyle: "italic",
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  itemNotesReadOnly: {
+    fontSize: 12,
+    fontStyle: "italic",
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
   itemBrand: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginBottom: 3 },
   itemCategory: { fontSize: 11, color: Colors.textSecondary, fontWeight: "500", marginBottom: 3 },
   itemMeta: { fontSize: 12, color: Colors.textMuted },
