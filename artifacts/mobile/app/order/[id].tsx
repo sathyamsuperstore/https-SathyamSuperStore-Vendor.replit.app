@@ -490,16 +490,17 @@ export default function OrderDetailScreen() {
           ) : null}
           <Text style={styles.itemName}>{item.name}</Text>
           {/*
-            Read-only Internal Notes + Notes display. Internal Notes
-            was snapshotted from the matching Promo row at order
-            creation (frozen — not live). The notes TextInput below
-            remains the editing surface; this block exists so users
-            scanning the item list can see both notes without
-            scrolling to the input.
+            Read-only Order Internal Notes + Notes display. The
+            Order Internal Notes value is imported directly from
+            the Orders Excel column "Order Internal Notes" at
+            order creation. The notes TextInput below remains the
+            editing surface; this block exists so users scanning
+            the item list can see both notes without scrolling
+            to the input.
           */}
           {item.internalNotes ? (
             <Text style={styles.itemInternalNotes}>
-              Internal Notes: {item.internalNotes}
+              Order Internal Notes: {item.internalNotes}
             </Text>
           ) : null}
           {item.notes ? (

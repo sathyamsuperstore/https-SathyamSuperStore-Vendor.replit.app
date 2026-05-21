@@ -59,6 +59,7 @@ interface ParsedRow {
   Min: number;
   SortNo: number;
   Notes: string;
+  "Order Internal Notes": string;
 }
 
 interface VendorGroup {
@@ -577,6 +578,7 @@ export default function ImportOrderScreen() {
           Min: parseFloat(String(row["Min"] ?? "")) || 0,
           SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
           Notes: String(row["Notes"] ?? "").trim(),
+          "Order Internal Notes": String(row["Order Internal Notes"] ?? "").trim(),
         };
         if (i > 0 && i % CHUNK === 0) {
           setProgress(`Processing ${i} / ${rows.length} rows...`);
@@ -938,6 +940,7 @@ export default function ImportOrderScreen() {
           min: row["Min"] !== 0 ? row["Min"] : undefined,
           sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
           notes: row["Notes"] || undefined,
+          internalNotes: row["Order Internal Notes"] || undefined,
         }));
         return {
           supplierId: supplier.id,

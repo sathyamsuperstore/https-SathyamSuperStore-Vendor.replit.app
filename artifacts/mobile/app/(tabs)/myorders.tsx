@@ -1417,12 +1417,13 @@ function VendorOrderCard({
                 <View style={{ flex: 3 }}>
                   {itemNo ? <Text style={cardStyles.itemNo}>{itemNo}</Text> : null}
                   <Text style={[cardStyles.td, modifyMode && !isChecked && cardStyles.tdStrike]}>{desc}</Text>
-                  {/* Internal Notes (snapshotted from Promo at order
-                      creation) sits directly under the description so
-                      buyers see it before the editable Notes line. */}
+                  {/* Order Internal Notes (imported from the Orders
+                      Excel column at order creation) sits directly
+                      under the description so buyers see it before
+                      the editable Notes line. */}
                   {item.internalNotes ? (
                     <Text style={cardStyles.itemInternalNotes}>
-                      Internal Notes: {item.internalNotes}
+                      Order Internal Notes: {item.internalNotes}
                     </Text>
                   ) : null}
                   {item.notes ? (

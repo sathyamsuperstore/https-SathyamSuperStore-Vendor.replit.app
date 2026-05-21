@@ -67,13 +67,12 @@ export interface OrderItem {
   sortNo?: number;
   newStockQty?: number;
   notes?: string;
-  // Snapshot of the Promo row's "Internal Notes" cell at the moment
-  // this order was created. Frozen on the OrderItem so it stays
-  // stable across later Promo re-imports (the user explicitly
-  // wanted lookup to NOT be live — buyers shouldn't see a note
-  // mutate after the order is placed). Optional / blank when the
-  // matching Promo row has no Internal Notes (or no Promo row
-  // exists at all for this Item No at order-creation time).
+  // Imported directly from the Orders Excel column "Order Internal
+  // Notes" at order-creation time. Surfaced read-only on Order
+  // Detail, My Orders, and Stock Update (with a green "Copy
+  // Internal" pill on Stock Update). Optional / blank when the
+  // import row has no value in that column. Never exported to
+  // PDF/PNG price tags.
   internalNotes?: string;
 }
 
@@ -1335,42 +1334,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers(suppliers.filter((s) => !idSet.has(s.id)));
   }
 
-  // Snapshot helper: copies "Internal Notes" from the current Promo
-  // entries onto each OrderItem at order-creation time. Lookup key
-  // is the Item No prefix of `item.name` ("ITEM123 - Description"),
-  // matched case-insensitively against the Promo row's "Item No"
-  // cell. Honors the Promo tab's first-wins dedupe (multiple
-  // batches with the same Item No share the same Internal Notes,
-  // so the first non-blank value is the canonical one). Only fills
-  // fields that aren't already set so callers can override if they
-  // ever need to. No-op when promoEntries is empty or no row
-  // matches — leaving internalNotes undefined is fine since the
-  // display sites all gate on truthiness.
-  function snapshotInternalNotes(items: OrderItem[]): OrderItem[] {
-    const list = promoEntriesRef.current;
-    if (list.length === 0) return items;
-    const byItemNo = new Map<string, string>();
-    for (const p of list) {
-      const k = String(p["Item No"] ?? "").trim().toUpperCase();
-      if (!k) continue;
-      const note = String(p["Internal Notes"] ?? "").trim();
-      if (!note) continue;
-      if (!byItemNo.has(k)) byItemNo.set(k, note);
-    }
-    if (byItemNo.size === 0) return items;
-    return items.map((it) => {
-      if (it.internalNotes) return it;
-      const itemNo = it.name.includes(" - ")
-        ? it.name.split(" - ")[0].trim().toUpperCase()
-        : "";
-      const note = itemNo ? byItemNo.get(itemNo) : undefined;
-      return note ? { ...it, internalNotes: note } : it;
-    });
-  }
-
   async function addOrder(order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) {
     const now = new Date().toISOString();
-    const items = snapshotInternalNotes(order.items);
+    const items = order.items;
     const newOrder: Order = {
       ...order,
       items,
@@ -1386,7 +1352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function addOrdersBatch(orderInputs: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) {
     const now = new Date().toISOString();
     const newOrders: Order[] = orderInputs.map((order) => {
-      const items = snapshotInternalNotes(order.items);
+      const items = order.items;
       return {
         ...order,
         items,
@@ -1441,7 +1407,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const end = Math.min(start + CHUNK, total);
       for (let i = start; i < end; i++) {
         const order = orderInputs[i];
-        const items = snapshotInternalNotes(order.items);
+        const items = order.items;
         accumulatedNew.push({
           ...order,
           items,

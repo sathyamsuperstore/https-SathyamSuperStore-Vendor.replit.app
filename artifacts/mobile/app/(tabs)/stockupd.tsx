@@ -502,13 +502,13 @@ function StockUpdCard({
                       {item.stock != null ? `  ·  Stk ${item.stock}` : ""}
                       {item.min != null ? `  ·  Min ${item.min}` : ""}
                     </Text>
-                    {/* Internal Notes (frozen Promo snapshot at order
-                        creation) — sits directly under the description
-                        so the cashier sees it before the editable Notes
-                        line. Hidden when blank. */}
+                    {/* Order Internal Notes (imported from the Orders
+                        Excel column at order creation) — sits directly
+                        under the description so the cashier sees it
+                        before the editable Notes line. Hidden when blank. */}
                     {item.internalNotes ? (
                       <Text style={cardSt.itemInternalNotes}>
-                        Internal Notes: {item.internalNotes}
+                        Order Internal Notes: {item.internalNotes}
                       </Text>
                     ) : null}
                     {item.notes ? (
