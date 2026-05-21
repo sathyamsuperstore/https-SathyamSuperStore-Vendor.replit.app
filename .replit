@@ -106,3 +106,4 @@ packages = ["edit"]
 [userenv]
 
 [userenv.shared]
+EXPO_PUBLIC_DOMAIN = "sathyamsuperstore-vendor.replit.app"
