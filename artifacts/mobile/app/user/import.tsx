@@ -223,6 +223,15 @@ export default function ImportUsersScreen() {
             )}
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.driveBtn}
+            onPress={() => router.push("/drive-import")}
+            activeOpacity={0.7}
+          >
+            <Feather name="hard-drive" size={16} color="#1a73e8" />
+            <Text style={styles.driveBtnText}>Import from Google Drive</Text>
+          </TouchableOpacity>
+
           {errors.length > 0 && (
             <View style={styles.errorCard}>
               <Feather name="alert-circle" size={16} color={Colors.danger} />
@@ -293,6 +302,20 @@ export default function ImportUsersScreen() {
 }
 
 const styles = StyleSheet.create({
+  driveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#e8f0fe",
+    borderWidth: 1,
+    borderColor: "#1a73e830",
+  },
+  driveBtnText: { fontSize: 14, fontWeight: "700", color: "#1a73e8" },
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 16, paddingBottom: 24 },
