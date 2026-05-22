@@ -1628,7 +1628,45 @@ export default function StockUpdScreen() {
 </html>`;
 
       if (Platform.OS === "web") {
-        await Print.printAsync({ html });
+        // On web inside a nested iframe (Replit Canvas, Expo Web preview),
+        // `Print.printAsync({ html })` falls back to printing the visible
+        // parent frame instead of the html we passed — that's why the
+        // letterhead/footer would vanish and the PDF looked like a
+        // screenshot of the screen. Bypass expo-print on web and open
+        // the html in a new tab ourselves; the document title becomes
+        // the default "Save as PDF" filename.
+        const _d2 = new Date();
+        const _pad2 = (n: number) => String(n).padStart(2, "0");
+        const _ts2 = `${_pad2(_d2.getDate())}${_pad2(_d2.getMonth() + 1)}${_d2.getFullYear()} ${_pad2(_d2.getHours())}${_pad2(_d2.getMinutes())}`;
+        const pdfTitle = `Sathyam Super Store Order ${_ts2}`;
+        const titledHtml = html.replace(
+          /<head>/i,
+          `<head><title>${pdfTitle}</title>`,
+        );
+        const win = window.open("", "_blank");
+        if (!win) {
+          throw new Error(
+            "Popup blocked. Please allow popups for this site to export PDFs.",
+          );
+        }
+        win.document.open();
+        win.document.write(titledHtml);
+        win.document.close();
+        // Wait for the logo image (base64) to decode before printing so
+        // the letterhead renders correctly in the print preview.
+        const triggerPrint = () => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            // Some browsers throw if the window was closed before print fires.
+          }
+        };
+        if (win.document.readyState === "complete") {
+          setTimeout(triggerPrint, 300);
+        } else {
+          win.addEventListener("load", () => setTimeout(triggerPrint, 300));
+        }
       } else {
         // expo-print's `fileName` option is ignored — it always writes
         // to a temp file with an auto-generated name like "~123.pdf".

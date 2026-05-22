@@ -338,7 +338,33 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
 </body></html>`;
 
       if (Platform.OS === "web") {
-        await Print.printAsync({ html });
+        // See stockupd.tsx for the full rationale: in nested-iframe web
+        // contexts expo-print prints the parent frame instead of our html.
+        const _d = new Date();
+        const _p = (n: number) => String(n).padStart(2, "0");
+        const _ts = `${_p(_d.getDate())}${_p(_d.getMonth() + 1)}${_d.getFullYear()} ${_p(_d.getHours())}${_p(_d.getMinutes())}`;
+        const pdfTitle = `Sathyam Super Store Promo Changes ${_ts}`;
+        const titledHtml = html.replace(
+          /<head>/i,
+          `<head><title>${pdfTitle}</title>`,
+        );
+        const win = window.open("", "_blank");
+        if (!win) {
+          throw new Error(
+            "Popup blocked. Please allow popups for this site to export PDFs.",
+          );
+        }
+        win.document.open();
+        win.document.write(titledHtml);
+        win.document.close();
+        const triggerPrint = () => {
+          try { win.focus(); win.print(); } catch {}
+        };
+        if (win.document.readyState === "complete") {
+          setTimeout(triggerPrint, 300);
+        } else {
+          win.addEventListener("load", () => setTimeout(triggerPrint, 300));
+        }
       } else {
         const ts = fmtFileTimestamp(new Date());
         const fileName = `Sathyam Super Store Promo Changes ${ts}.pdf`;

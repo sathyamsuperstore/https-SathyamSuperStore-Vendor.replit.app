@@ -599,7 +599,37 @@ function OrdersView({ topPt }: { topPt: number }) {
 </html>`;
 
       if (Platform.OS === "web") {
-        await Print.printAsync({ html });
+        // On web inside a nested iframe (Replit Canvas, Expo Web preview),
+        // `Print.printAsync({ html })` prints the visible parent frame
+        // instead of the html we pass — making the exported PDF look like
+        // a screenshot of the app. Bypass expo-print on web and open the
+        // html in a new tab ourselves; the document title becomes the
+        // default "Save as PDF" filename.
+        const _d = new Date();
+        const _p = (n: number) => String(n).padStart(2, "0");
+        const _ts = `${_p(_d.getDate())}${_p(_d.getMonth() + 1)}${_d.getFullYear()} ${_p(_d.getHours())}${_p(_d.getMinutes())}`;
+        const pdfTitle = `Sathyam Super Store Order ${_ts}`;
+        const titledHtml = html.replace(
+          /<head>/i,
+          `<head><title>${pdfTitle}</title>`,
+        );
+        const win = window.open("", "_blank");
+        if (!win) {
+          throw new Error(
+            "Popup blocked. Please allow popups for this site to export PDFs.",
+          );
+        }
+        win.document.open();
+        win.document.write(titledHtml);
+        win.document.close();
+        const triggerPrint = () => {
+          try { win.focus(); win.print(); } catch {}
+        };
+        if (win.document.readyState === "complete") {
+          setTimeout(triggerPrint, 300);
+        } else {
+          win.addEventListener("load", () => setTimeout(triggerPrint, 300));
+        }
       } else {
         const now = new Date();
         const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
