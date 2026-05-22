@@ -524,7 +524,18 @@ export default function PromoPrintScreen() {
       </ScrollView>
 
       {/* Sticky Save bar */}
-      <View style={[styles.saveBar, { paddingBottom: insets.bottom + 12 }]}>
+      {/* On web the tab bar is position:absolute with height 84 (see
+          app/(tabs)/_layout.tsx), so the sticky save bar would otherwise
+          be hidden behind it. Lift it above the tab bar on web. */}
+      <View
+        style={[
+          styles.saveBar,
+          {
+            paddingBottom: insets.bottom + 12,
+            bottom: Platform.OS === "web" ? 84 : 0,
+          },
+        ]}
+      >
         <View style={{ flex: 1 }}>
           <Text style={styles.saveBarTitle}>{selected.size} selected</Text>
           <Text style={styles.saveBarSub}>
