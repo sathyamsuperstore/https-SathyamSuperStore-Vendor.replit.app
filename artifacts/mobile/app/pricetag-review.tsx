@@ -1816,7 +1816,10 @@ export default function PriceTagReviewScreen() {
           <Text style={styles.emptyBody}>
             Open the PromoPrint tab, pick the items you want price tags for, then tap Save to bring them here.
           </Text>
-          <TouchableOpacity style={styles.emptyBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            onPress={() => router.replace("/(tabs)/promoprint")}
+          >
             <Text style={styles.emptyBtnText}>Back</Text>
           </TouchableOpacity>
         </View>
