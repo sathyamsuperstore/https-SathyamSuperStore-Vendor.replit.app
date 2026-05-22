@@ -348,8 +348,8 @@ export const DEFAULT_COMPANY_DETAILS: CompanyDetails = {
   state: "TN",
   country: "India",
   pincode: "641029",
-  mobile: "+919788144868",
-  whatsapp: "+919788144868",
+  mobile: "+919688144868",
+  whatsapp: "+919688144868",
   gstNo: "",
   fssaiNo: "",
 };
