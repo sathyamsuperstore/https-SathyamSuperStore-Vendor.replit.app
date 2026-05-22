@@ -434,7 +434,18 @@ export default function RPromoPrintScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.saveBar, { paddingBottom: insets.bottom + 12 }]}>
+      <View
+        style={[
+          styles.saveBar,
+          {
+            paddingBottom: insets.bottom + 12,
+            // Tab bar is position:absolute, height 84 on web (see
+            // (tabs)/_layout.tsx) — lift the sticky bar above it so the
+            // primary action button isn't hidden behind the tab bar.
+            bottom: Platform.OS === "web" ? 84 : 0,
+          },
+        ]}
+      >
         <View style={{ flex: 1 }}>
           <Text style={styles.saveBarTitle}>{selected.size} selected</Text>
           <Text style={styles.saveBarSub}>
