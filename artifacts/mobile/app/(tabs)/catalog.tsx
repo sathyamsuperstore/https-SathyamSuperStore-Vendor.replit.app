@@ -2,6 +2,7 @@ import React from "react";
 import { HubTab } from "@/components/HubTab";
 import PromoScreen from "./promo";
 import BrandReviewScreen from "./brand-review";
+import UniproRodeoCompareScreen from "./upcompare";
 import PromoPrintScreen from "./promoprint";
 import RPromoPrintScreen from "./rpromoprint";
 import PriceTagPreviewScreen from "../pricetag-preview";
@@ -20,6 +21,11 @@ export default function CatalogHubScreen() {
           key: "promoPrev",
           label: "PromoPrev",
           render: () => <PromoScreen mode="prev" />,
+        },
+        {
+          key: "uniproRodeoCompare",
+          label: "UniproRodeoCompare",
+          render: () => <UniproRodeoCompareScreen />,
         },
         {
           key: "promoPrint",
