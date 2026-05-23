@@ -522,8 +522,15 @@ export default function UniproRodeoCompareScreen() {
     }
     setExporting(true);
     try {
-      // All RodeoItem fields, in the same order as the type, plus the
-      // two Promo columns appended on the right.
+      // All RodeoItem fields, in the same order as the type, plus four
+      // appended columns sourced from the matched Promo row:
+      //   PromotionPrice / PromotionToDate — direct passthrough
+      //   Exact Match    — "Yes" when Rodeo.mrp equals Promo.MRP,
+      //                    "No" otherwise (the Item No itself is always
+      //                    an exact match because it's the join key)
+      //   Unipro MRP     — Promo.MRP, populated ONLY when Exact Match
+      //                    is "No" (blank otherwise so the column reads
+      //                    as a discrepancy list at a glance)
       const headers = [
         "productId",
         "skuId",
@@ -540,13 +547,29 @@ export default function UniproRodeoCompareScreen() {
         "active",
         "PromotionPrice",
         "PromotionToDate",
+        "Exact Match",
+        "Unipro MRP",
       ];
       const data: (string | number)[][] = [headers];
       let matched = 0;
+      let skipped = 0;
+      let exactMatches = 0;
       for (const rd of rodeoItems) {
         const key = normCode(rd.itemCode);
         const p = key ? promoByItemCode.get(key) : undefined;
-        if (p) matched += 1;
+        // Filter requirement: only export RodeoItems whose matching
+        // Promo row actually carries a PromotionPrice. Everything else
+        // is skipped entirely so the worksheet is a focused list of
+        // items that have a live promo to act on.
+        if (!p || !hasValue(p["PromotionPrice"])) {
+          skipped += 1;
+          continue;
+        }
+        matched += 1;
+        const promoMrpNorm = normMrp(p["MRP"]);
+        const rodeoMrpNorm = normMrp(rd.mrp);
+        const mrpExact = promoMrpNorm !== "" && promoMrpNorm === rodeoMrpNorm;
+        if (mrpExact) exactMatches += 1;
         data.push([
           rd.productId ?? "",
           rd.skuId ?? "",
@@ -561,9 +584,18 @@ export default function UniproRodeoCompareScreen() {
           fmtText(rd.offerStartDate),
           fmtText(rd.offerEndDate),
           rd.active ? "TRUE" : "FALSE",
-          p ? ((p["PromotionPrice"] as number | string | undefined) ?? "") : "",
-          p ? fmtText(p["PromotionToDate"]) : "",
+          (p["PromotionPrice"] as number | string | undefined) ?? "",
+          fmtText(p["PromotionToDate"]),
+          mrpExact ? "Yes" : "No",
+          mrpExact ? "" : ((p["MRP"] as number | string | undefined) ?? ""),
         ]);
+      }
+      if (matched === 0) {
+        const msg =
+          "No RodeoItems have a matching Promo row with a PromotionPrice.";
+        if (Platform.OS === "web") window.alert(`Nothing to export\n\n${msg}`);
+        else Alert.alert("Nothing to export", msg);
+        return;
       }
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws["!cols"] = headers.map((h) =>
@@ -608,7 +640,7 @@ export default function UniproRodeoCompareScreen() {
         }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const summary = `${rodeoItems.length} RodeoItems exported · ${matched} matched a Promo row.`;
+      const summary = `${matched} RodeoItems exported · ${exactMatches} exact MRP match${exactMatches === 1 ? "" : "es"} · ${skipped} skipped (no PromotionPrice).`;
       if (Platform.OS === "web") {
         // No alert on web — the toast-like behavior would require extra
         // UI. The browser's download dialog is the implicit confirmation.
@@ -825,15 +857,15 @@ export default function UniproRodeoCompareScreen() {
               <Feather name="file-text" size={16} color={Colors.textInverse} />
             )}
             <Text style={styles.exportBtnText}>
-              Export all {rodeoItems.length} RodeoItem
-              {rodeoItems.length === 1 ? "" : "s"} + Promo to Excel
+              Export RodeoItems with PromotionPrice to Excel
             </Text>
           </TouchableOpacity>
           <Text style={styles.exportHint}>
-            Every RodeoItem with all its fields, plus PromotionPrice and
-            PromotionToDate from the Promo tab where Item No matches the
-            Rodeo ITEM CODE. Ignores the filters below — exports the
-            entire RodeoItems list.
+            Only RodeoItems whose matching Promo row (joined by
+            ITEM CODE = Item No) has a PromotionPrice. Adds
+            "Exact Match" (Yes / No on Rodeo MRP vs Promo MRP) and
+            "Unipro MRP" (the Promo MRP, populated only when it
+            doesn't match Rodeo). Ignores the filters below.
           </Text>
 
           {/* Filter chip grid — same layout the Promo tab uses */}
