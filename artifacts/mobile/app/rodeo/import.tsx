@@ -336,7 +336,7 @@ export default function ImportRodeoItemsScreen() {
         setSaveTotal(0);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const msg = `${parsed.length} RodeoItem${parsed.length !== 1 ? "s" : ""} imported successfully.`;
-        const goNext = () => router.replace("/(tabs)/rodeo-items");
+        const goNext = () => router.replace("/(tabs)");
         if (Platform.OS === "web") {
           window.alert(`Import Complete\n\n${msg}`);
           goNext();
