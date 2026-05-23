@@ -173,6 +173,11 @@ export default function ImportRodeoItemsScreen() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsed, setParsed] = useState<RodeoItem[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  // Save-phase progress: tracks how many 500-row batches have been
+  // written to AsyncStorage. When `saveTotal > 0` the import button
+  // is replaced by a non-cancellable progress overlay.
+  const [saveDone, setSaveDone] = useState(0);
+  const [saveTotal, setSaveTotal] = useState(0);
 
   async function pickAndParse() {
     try {
@@ -315,9 +320,21 @@ export default function ImportRodeoItemsScreen() {
     const existing = rodeoItems.length;
     const doImport = async () => {
       try {
+        // Initialise progress UI synchronously so the bar appears
+        // immediately, even before the first batch resolves.
+        const expectedBatches = Math.max(1, Math.ceil(parsed.length / 500));
+        setSaveDone(0);
+        setSaveTotal(expectedBatches);
         // Replace-all semantics: each import is a fresh snapshot of the
         // RodeoItems sheet, mirroring how MRP / Promo handle re-imports.
-        await saveRodeoItemsBatch(parsed);
+        // saveRodeoItemsBatch chunks the write into 500-row batches so
+        // very large imports don't trip Android's per-item storage cap.
+        await saveRodeoItemsBatch(parsed, (done, total) => {
+          setSaveDone(done);
+          setSaveTotal(total);
+        });
+        setSaveDone(0);
+        setSaveTotal(0);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const msg = `${parsed.length} RodeoItem${parsed.length !== 1 ? "s" : ""} imported successfully.`;
         const goNext = () => router.replace("/(tabs)/rodeo-items");
@@ -330,6 +347,8 @@ export default function ImportRodeoItemsScreen() {
           ]);
         }
       } catch {
+        setSaveDone(0);
+        setSaveTotal(0);
         showStorageErrorAlert();
       }
     };
@@ -543,13 +562,37 @@ export default function ImportRodeoItemsScreen() {
           <View
             style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}
           >
-            <TouchableOpacity style={styles.importBtn} onPress={handleImport}>
-              <Feather name="download" size={18} color={Colors.textInverse} />
-              <Text style={styles.importBtnText}>
-                Import {parsed.length} RodeoItem
-                {parsed.length !== 1 ? "s" : ""}
-              </Text>
-            </TouchableOpacity>
+            {saveTotal > 0 ? (
+              <View style={styles.progressWrap}>
+                <View style={styles.progressHeader}>
+                  <ActivityIndicator color={Colors.primary} size="small" />
+                  <Text style={styles.progressLabel}>
+                    Saving {Math.min(saveDone * 500, parsed.length).toLocaleString()} of {parsed.length.toLocaleString()} rows…
+                  </Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${Math.round((saveDone / Math.max(1, saveTotal)) * 100)}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressHint}>
+                  Batch {saveDone} of {saveTotal} · please keep the app open
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.importBtn} onPress={handleImport}>
+                <Feather name="download" size={18} color={Colors.textInverse} />
+                <Text style={styles.importBtnText}>
+                  Import {parsed.length} RodeoItem
+                  {parsed.length !== 1 ? "s" : ""}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -720,4 +763,24 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   importBtnText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
+  progressWrap: { gap: 8 },
+  progressHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  progressLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: Colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+  },
+  progressHint: { fontSize: 12, color: Colors.textMuted, textAlign: "center" },
 });

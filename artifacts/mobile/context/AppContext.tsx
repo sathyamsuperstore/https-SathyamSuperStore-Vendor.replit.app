@@ -212,7 +212,10 @@ interface AppContextType {
   // import replaces the entire list (mirrors the MRP / Promo "fresh
   // snapshot" behaviour) so the table always reflects the latest sheet.
   rodeoItems: RodeoItem[];
-  saveRodeoItemsBatch: (entries: RodeoItem[]) => Promise<void>;
+  saveRodeoItemsBatch: (
+    entries: RodeoItem[],
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<void>;
   clearRodeoItems: () => Promise<void>;
   // User-entered "New Qty" overrides per Promo row. Map key is
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
@@ -609,7 +612,55 @@ const PROMO_KEY = "@promoBatch";
 const PROMO_PREV_KEY = "@promoPrev";
 const PROMO_PREV_AT_KEY = "@promoPrevAt";
 const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
+// Legacy single-blob key. Kept only for backward-compat reads on first
+// launch after upgrade — RodeoItems are now stored in fixed-size chunks
+// so a 25k-row import doesn't blow past AsyncStorage's per-item size
+// limit on Android ("Couldn't save … out of storage" alert).
 const RODEO_ITEMS_KEY = "@rodeoItems";
+const RODEO_ITEMS_META_KEY = "@rodeoItems:meta";
+const RODEO_ITEMS_BATCH_PREFIX = "@rodeoItems:batch:";
+const RODEO_ITEMS_BATCH_SIZE = 500;
+
+async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
+  try {
+    const metaRaw = await AsyncStorage.getItem(RODEO_ITEMS_META_KEY);
+    if (metaRaw) {
+      const meta = JSON.parse(metaRaw) as { batches?: number };
+      const batches = Math.max(0, Math.floor(meta?.batches ?? 0));
+      if (batches > 0) {
+        const keys = Array.from(
+          { length: batches },
+          (_, i) => RODEO_ITEMS_BATCH_PREFIX + i,
+        );
+        const pairs = await AsyncStorage.multiGet(keys);
+        const all: RodeoItem[] = [];
+        for (const [, val] of pairs) {
+          if (!val) continue;
+          try {
+            const arr = JSON.parse(val) as RodeoItem[];
+            if (Array.isArray(arr)) all.push(...arr);
+          } catch {
+            // Skip corrupt batch but keep loading the rest.
+          }
+        }
+        return all;
+      }
+      return [];
+    }
+  } catch {
+    // Fall through to legacy single-key read.
+  }
+  const legacy = await AsyncStorage.getItem(RODEO_ITEMS_KEY);
+  if (legacy) {
+    try {
+      const arr = JSON.parse(legacy) as RodeoItem[];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
 // Promo workbook (which replaces every row) doesn't blow away the
@@ -785,7 +836,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PROMO_PREV_AT_KEY),
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
-        AsyncStorage.getItem(RODEO_ITEMS_KEY),
+        loadRodeoItemsChunked(),
         AsyncStorage.getItem(PRICE_TAG_KEY),
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
@@ -832,8 +883,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setPromoPrevEntries(loadedPromoPrev);
       setPromoPrevSnapshotAt(loadedPromoPrevAt);
       setLastSupplyDates(loadedLastSupplyDates);
-      const loadedRodeoItems: RodeoItem[] = rodeoItemsData
-        ? JSON.parse(rodeoItemsData)
+      const loadedRodeoItems: RodeoItem[] = Array.isArray(rodeoItemsData)
+        ? (rodeoItemsData as RodeoItem[])
         : [];
       setRodeoItems(loadedRodeoItems);
       const loadedPromoNewQty: Record<string, number> = promoNewQtyData
@@ -1731,8 +1782,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers([]);
   }
 
-  async function saveRodeoItemsBatch(entries: RodeoItem[]) {
-    await AsyncStorage.setItem(RODEO_ITEMS_KEY, JSON.stringify(entries));
+  // Chunked write: split entries into RODEO_ITEMS_BATCH_SIZE-sized
+  // batches and store each under its own AsyncStorage key. Large
+  // imports (25k+ rows) otherwise hit Android's per-item size cap and
+  // surface as "Couldn't save … out of storage". `onProgress` is
+  // called after every batch write so the import screen can render a
+  // progress bar.
+  async function saveRodeoItemsBatch(
+    entries: RodeoItem[],
+    onProgress?: (done: number, total: number) => void,
+  ) {
+    const batchSize = RODEO_ITEMS_BATCH_SIZE;
+    const batches = Math.ceil(entries.length / batchSize);
+
+    // Figure out how many stale batch keys we'll need to remove
+    // afterwards (if the previous import had more batches than this
+    // one). Best-effort: ignore parse errors.
+    let oldBatches = 0;
+    try {
+      const oldMetaRaw = await AsyncStorage.getItem(RODEO_ITEMS_META_KEY);
+      if (oldMetaRaw) {
+        const oldMeta = JSON.parse(oldMetaRaw) as { batches?: number };
+        oldBatches = Math.max(0, Math.floor(oldMeta?.batches ?? 0));
+      }
+    } catch {
+      // ignore
+    }
+
+    onProgress?.(0, batches);
+    for (let i = 0; i < batches; i++) {
+      const chunk = entries.slice(i * batchSize, (i + 1) * batchSize);
+      await AsyncStorage.setItem(
+        RODEO_ITEMS_BATCH_PREFIX + i,
+        JSON.stringify(chunk),
+      );
+      onProgress?.(i + 1, batches);
+    }
+
+    // Commit meta last so a crash mid-write leaves the previous
+    // snapshot intact (we'll just orphan some half-written batches).
+    await AsyncStorage.setItem(
+      RODEO_ITEMS_META_KEY,
+      JSON.stringify({ count: entries.length, batches, batchSize }),
+    );
+
+    if (oldBatches > batches) {
+      const stale: string[] = [];
+      for (let i = batches; i < oldBatches; i++) {
+        stale.push(RODEO_ITEMS_BATCH_PREFIX + i);
+      }
+      if (stale.length > 0) {
+        try {
+          await AsyncStorage.multiRemove(stale);
+        } catch {
+          // ignore — stale keys are harmless
+        }
+      }
+    }
+
+    // Drop the legacy single-blob key if it survived an earlier
+    // install. Harmless if it isn't there.
+    try {
+      await AsyncStorage.removeItem(RODEO_ITEMS_KEY);
+    } catch {
+      // ignore
+    }
+
     setRodeoItems(entries);
   }
 
