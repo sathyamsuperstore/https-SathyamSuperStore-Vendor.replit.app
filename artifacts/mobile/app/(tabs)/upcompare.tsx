@@ -490,6 +490,142 @@ export default function UniproRodeoCompareScreen() {
     setPromoCrTo(null);
   }
 
+  // Promo lookup keyed by normalized Item No → first row that carries
+  // a PromotionPrice (falls back to the very first row if none has a
+  // price). Used by the "RodeoItems + Promo" export so we can stamp
+  // each Rodeo row with its matching promo's price + end date.
+  const promoByItemCode = useMemo(() => {
+    const m = new Map<string, PromoEntry>();
+    for (const p of promoEntries) {
+      const key = normCode(p["Item No"]);
+      if (!key) continue;
+      const existing = m.get(key);
+      if (!existing) {
+        m.set(key, p);
+        continue;
+      }
+      // Upgrade to a row that actually has a PromotionPrice if the
+      // currently-stored one doesn't.
+      if (!hasValue(existing["PromotionPrice"]) && hasValue(p["PromotionPrice"])) {
+        m.set(key, p);
+      }
+    }
+    return m;
+  }, [promoEntries]);
+
+  async function handleExportRodeoWithPromo() {
+    if (rodeoItems.length === 0) {
+      const msg = "No RodeoItems loaded — import a RodeoItems sheet first.";
+      if (Platform.OS === "web") window.alert(`Nothing to export\n\n${msg}`);
+      else Alert.alert("Nothing to export", msg);
+      return;
+    }
+    setExporting(true);
+    try {
+      // All RodeoItem fields, in the same order as the type, plus the
+      // two Promo columns appended on the right.
+      const headers = [
+        "productId",
+        "skuId",
+        "productName",
+        "barCode",
+        "itemCode",
+        "gst",
+        "mrp",
+        "purchasePrice",
+        "sellingPrice",
+        "offerPrice",
+        "offerStartDate",
+        "offerEndDate",
+        "active",
+        "PromotionPrice",
+        "PromotionToDate",
+      ];
+      const data: (string | number)[][] = [headers];
+      let matched = 0;
+      for (const rd of rodeoItems) {
+        const key = normCode(rd.itemCode);
+        const p = key ? promoByItemCode.get(key) : undefined;
+        if (p) matched += 1;
+        data.push([
+          rd.productId ?? "",
+          rd.skuId ?? "",
+          fmtText(rd.productName),
+          fmtText(rd.barCode),
+          fmtText(rd.itemCode),
+          rd.gst ?? "",
+          rd.mrp ?? "",
+          rd.purchasePrice ?? "",
+          rd.sellingPrice ?? "",
+          rd.offerPrice ?? "",
+          fmtText(rd.offerStartDate),
+          fmtText(rd.offerEndDate),
+          rd.active ? "TRUE" : "FALSE",
+          p ? ((p["PromotionPrice"] as number | string | undefined) ?? "") : "",
+          p ? fmtText(p["PromotionToDate"]) : "",
+        ]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = headers.map((h) =>
+        h === "productName" || h === "barCode" ? { wch: 32 } : { wch: 16 },
+      );
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "RodeoItems+Promo");
+      const fileName = `Sathyam RodeoItems with Promo - ${timestampForFile()}.xlsx`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, {
+          bookType: "xlsx",
+          type: "array",
+          cellStyles: true,
+        });
+        const blob = new Blob([wbout], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, {
+          bookType: "xlsx",
+          type: "base64",
+          cellStyles: true,
+        });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, {
+          encoding: "base64" as any,
+        });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Export RodeoItems with Promo",
+            UTI: "com.microsoft.excel.xlsx",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const summary = `${rodeoItems.length} RodeoItems exported · ${matched} matched a Promo row.`;
+      if (Platform.OS === "web") {
+        // No alert on web — the toast-like behavior would require extra
+        // UI. The browser's download dialog is the implicit confirmation.
+        console.log(summary);
+      } else {
+        // Non-blocking: schedule after the share sheet closes.
+        setTimeout(() => Alert.alert("Export complete", summary), 300);
+      }
+    } catch (e: any) {
+      const msg = e?.message ?? "Unknown error";
+      if (Platform.OS === "web") window.alert(`Export Failed\n\n${msg}`);
+      else Alert.alert("Export Failed", msg);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleExportMissingOffers() {
     if (exportableRows.length === 0) {
       const msg =
@@ -672,6 +808,32 @@ export default function UniproRodeoCompareScreen() {
             Promo items with a PromotionPrice whose matching RodeoItem has an
             empty Offer Price — the list of offers you still need to add in
             Rodeo. Honours the filters below.
+          </Text>
+
+          <TouchableOpacity
+            style={[
+              styles.exportBtn,
+              styles.exportBtnAccent,
+              (rodeoItems.length === 0 || exporting) && styles.exportBtnDisabled,
+            ]}
+            onPress={handleExportRodeoWithPromo}
+            disabled={rodeoItems.length === 0 || exporting}
+          >
+            {exporting ? (
+              <ActivityIndicator color={Colors.textInverse} size="small" />
+            ) : (
+              <Feather name="file-text" size={16} color={Colors.textInverse} />
+            )}
+            <Text style={styles.exportBtnText}>
+              Export all {rodeoItems.length} RodeoItem
+              {rodeoItems.length === 1 ? "" : "s"} + Promo to Excel
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.exportHint}>
+            Every RodeoItem with all its fields, plus PromotionPrice and
+            PromotionToDate from the Promo tab where Item No matches the
+            Rodeo ITEM CODE. Ignores the filters below — exports the
+            entire RodeoItems list.
           </Text>
 
           {/* Filter chip grid — same layout the Promo tab uses */}
@@ -1450,6 +1612,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  exportBtnAccent: { backgroundColor: Colors.accent, marginTop: 8 },
   exportBtnDisabled: { opacity: 0.5 },
   exportBtnText: {
     color: Colors.textInverse,
