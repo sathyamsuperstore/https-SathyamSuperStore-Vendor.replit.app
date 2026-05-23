@@ -17,11 +17,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx-js-style";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import {
-  useApp,
-  showStorageErrorAlert,
-  type RodeoItem,
-} from "@/context/AppContext";
+import { useApp, type RodeoItem } from "@/context/AppContext";
 
 // Canonical Excel column order. Header matching is whitespace- and
 // case-insensitive so "BAR CODE" and "Bar Code" both map to barCode.
@@ -321,14 +317,17 @@ export default function ImportRodeoItemsScreen() {
     const doImport = async () => {
       try {
         // Initialise progress UI synchronously so the bar appears
-        // immediately, even before the first batch resolves.
-        const expectedBatches = Math.max(1, Math.ceil(parsed.length / 500));
+        // immediately, even before the first batch resolves. On
+        // native we now write a single JSON file (1 step); on web we
+        // still chunk into AsyncStorage entries.
+        const expectedBatches =
+          Platform.OS === "web" ? Math.max(1, Math.ceil(parsed.length / 200)) : 1;
         setSaveDone(0);
         setSaveTotal(expectedBatches);
         // Replace-all semantics: each import is a fresh snapshot of the
         // RodeoItems sheet, mirroring how MRP / Promo handle re-imports.
-        // saveRodeoItemsBatch chunks the write into 500-row batches so
-        // very large imports don't trip Android's per-item storage cap.
+        // Native uses a single JSON file under documentDirectory so
+        // 25k+ rows can't hit AsyncStorage's per-DB size cap.
         await saveRodeoItemsBatch(parsed, (done, total) => {
           setSaveDone(done);
           setSaveTotal(total);
@@ -346,10 +345,20 @@ export default function ImportRodeoItemsScreen() {
             { text: "OK", onPress: goNext },
           ]);
         }
-      } catch {
+      } catch (e: any) {
         setSaveDone(0);
         setSaveTotal(0);
-        showStorageErrorAlert();
+        const detail = e?.message ?? String(e);
+        // Surface the real underlying error (file system / IndexedDB
+        // message) so the user — or a support read — can act on it
+        // instead of seeing only the generic "out of storage" hint.
+        const title = "Couldn't Save RodeoItems";
+        const body = `Import failed after parsing ${parsed.length.toLocaleString()} row${parsed.length === 1 ? "" : "s"}.\n\n${detail}\n\nIf your phone is low on storage, free a few hundred MB and try again.`;
+        if (Platform.OS === "web") {
+          window.alert(`${title}\n\n${body}`);
+        } else {
+          Alert.alert(title, body);
+        }
       }
     };
 
@@ -567,7 +576,12 @@ export default function ImportRodeoItemsScreen() {
                 <View style={styles.progressHeader}>
                   <ActivityIndicator color={Colors.primary} size="small" />
                   <Text style={styles.progressLabel}>
-                    Saving {Math.min(saveDone * 500, parsed.length).toLocaleString()} of {parsed.length.toLocaleString()} rows…
+                    Saving {Math.min(
+                      Math.round(
+                        (saveDone / Math.max(1, saveTotal)) * parsed.length,
+                      ),
+                      parsed.length,
+                    ).toLocaleString()} of {parsed.length.toLocaleString()} rows…
                   </Text>
                 </View>
                 <View style={styles.progressTrack}>

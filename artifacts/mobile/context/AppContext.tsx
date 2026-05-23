@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
 import { DEFAULT_TITLES } from "@/data/defaultTitles";
 import { DEFAULT_TAG_COLORS, type TagColors } from "@workspace/pricetag-html";
 import { Alert, Platform } from "react-native";
@@ -612,26 +613,74 @@ const PROMO_KEY = "@promoBatch";
 const PROMO_PREV_KEY = "@promoPrev";
 const PROMO_PREV_AT_KEY = "@promoPrevAt";
 const LAST_SUPPLY_DATE_KEY = "@lastSupplyDate";
-// Legacy single-blob key. Kept only for backward-compat reads on first
-// launch after upgrade — RodeoItems are now stored in fixed-size chunks
-// so a 25k-row import doesn't blow past AsyncStorage's per-item size
-// limit on Android ("Couldn't save … out of storage" alert).
-const RODEO_ITEMS_KEY = "@rodeoItems";
-const RODEO_ITEMS_META_KEY = "@rodeoItems:meta";
-const RODEO_ITEMS_BATCH_PREFIX = "@rodeoItems:batch:";
-const RODEO_ITEMS_BATCH_SIZE = 500;
+// Legacy AsyncStorage keys. Kept only for backward-compat reads on
+// first launch after upgrade — RodeoItems are now stored as a single
+// JSON file on native (via expo-file-system) so a 25k+ row import
+// doesn't blow past AsyncStorage's per-database size cap on Android
+// ("Couldn't save … out of storage" alert), and as smaller chunked
+// AsyncStorage entries on web (where there is no file system).
+const RODEO_ITEMS_KEY = "@rodeoItems"; // legacy single-blob
+const RODEO_ITEMS_META_KEY = "@rodeoItems:meta"; // legacy + web chunked
+const RODEO_ITEMS_BATCH_PREFIX = "@rodeoItems:batch:"; // legacy unversioned
+// New web layout: chunks live under a versioned namespace so a new
+// save writes to fresh keys and only flips the meta pointer once
+// every chunk is in. A mid-write crash leaves the previous version's
+// keys untouched, so the old snapshot keeps loading.
+const RODEO_ITEMS_VERSIONED_PREFIX = "@rodeoItems:v:"; // <ver>:batch:<i>
+function versionedBatchKey(version: string, i: number): string {
+  return `${RODEO_ITEMS_VERSIONED_PREFIX}${version}:batch:${i}`;
+}
+// Smaller chunk size on web reduces the per-key JSON payload so even
+// a slow IndexedDB backend can flush each write quickly. Native no
+// longer chunks at all — the whole list goes into one JSON file.
+const RODEO_ITEMS_WEB_BATCH_SIZE = 200;
 
-async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
+// On native, RodeoItems live in a single JSON file under the app's
+// document directory. No AsyncStorage per-DB cap, no per-key size
+// limit, fast atomic writes. `documentDirectory` is null on web —
+// callers should never touch this path on web.
+const RODEO_ITEMS_FILE = "rodeoItems.json";
+function rodeoItemsFileUri(): string {
+  return (FileSystem.documentDirectory ?? "") + RODEO_ITEMS_FILE;
+}
+
+async function loadRodeoItemsFromFile(): Promise<RodeoItem[] | null> {
+  if (Platform.OS === "web") return null;
+  const uri = rodeoItemsFileUri();
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: "utf8" as any,
+    });
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as RodeoItem[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return null;
+  }
+}
+
+async function loadRodeoItemsLegacyAsyncStorage(): Promise<RodeoItem[]> {
   try {
     const metaRaw = await AsyncStorage.getItem(RODEO_ITEMS_META_KEY);
     if (metaRaw) {
-      const meta = JSON.parse(metaRaw) as { batches?: number };
+      const meta = JSON.parse(metaRaw) as {
+        batches?: number;
+        version?: string;
+      };
       const batches = Math.max(0, Math.floor(meta?.batches ?? 0));
       if (batches > 0) {
-        const keys = Array.from(
-          { length: batches },
-          (_, i) => RODEO_ITEMS_BATCH_PREFIX + i,
-        );
+        // Prefer the versioned keys if meta points at a version; fall
+        // back to the legacy unversioned prefix for old installs.
+        const keys = meta?.version
+          ? Array.from({ length: batches }, (_, i) =>
+              versionedBatchKey(String(meta.version), i),
+            )
+          : Array.from(
+              { length: batches },
+              (_, i) => RODEO_ITEMS_BATCH_PREFIX + i,
+            );
         const pairs = await AsyncStorage.multiGet(keys);
         const all: RodeoItem[] = [];
         for (const [, val] of pairs) {
@@ -660,6 +709,42 @@ async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
     }
   }
   return [];
+}
+
+// Best-effort cleanup: drop every AsyncStorage key the old chunked
+// implementation may have written. Called once on native after the
+// first successful file-based save so the AsyncStorage DB shrinks
+// back to a normal size.
+async function clearRodeoItemsAsyncStorage(): Promise<void> {
+  try {
+    const metaRaw = await AsyncStorage.getItem(RODEO_ITEMS_META_KEY);
+    let batches = 0;
+    if (metaRaw) {
+      try {
+        const meta = JSON.parse(metaRaw) as { batches?: number };
+        batches = Math.max(0, Math.floor(meta?.batches ?? 0));
+      } catch {
+        // ignore
+      }
+    }
+    const keys: string[] = [RODEO_ITEMS_KEY, RODEO_ITEMS_META_KEY];
+    for (let i = 0; i < batches; i++) {
+      keys.push(RODEO_ITEMS_BATCH_PREFIX + i);
+    }
+    await AsyncStorage.multiRemove(keys);
+  } catch {
+    // ignore — stale keys are harmless
+  }
+}
+
+async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
+  // Native: prefer the JSON file written by the new code path.
+  if (Platform.OS !== "web") {
+    const fromFile = await loadRodeoItemsFromFile();
+    if (fromFile !== null) return fromFile;
+  }
+  // Fall back to (web) chunked AsyncStorage or legacy single blob.
+  return await loadRodeoItemsLegacyAsyncStorage();
 }
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
@@ -1782,68 +1867,159 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveSuppliers([]);
   }
 
-  // Chunked write: split entries into RODEO_ITEMS_BATCH_SIZE-sized
-  // batches and store each under its own AsyncStorage key. Large
-  // imports (25k+ rows) otherwise hit Android's per-item size cap and
-  // surface as "Couldn't save … out of storage". `onProgress` is
-  // called after every batch write so the import screen can render a
-  // progress bar.
+  // RodeoItems write path. On native, persist as a single JSON file
+  // via expo-file-system — the document directory has no per-item
+  // size cap and orders of magnitude more capacity than AsyncStorage,
+  // which on Android is capped at ~6 MB per app and surfaces as
+  // "Couldn't save … out of storage" on imports of 20k+ rows.
+  //
+  // On web (no usable file system), fall back to small AsyncStorage
+  // chunks — IndexedDB backs AsyncStorage in the browser and handles
+  // multi-MB payloads comfortably as long as each value isn't huge.
+  //
+  // `onProgress` is called twice on native (0/1, 1/1) so the UI bar
+  // still renders, and once per chunk on web.
   async function saveRodeoItemsBatch(
     entries: RodeoItem[],
     onProgress?: (done: number, total: number) => void,
   ) {
-    const batchSize = RODEO_ITEMS_BATCH_SIZE;
-    const batches = Math.ceil(entries.length / batchSize);
+    if (Platform.OS !== "web") {
+      // ---- Native: atomic single JSON file ----
+      // Write to a sibling `.tmp` file, fsync (implicit on close),
+      // then rename over the live file. If the temp write fails
+      // mid-way (disk full, app killed), the live `rodeoItems.json`
+      // is untouched and the previous snapshot keeps loading on next
+      // launch. The legacy AsyncStorage cleanup is also deferred to
+      // a successful import, never run before the rename succeeds.
+      const finalUri = rodeoItemsFileUri();
+      const tmpUri = finalUri + ".tmp";
+      onProgress?.(0, 1);
+      // Yield once before the big stringify so the progress bar can
+      // paint at 0% before the main thread is briefly busy.
+      await new Promise<void>((r) => setTimeout(r, 0));
+      const payload = JSON.stringify(entries);
+      try {
+        // Make sure no stale temp from a prior crashed write
+        // confuses moveAsync.
+        try {
+          const tmpInfo = await FileSystem.getInfoAsync(tmpUri);
+          if (tmpInfo.exists) {
+            await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+          }
+        } catch {
+          // ignore
+        }
+        await FileSystem.writeAsStringAsync(tmpUri, payload, {
+          encoding: "utf8" as any,
+        });
+        // Atomic swap. moveAsync overwrites the destination on
+        // native, so the live file flips from old → new in one step.
+        await FileSystem.moveAsync({ from: tmpUri, to: finalUri });
+      } catch (e: any) {
+        // Best-effort cleanup of the half-written temp file.
+        try {
+          await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+        } catch {
+          // ignore
+        }
+        const msg = e?.message ?? String(e);
+        throw new Error(`Failed to write RodeoItems file: ${msg}`);
+      }
+      onProgress?.(1, 1);
+      // Migration: now that the new snapshot is live, drop the old
+      // AsyncStorage chunks. Best-effort — harmless if absent or if
+      // this races a concurrent reader (the file path is preferred).
+      void clearRodeoItemsAsyncStorage();
+      setRodeoItems(entries);
+      return;
+    }
 
-    // Figure out how many stale batch keys we'll need to remove
-    // afterwards (if the previous import had more batches than this
-    // one). Best-effort: ignore parse errors.
-    let oldBatches = 0;
+    // ---- Web: atomic versioned chunked AsyncStorage ----
+    // Write all new chunks under a fresh version namespace, then flip
+    // the meta pointer to that version in a single setItem. A
+    // crash mid-write leaves the previous version's chunks (and the
+    // old meta pointing at them) intact, so the old snapshot keeps
+    // loading on next launch.
+    const batchSize = RODEO_ITEMS_WEB_BATCH_SIZE;
+    const batches = Math.max(1, Math.ceil(entries.length / batchSize));
+    const newVersion = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+    // Capture the existing meta so we can clean up its keys after
+    // the new version is fully committed.
+    let oldMeta: { batches?: number; version?: string } | null = null;
     try {
       const oldMetaRaw = await AsyncStorage.getItem(RODEO_ITEMS_META_KEY);
       if (oldMetaRaw) {
-        const oldMeta = JSON.parse(oldMetaRaw) as { batches?: number };
-        oldBatches = Math.max(0, Math.floor(oldMeta?.batches ?? 0));
+        oldMeta = JSON.parse(oldMetaRaw) as {
+          batches?: number;
+          version?: string;
+        };
       }
     } catch {
       // ignore
     }
 
     onProgress?.(0, batches);
-    for (let i = 0; i < batches; i++) {
-      const chunk = entries.slice(i * batchSize, (i + 1) * batchSize);
-      await AsyncStorage.setItem(
-        RODEO_ITEMS_BATCH_PREFIX + i,
-        JSON.stringify(chunk),
-      );
-      onProgress?.(i + 1, batches);
+    const writtenKeys: string[] = [];
+    try {
+      for (let i = 0; i < batches; i++) {
+        const chunk = entries.slice(i * batchSize, (i + 1) * batchSize);
+        const key = versionedBatchKey(newVersion, i);
+        try {
+          await AsyncStorage.setItem(key, JSON.stringify(chunk));
+          writtenKeys.push(key);
+        } catch (e: any) {
+          const msg = e?.message ?? String(e);
+          throw new Error(
+            `Failed writing batch ${i + 1} of ${batches} (rows ${i * batchSize + 1}–${Math.min((i + 1) * batchSize, entries.length)}): ${msg}`,
+          );
+        }
+        onProgress?.(i + 1, batches);
+      }
+    } catch (e) {
+      // Roll back the partially written new version so it doesn't
+      // leak storage and can't be confused for a valid snapshot.
+      if (writtenKeys.length > 0) {
+        try {
+          await AsyncStorage.multiRemove(writtenKeys);
+        } catch {
+          // ignore
+        }
+      }
+      throw e;
     }
 
-    // Commit meta last so a crash mid-write leaves the previous
-    // snapshot intact (we'll just orphan some half-written batches).
+    // Commit pointer atomically. After this returns, loads see the
+    // new version. Anything before this returns still loads the old.
     await AsyncStorage.setItem(
       RODEO_ITEMS_META_KEY,
-      JSON.stringify({ count: entries.length, batches, batchSize }),
+      JSON.stringify({
+        count: entries.length,
+        batches,
+        batchSize,
+        version: newVersion,
+      }),
     );
 
-    if (oldBatches > batches) {
-      const stale: string[] = [];
-      for (let i = batches; i < oldBatches; i++) {
-        stale.push(RODEO_ITEMS_BATCH_PREFIX + i);
-      }
-      if (stale.length > 0) {
-        try {
-          await AsyncStorage.multiRemove(stale);
-        } catch {
-          // ignore — stale keys are harmless
+    // Best-effort cleanup of the previous version's keys + legacy
+    // unversioned blob. Failure here is harmless: stale keys take
+    // space but won't affect correctness.
+    const stale: string[] = [RODEO_ITEMS_KEY];
+    if (oldMeta) {
+      const oldBatches = Math.max(0, Math.floor(oldMeta?.batches ?? 0));
+      if (oldMeta?.version && oldMeta.version !== newVersion) {
+        for (let i = 0; i < oldBatches; i++) {
+          stale.push(versionedBatchKey(String(oldMeta.version), i));
+        }
+      } else {
+        // Old unversioned layout — clean its prefix.
+        for (let i = 0; i < oldBatches; i++) {
+          stale.push(RODEO_ITEMS_BATCH_PREFIX + i);
         }
       }
     }
-
-    // Drop the legacy single-blob key if it survived an earlier
-    // install. Harmless if it isn't there.
     try {
-      await AsyncStorage.removeItem(RODEO_ITEMS_KEY);
+      await AsyncStorage.multiRemove(stale);
     } catch {
       // ignore
     }
