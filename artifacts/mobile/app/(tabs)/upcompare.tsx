@@ -531,26 +531,55 @@ export default function UniproRodeoCompareScreen() {
       //   Unipro MRP     — Promo.MRP, populated ONLY when Exact Match
       //                    is "No" (blank otherwise so the column reads
       //                    as a discrepancy list at a glance)
+      // Headers mirror the RodeoItems Excel import (see
+      // app/rodeo/import.tsx ALL_COLS) so a round-trip export → reimport
+      // works without renaming columns.
       const headers = [
-        "productId",
-        "skuId",
-        "productName",
-        "barCode",
-        "itemCode",
-        "gst",
-        "mrp",
-        "purchasePrice",
-        "sellingPrice",
-        "offerPrice",
-        "offerStartDate",
-        "offerEndDate",
-        "active",
+        "Product Id",
+        "SKU Id",
+        "Product Name",
+        "BAR CODE",
+        "ITEM CODE",
+        "GST",
+        "MRP",
+        "Purchase Price",
+        "Selling Price",
+        "Offer Price",
+        "Offer Start Date",
+        "Offer End Date",
+        "Active",
         "PromotionPrice",
         "PromotionToDate",
         "Exact Match",
         "Unipro MRP",
       ];
-      const data: (string | number)[][] = [headers];
+      // Mirror of the import's parseDate but in reverse: turn the
+      // "DD/MM/YYYY" string we persisted into a real Date so Excel
+      // treats the cell as a date (sortable, filterable, formattable)
+      // instead of an opaque string. Anything we can't parse becomes "".
+      const toDate = (v: unknown): Date | "" => {
+        if (v instanceof Date && !isNaN(v.getTime())) return v;
+        if (v === undefined || v === null) return "";
+        const s = String(v).trim();
+        if (!s) return "";
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        if (m) {
+          let [, dd, mm, yyyy] = m;
+          if (yyyy.length === 2)
+            yyyy = (Number(yyyy) >= 70 ? "19" : "20") + yyyy;
+          const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+          return isNaN(d.getTime()) ? "" : d;
+        }
+        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) {
+          const [, yyyy, mm, dd] = iso;
+          const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+          return isNaN(d.getTime()) ? "" : d;
+        }
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? "" : d;
+      };
+      const data: (string | number | Date)[][] = [headers];
       let matched = 0;
       let skipped = 0;
       let exactMatches = 0;
@@ -581,11 +610,11 @@ export default function UniproRodeoCompareScreen() {
           rd.purchasePrice ?? "",
           rd.sellingPrice ?? "",
           rd.offerPrice ?? "",
-          fmtText(rd.offerStartDate),
-          fmtText(rd.offerEndDate),
+          toDate(rd.offerStartDate),
+          toDate(rd.offerEndDate),
           rd.active ? "TRUE" : "FALSE",
           (p["PromotionPrice"] as number | string | undefined) ?? "",
-          fmtText(p["PromotionToDate"]),
+          toDate(p["PromotionToDate"]),
           mrpExact ? "Yes" : "No",
           mrpExact ? "" : ((p["MRP"] as number | string | undefined) ?? ""),
         ]);
@@ -597,10 +626,28 @@ export default function UniproRodeoCompareScreen() {
         else Alert.alert("Nothing to export", msg);
         return;
       }
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      const ws = XLSX.utils.aoa_to_sheet(data, { cellDates: true });
       ws["!cols"] = headers.map((h) =>
-        h === "productName" || h === "barCode" ? { wch: 32 } : { wch: 16 },
+        h === "Product Name" || h === "BAR CODE" ? { wch: 32 } : { wch: 16 },
       );
+      // Stamp dd/mm/yyyy format on the three date columns so Excel
+      // renders them consistently regardless of the user's locale.
+      // aoa_to_sheet with cellDates:true already wrote t='d' cells for
+      // the Date objects we passed in; we only need to attach the
+      // number format here.
+      const dateColIdxs = [
+        headers.indexOf("Offer Start Date"),
+        headers.indexOf("Offer End Date"),
+        headers.indexOf("PromotionToDate"),
+      ];
+      const DATE_FMT = "dd/mm/yyyy";
+      for (let r = 1; r < data.length; r++) {
+        for (const c of dateColIdxs) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const cell = ws[addr] as XLSX.CellObject | undefined;
+          if (cell && cell.t === "d") cell.z = DATE_FMT;
+        }
+      }
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "RodeoItems+Promo");
       const fileName = `Sathyam RodeoItems with Promo - ${timestampForFile()}.xlsx`;
