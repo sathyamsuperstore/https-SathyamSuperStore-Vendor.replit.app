@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -34,8 +35,6 @@ function formatDDMMYYYY(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-// Parse the canonical "DD/MM/YYYY" we store on rows; also accepts ISO
-// shapes for forward-compatibility. Returns local-midnight Date or null.
 function parseStoredDate(s: string | undefined | null): Date | null {
   if (!s) return null;
   const trimmed = String(s).trim();
@@ -79,19 +78,21 @@ type PaidFilter = "all" | "paid" | "unpaid";
 type Mark = "Normal" | "Urgent" | null;
 type Draft = { mark: Mark; comments: string };
 
-// Column widths kept in one place so the header and rows stay aligned.
+// Tighter widths so 9 columns fit more of the viewport before the
+// user has to scroll horizontally. Modify-mode columns appear only
+// when toggled on.
 const COL = {
-  vendorName: 220,
-  invoiceDate: 100,
-  invoiceNo: 130,
-  supplierPayment: 120,
-  grnDate: 100,
-  vendorCode: 100,
-  gidNo: 100,
-  tranNo: 110,
-  status: 120,
-  mark: 150, // shown only in Modify mode
-  comments: 180, // shown only in Modify mode
+  vendorName: 200,
+  invoiceDate: 90,
+  invoiceNo: 110,
+  supplierPayment: 100,
+  grnDate: 90,
+  vendorCode: 90,
+  gidNo: 90,
+  tranNo: 100,
+  status: 110,
+  mark: 138,
+  comments: 170,
 };
 
 // ---------- Screen ----------
@@ -135,8 +136,6 @@ export default function VendorPaymentsScreen() {
   const [showPayToPicker, setShowPayToPicker] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
-  // Modify mode: enables per-row Mark-to-Pay buttons + Comments input.
-  // Drafts hold pending edits keyed by GidNo; committed via Save.
   const [modifyMode, setModifyMode] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState(false);
@@ -160,11 +159,16 @@ export default function VendorPaymentsScreen() {
     return allVendors.filter((v) => v.toLowerCase().includes(q));
   }, [allVendors, vendorSearch]);
 
-  // Effective mark/comments for a row — draft if present, else stored.
-  const getMark = (vp: VendorPayment): Mark =>
-    drafts[vp.gidNo]?.mark ?? vp.markToPay ?? null;
-  const getComments = (vp: VendorPayment): string =>
-    drafts[vp.gidNo]?.comments ?? vp.comments ?? "";
+  const getMark = useCallback(
+    (vp: VendorPayment): Mark =>
+      drafts[vp.gidNo]?.mark ?? vp.markToPay ?? null,
+    [drafts],
+  );
+  const getComments = useCallback(
+    (vp: VendorPayment): string =>
+      drafts[vp.gidNo]?.comments ?? vp.comments ?? "",
+    [drafts],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -236,16 +240,13 @@ export default function VendorPaymentsScreen() {
     [vendorPayments],
   );
 
-  // Count of rows currently classified Normal or Urgent (considering
-  // unsaved drafts) — drives the "Process Pay" button's disabled state.
   const markedCount = useMemo(() => {
     let n = 0;
     for (const vp of vendorPayments) {
       if (getMark(vp)) n += 1;
     }
     return n;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorPayments, drafts]);
+  }, [vendorPayments, getMark]);
 
   const hasUnsavedDrafts = Object.keys(drafts).length > 0;
 
@@ -255,8 +256,7 @@ export default function VendorPaymentsScreen() {
     );
   }
 
-  // Update a row's draft. Mark-to-pay cycles None → Normal → Urgent → None.
-  function setRowMark(vp: VendorPayment, next: Mark) {
+  const setRowMark = useCallback((vp: VendorPayment, next: Mark) => {
     setDrafts((cur) => {
       const existing: Draft =
         cur[vp.gidNo] ?? {
@@ -264,8 +264,6 @@ export default function VendorPaymentsScreen() {
           comments: vp.comments ?? "",
         };
       const updated: Draft = { ...existing, mark: next };
-      // If draft now matches the stored value, drop it to keep the
-      // "unsaved" set tight.
       const storedMark = vp.markToPay ?? null;
       const storedComments = vp.comments ?? "";
       if (updated.mark === storedMark && updated.comments === storedComments) {
@@ -274,9 +272,9 @@ export default function VendorPaymentsScreen() {
       }
       return { ...cur, [vp.gidNo]: updated };
     });
-  }
+  }, []);
 
-  function setRowComment(vp: VendorPayment, text: string) {
+  const setRowComment = useCallback((vp: VendorPayment, text: string) => {
     setDrafts((cur) => {
       const existing: Draft =
         cur[vp.gidNo] ?? {
@@ -292,7 +290,7 @@ export default function VendorPaymentsScreen() {
       }
       return { ...cur, [vp.gidNo]: updated };
     });
-  }
+  }, []);
 
   async function handleSaveDrafts() {
     if (!hasUnsavedDrafts || saving) return;
@@ -335,9 +333,6 @@ export default function VendorPaymentsScreen() {
 
   async function handleProcessPay() {
     if (exporting) return;
-    // Build the export from the effective (draft-aware) marks so a
-    // user can preview their classification before saving and still
-    // export — matches the spirit of "everything marked is in scope".
     const rows = vendorPayments
       .filter((vp) => !!getMark(vp))
       .map((vp) => ({
@@ -438,99 +433,515 @@ export default function VendorPaymentsScreen() {
     }
   }
 
-  return (
-    <View style={styles.container}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: topPt + 16, paddingBottom: insets.bottom + 100 },
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.greeting}>Ledger</Text>
-            <Text style={styles.title}>Vendor Payments</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() => router.push("/vendor-payments/import")}
-              activeOpacity={0.85}
+  // Sticky header for the FlatList — paid/unpaid toggle, filter chips,
+  // action buttons, search, count, table column header. Sits in a
+  // single dense card so the table itself can take the rest of the
+  // viewport.
+  const ListHeader = (
+    <View style={styles.headerCard}>
+      {/* Top row: title + colourful action buttons. Mirrors the
+          StockUpd tab's compact action row. */}
+      <View style={styles.topRow}>
+        <Text style={styles.title} numberOfLines={1}>
+          Vendor Payments
+        </Text>
+        <View style={styles.topActions}>
+          <TouchableOpacity
+            style={[styles.actionPill, styles.actionPillExcel]}
+            onPress={() => router.push("/vendor-payments/import")}
+            activeOpacity={0.85}
+          >
+            <Feather name="upload" size={14} color={Colors.success} />
+            <Text
+              style={[styles.actionPillText, { color: Colors.success }]}
             >
-              <Feather name="upload" size={16} color={Colors.primary} />
-              <Text style={styles.iconBtnText}>Excel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() =>
-                router.push("/vendor-payments/import?format=csv")
+              Excel
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionPill, styles.actionPillCsv]}
+            onPress={() => router.push("/vendor-payments/import?format=csv")}
+            activeOpacity={0.85}
+          >
+            <Feather name="file-text" size={14} color={Colors.info} />
+            <Text style={[styles.actionPillText, { color: Colors.info }]}>
+              CSV
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.iconSquare,
+              styles.iconSquareDanger,
+              vendorPayments.length === 0 && styles.iconSquareDisabled,
+            ]}
+            onPress={handleClear}
+            disabled={vendorPayments.length === 0}
+            activeOpacity={0.85}
+          >
+            <Feather
+              name="trash-2"
+              size={15}
+              color={
+                vendorPayments.length === 0 ? Colors.textMuted : Colors.danger
               }
-              activeOpacity={0.85}
-            >
-              <Feather name="file-text" size={16} color={Colors.primary} />
-              <Text style={styles.iconBtnText}>CSV</Text>
-            </TouchableOpacity>
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Dense stat pills — quick at-a-glance counters across the
+          ledger. Horizontally scrollable so they never wrap. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.statRow}
+      >
+        <StatPill
+          label="Rows"
+          value={String(vendorPayments.length)}
+          color={Colors.text}
+        />
+        <StatPill
+          label="Vendors"
+          value={String(uniqueVendors)}
+          color={Colors.primary}
+        />
+        <StatPill
+          label="Unpaid"
+          value={String(unpaidCount)}
+          color={Colors.warning}
+        />
+        <StatPill
+          label="Paid"
+          value={String(vendorPayments.length - unpaidCount)}
+          color={Colors.success}
+        />
+        <StatPill
+          label="Marked"
+          value={String(markedCount)}
+          color={Colors.danger}
+        />
+        <StatPill label="Total" value={fmtAmount(totalPaid)} color={Colors.info} />
+      </ScrollView>
+
+      {vendorPayments.length > 0 && (
+        <>
+          {/* Paid / Unpaid / All segmented control */}
+          <View style={styles.segWrap}>
+            {(
+              [
+                { key: "all", label: "All" },
+                { key: "unpaid", label: `Unpaid · ${unpaidCount}` },
+                {
+                  key: "paid",
+                  label: `Paid · ${vendorPayments.length - unpaidCount}`,
+                },
+              ] as { key: PaidFilter; label: string }[]
+            ).map((opt) => {
+              const active = paidFilter === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.segBtn, active && styles.segBtnActive]}
+                  onPress={() => setPaidFilter(opt.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.segBtnText,
+                      active && styles.segBtnTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* 3 filter chips in a single dense row */}
+          <View style={styles.chipRow}>
+            <FilterChip
+              icon="users"
+              label={
+                activeVendors.length === 0
+                  ? "Vendors"
+                  : activeVendors.length === 1
+                    ? activeVendors[0]
+                    : `${activeVendors.length} Vendors`
+              }
+              active={activeVendors.length > 0}
+              onPress={() => {
+                setVendorSearch("");
+                setShowVendorModal(true);
+              }}
+              onClear={() => setActiveVendors([])}
+            />
+            <FilterChip
+              icon="calendar"
+              label={
+                invFrom || invTo
+                  ? `Inv ${invFrom ? formatDDMMYYYY(invFrom).slice(0, 5) : "*"}-${invTo ? formatDDMMYYYY(invTo).slice(0, 5) : "*"}`
+                  : "Invoice Date"
+              }
+              active={!!(invFrom || invTo)}
+              onPress={() => {
+                const today = startOfDay(new Date());
+                setInvFromDraft(invFrom ?? today);
+                setInvToDraft(invTo ?? today);
+                setShowInvFromPicker(false);
+                setShowInvToPicker(false);
+                setInvError(null);
+                setShowInvModal(true);
+              }}
+              onClear={() => {
+                setInvFrom(null);
+                setInvTo(null);
+              }}
+            />
+            <FilterChip
+              icon="credit-card"
+              label={
+                payFrom || payTo
+                  ? `Pay ${payFrom ? formatDDMMYYYY(payFrom).slice(0, 5) : "*"}-${payTo ? formatDDMMYYYY(payTo).slice(0, 5) : "*"}`
+                  : "Payment Date"
+              }
+              active={!!(payFrom || payTo)}
+              onPress={() => {
+                const today = startOfDay(new Date());
+                setPayFromDraft(payFrom ?? today);
+                setPayToDraft(payTo ?? today);
+                setShowPayFromPicker(false);
+                setShowPayToPicker(false);
+                setPayError(null);
+                setShowPayModal(true);
+              }}
+              onClear={() => {
+                setPayFrom(null);
+                setPayTo(null);
+              }}
+            />
+          </View>
+
+          {/* Modify / Save / Process Pay row — colorful flat buttons */}
+          <View style={styles.actionRow}>
             <TouchableOpacity
               style={[
-                styles.iconBtn,
-                styles.iconBtnDanger,
-                vendorPayments.length === 0 && styles.iconBtnDisabled,
+                styles.actionBtn,
+                modifyMode ? styles.actionBtnModifyOn : styles.actionBtnModify,
               ]}
-              onPress={handleClear}
-              disabled={vendorPayments.length === 0}
+              onPress={handleToggleModify}
               activeOpacity={0.85}
             >
               <Feather
-                name="trash-2"
-                size={16}
-                color={
-                  vendorPayments.length === 0
-                    ? Colors.textMuted
-                    : Colors.danger
-                }
+                name={modifyMode ? "check" : "edit-3"}
+                size={14}
+                color={modifyMode ? Colors.textInverse : Colors.primary}
               />
+              <Text
+                style={[
+                  styles.actionBtnText,
+                  {
+                    color: modifyMode ? Colors.textInverse : Colors.primary,
+                  },
+                ]}
+              >
+                {modifyMode ? "Done" : "Modify"}
+              </Text>
+            </TouchableOpacity>
+            {modifyMode && (
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  hasUnsavedDrafts
+                    ? styles.actionBtnSaveOn
+                    : styles.actionBtnDisabled,
+                ]}
+                onPress={handleSaveDrafts}
+                disabled={!hasUnsavedDrafts || saving}
+                activeOpacity={0.85}
+              >
+                {saving ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={Colors.textInverse}
+                  />
+                ) : (
+                  <Feather
+                    name="save"
+                    size={14}
+                    color={
+                      hasUnsavedDrafts
+                        ? Colors.textInverse
+                        : Colors.textMuted
+                    }
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    {
+                      color: hasUnsavedDrafts
+                        ? Colors.textInverse
+                        : Colors.textMuted,
+                    },
+                  ]}
+                >
+                  {hasUnsavedDrafts
+                    ? `Save · ${Object.keys(drafts).length}`
+                    : "Save"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                markedCount > 0
+                  ? styles.actionBtnExportOn
+                  : styles.actionBtnDisabled,
+              ]}
+              onPress={handleProcessPay}
+              disabled={markedCount === 0 || exporting}
+              activeOpacity={0.85}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={Colors.textInverse} />
+              ) : (
+                <Feather
+                  name="download"
+                  size={14}
+                  color={
+                    markedCount > 0 ? Colors.textInverse : Colors.textMuted
+                  }
+                />
+              )}
+              <Text
+                style={[
+                  styles.actionBtnText,
+                  {
+                    color:
+                      markedCount > 0 ? Colors.textInverse : Colors.textMuted,
+                  },
+                ]}
+              >
+                {markedCount > 0 ? `Process Pay · ${markedCount}` : "Process Pay"}
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{vendorPayments.length}</Text>
-            <Text style={styles.statLabel}>Rows</Text>
+          {/* Search bar */}
+          <View
+            style={[
+              styles.searchWrap,
+              search.length > 0 && styles.searchWrapActive,
+            ]}
+          >
+            <Feather
+              name="search"
+              size={14}
+              color={search.length > 0 ? Colors.primary : Colors.textMuted}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search VendorCode or VendorName…"
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch("")}>
+                <Feather name="x" size={14} color={Colors.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: Colors.primary }]}>
-              {uniqueVendors}
-            </Text>
-            <Text style={styles.statLabel}>Vendors</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: Colors.warning }]}>
-              {unpaidCount}
-            </Text>
-            <Text style={styles.statLabel}>Unpaid</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: Colors.success }]}>
-              {fmtAmount(totalPaid)}
-            </Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-        </View>
 
-        {vendorPayments.length === 0 ? (
+          <Text style={styles.resultCount}>
+            Showing{" "}
+            <Text style={styles.resultCountStrong}>{filtered.length}</Text> of{" "}
+            {vendorPayments.length}
+            {paidFilter !== "all" ? ` · ${paidFilter}` : ""}
+            {markedCount > 0 ? ` · ${markedCount} marked` : ""}
+          </Text>
+        </>
+      )}
+    </View>
+  );
+
+  const renderRow = useCallback(
+    ({ item: vp, index: i }: { item: VendorPayment; index: number }) => {
+      const paid = isPaid(vp);
+      const mark = getMark(vp);
+      const comments = getComments(vp);
+      return (
+        <View
+          style={[
+            styles.tableRow,
+            i % 2 === 0 && styles.tableRowAlt,
+            !paid && styles.tableRowUnpaid,
+            mark === "Urgent" && styles.tableRowUrgent,
+            mark === "Normal" && styles.tableRowNormal,
+          ]}
+        >
+          {modifyMode && (
+            <View style={{ width: COL.mark }}>
+              <MarkPicker
+                value={mark}
+                onChange={(next) => setRowMark(vp, next)}
+              />
+            </View>
+          )}
+          <View style={{ width: COL.vendorName }}>
+            <Text
+              style={[styles.td, styles.tdName]}
+              numberOfLines={2}
+            >
+              {vp.vendorName}
+            </Text>
+            {!modifyMode && mark && <MarkBadge mark={mark} />}
+            {!modifyMode && comments.length > 0 && (
+              <Text style={styles.commentInline} numberOfLines={2}>
+                {comments}
+              </Text>
+            )}
+          </View>
+          <Text
+            style={[styles.td, { width: COL.invoiceDate }]}
+            numberOfLines={1}
+          >
+            {vp.invoiceDate || "—"}
+          </Text>
+          <Text
+            style={[styles.td, { width: COL.invoiceNo }]}
+            numberOfLines={1}
+          >
+            {vp.invoiceNo}
+          </Text>
+          <Text
+            style={[
+              styles.td,
+              {
+                width: COL.supplierPayment,
+                textAlign: "right",
+                fontWeight: "700",
+              },
+            ]}
+            numberOfLines={1}
+          >
+            {fmtAmount(vp.supplierPayment)}
+          </Text>
+          <Text
+            style={[styles.td, { width: COL.grnDate }]}
+            numberOfLines={1}
+          >
+            {vp.grnDate || "—"}
+          </Text>
+          <Text
+            style={[styles.td, { width: COL.vendorCode }]}
+            numberOfLines={1}
+          >
+            {vp.vendorCode}
+          </Text>
+          <Text
+            style={[styles.td, { width: COL.gidNo }]}
+            numberOfLines={1}
+          >
+            {vp.gidNo}
+          </Text>
+          <Text
+            style={[styles.td, { width: COL.tranNo }]}
+            numberOfLines={1}
+          >
+            {vp.tranNo || "—"}
+          </Text>
+          <View style={{ width: COL.status }}>
+            {paid ? (
+              <Text
+                style={[styles.td, { color: Colors.success, fontWeight: "700" }]}
+                numberOfLines={1}
+              >
+                {vp.paymentDate || "—"}
+              </Text>
+            ) : (
+              <View style={styles.unpaidBadge}>
+                <Feather
+                  name="alert-circle"
+                  size={11}
+                  color={Colors.warning}
+                />
+                <Text style={styles.unpaidBadgeText}>Unpaid</Text>
+              </View>
+            )}
+          </View>
+          {modifyMode && (
+            <View style={{ width: COL.comments }}>
+              <TextInput
+                style={styles.commentInput}
+                value={comments}
+                onChangeText={(t) => setRowComment(vp, t)}
+                placeholder="Add a note…"
+                placeholderTextColor={Colors.textMuted}
+                multiline
+              />
+            </View>
+          )}
+        </View>
+      );
+    },
+    [getMark, getComments, modifyMode, setRowMark, setRowComment],
+  );
+
+  // Table column header — repeated as the FlatList list header inside
+  // a horizontal scroller so it stays aligned with the rows.
+  const TableHeader = (
+    <View style={styles.tableHeader}>
+      {modifyMode && (
+        <Text style={[styles.th, { width: COL.mark }]}>Mark to Pay</Text>
+      )}
+      <Text style={[styles.th, { width: COL.vendorName }]}>VendorName</Text>
+      <Text style={[styles.th, { width: COL.invoiceDate }]}>InvoiceDate</Text>
+      <Text style={[styles.th, { width: COL.invoiceNo }]}>InvoiceNo</Text>
+      <Text
+        style={[
+          styles.th,
+          { width: COL.supplierPayment, textAlign: "right" },
+        ]}
+      >
+        Supplier Pay
+      </Text>
+      <Text style={[styles.th, { width: COL.grnDate }]}>GRNDate</Text>
+      <Text style={[styles.th, { width: COL.vendorCode }]}>VendorCode</Text>
+      <Text style={[styles.th, { width: COL.gidNo }]}>GidNo</Text>
+      <Text style={[styles.th, { width: COL.tranNo }]}>TranNo</Text>
+      <Text style={[styles.th, { width: COL.status }]}>Pay / Status</Text>
+      {modifyMode && (
+        <Text style={[styles.th, { width: COL.comments }]}>Comments</Text>
+      )}
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, { paddingTop: topPt }]}>
+      {vendorPayments.length === 0 ? (
+        // Empty state — full-screen prompt to import. Keeps the
+        // header card visible so users still see the action buttons.
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+        >
+          {ListHeader}
           <View style={styles.emptyCard}>
             <Feather name="inbox" size={32} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>No Vendor Payments yet</Text>
             <Text style={styles.emptyHint}>
-              Import an Excel sheet to populate the ledger.
+              Import an Excel or CSV file to populate the ledger.
             </Text>
             <View style={styles.emptyActions}>
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[styles.primaryBtn]}
                 onPress={() => router.push("/vendor-payments/import")}
                 activeOpacity={0.85}
               >
@@ -544,407 +955,57 @@ export default function VendorPaymentsScreen() {
                 }
                 activeOpacity={0.85}
               >
-                <Feather name="file-text" size={16} color={Colors.primary} />
+                <Feather name="file-text" size={16} color={Colors.info} />
                 <Text style={styles.secondaryBtnText}>Import CSV</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ) : (
-          <>
-            <View style={styles.segWrap}>
-              {(
-                [
-                  { key: "all", label: "All" },
-                  {
-                    key: "unpaid",
-                    label: `Unpaid${unpaidCount > 0 ? ` · ${unpaidCount}` : ""}`,
-                  },
-                  {
-                    key: "paid",
-                    label: `Paid${vendorPayments.length - unpaidCount > 0 ? ` · ${vendorPayments.length - unpaidCount}` : ""}`,
-                  },
-                ] as { key: PaidFilter; label: string }[]
-              ).map((opt) => {
-                const active = paidFilter === opt.key;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.segBtn, active && styles.segBtnActive]}
-                    onPress={() => setPaidFilter(opt.key)}
-                    activeOpacity={0.85}
-                  >
-                    <Text
-                      style={[
-                        styles.segBtnText,
-                        active && styles.segBtnTextActive,
-                      ]}
-                    >
-                      {opt.label}
+        </ScrollView>
+      ) : (
+        // Outer vertical scroller hosts the dense header card and
+        // the table. The table itself sits inside a horizontal
+        // scroller so wide columns can be reached without the header
+        // bar fighting for horizontal space.
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {ListHeader}
+          <View style={styles.tableCard}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ minWidth: "100%" }}
+            >
+              <View>
+                {TableHeader}
+                {filtered.length === 0 ? (
+                  <View style={styles.tableEmpty}>
+                    <Feather
+                      name="search"
+                      size={18}
+                      color={Colors.textMuted}
+                    />
+                    <Text style={styles.tableEmptyText}>
+                      No rows match your filters.
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={styles.filterGrid}>
-              <FilterChip
-                icon="users"
-                label={
-                  activeVendors.length === 0
-                    ? "All Vendors"
-                    : activeVendors.length === 1
-                      ? activeVendors[0]
-                      : `${activeVendors.length} Vendors`
-                }
-                active={activeVendors.length > 0}
-                onPress={() => {
-                  setVendorSearch("");
-                  setShowVendorModal(true);
-                }}
-                onClear={() => setActiveVendors([])}
-              />
-              <FilterChip
-                icon="calendar"
-                label={
-                  invFrom || invTo
-                    ? `Inv: ${invFrom ? formatDDMMYYYY(invFrom) : "Any"} → ${invTo ? formatDDMMYYYY(invTo) : "Any"}`
-                    : "All Invoice Dates"
-                }
-                active={!!(invFrom || invTo)}
-                onPress={() => {
-                  const today = startOfDay(new Date());
-                  setInvFromDraft(invFrom ?? today);
-                  setInvToDraft(invTo ?? today);
-                  setShowInvFromPicker(false);
-                  setShowInvToPicker(false);
-                  setInvError(null);
-                  setShowInvModal(true);
-                }}
-                onClear={() => {
-                  setInvFrom(null);
-                  setInvTo(null);
-                }}
-              />
-              <FilterChip
-                icon="credit-card"
-                label={
-                  payFrom || payTo
-                    ? `Pay: ${payFrom ? formatDDMMYYYY(payFrom) : "Any"} → ${payTo ? formatDDMMYYYY(payTo) : "Any"}`
-                    : "All Payment Dates"
-                }
-                active={!!(payFrom || payTo)}
-                onPress={() => {
-                  const today = startOfDay(new Date());
-                  setPayFromDraft(payFrom ?? today);
-                  setPayToDraft(payTo ?? today);
-                  setShowPayFromPicker(false);
-                  setShowPayToPicker(false);
-                  setPayError(null);
-                  setShowPayModal(true);
-                }}
-                onClear={() => {
-                  setPayFrom(null);
-                  setPayTo(null);
-                }}
-              />
-            </View>
-
-            {/* Modify + Save + Process Pay action row. Modify toggles
-                per-row editors; Save commits drafts; Process Pay
-                exports every marked row regardless of current filters
-                so the user gets the full payable set. */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  modifyMode && styles.actionBtnActive,
-                ]}
-                onPress={handleToggleModify}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name="edit-3"
-                  size={14}
-                  color={modifyMode ? Colors.textInverse : Colors.primary}
-                />
-                <Text
-                  style={[
-                    styles.actionBtnText,
-                    modifyMode && styles.actionBtnTextActive,
-                  ]}
-                >
-                  {modifyMode ? "Done" : "Modify"}
-                </Text>
-              </TouchableOpacity>
-              {modifyMode && (
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    styles.actionBtnSave,
-                    !hasUnsavedDrafts && styles.actionBtnDisabled,
-                  ]}
-                  onPress={handleSaveDrafts}
-                  disabled={!hasUnsavedDrafts || saving}
-                  activeOpacity={0.85}
-                >
-                  <Feather
-                    name="save"
-                    size={14}
-                    color={
-                      !hasUnsavedDrafts ? Colors.textMuted : Colors.textInverse
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.actionBtnText,
-                      hasUnsavedDrafts && { color: Colors.textInverse },
-                      !hasUnsavedDrafts && { color: Colors.textMuted },
-                    ]}
-                  >
-                    {saving
-                      ? "Saving…"
-                      : hasUnsavedDrafts
-                        ? `Save · ${Object.keys(drafts).length}`
-                        : "Save"}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  styles.actionBtnExport,
-                  (markedCount === 0 || exporting) && styles.actionBtnDisabled,
-                ]}
-                onPress={handleProcessPay}
-                disabled={markedCount === 0 || exporting}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name="download"
-                  size={14}
-                  color={
-                    markedCount === 0 ? Colors.textMuted : Colors.textInverse
-                  }
-                />
-                <Text
-                  style={[
-                    styles.actionBtnText,
-                    markedCount > 0 && { color: Colors.textInverse },
-                    markedCount === 0 && { color: Colors.textMuted },
-                  ]}
-                >
-                  {exporting
-                    ? "Exporting…"
-                    : `Process Pay${markedCount > 0 ? ` · ${markedCount}` : ""}`}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.searchWrap}>
-              <Feather name="search" size={14} color={Colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search VendorCode or VendorName…"
-                placeholderTextColor={Colors.textMuted}
-                value={search}
-                onChangeText={setSearch}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch("")}>
-                  <Feather name="x" size={14} color={Colors.textMuted} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <Text style={styles.resultCount}>
-              Showing {filtered.length} of {vendorPayments.length}
-              {paidFilter !== "all" ? ` · ${paidFilter}` : ""}
-              {markedCount > 0 ? ` · ${markedCount} marked` : ""}
-            </Text>
-
-            <View style={styles.tableCard}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                contentContainerStyle={{ minWidth: "100%" }}
-                keyboardShouldPersistTaps="handled"
-              >
-                <View>
-                  <View style={styles.tableHeader}>
-                    {modifyMode && (
-                      <Text style={[styles.th, { width: COL.mark }]}>
-                        Mark to Pay
-                      </Text>
-                    )}
-                    <Text style={[styles.th, { width: COL.vendorName }]}>
-                      VendorName
-                    </Text>
-                    <Text style={[styles.th, { width: COL.invoiceDate }]}>
-                      InvoiceDate
-                    </Text>
-                    <Text style={[styles.th, { width: COL.invoiceNo }]}>
-                      InvoiceNo
-                    </Text>
-                    <Text
-                      style={[
-                        styles.th,
-                        { width: COL.supplierPayment, textAlign: "right" },
-                      ]}
-                    >
-                      Supplier Payment
-                    </Text>
-                    <Text style={[styles.th, { width: COL.grnDate }]}>
-                      GRNDate
-                    </Text>
-                    <Text style={[styles.th, { width: COL.vendorCode }]}>
-                      VendorCode
-                    </Text>
-                    <Text style={[styles.th, { width: COL.gidNo }]}>GidNo</Text>
-                    <Text style={[styles.th, { width: COL.tranNo }]}>
-                      TranNo
-                    </Text>
-                    <Text style={[styles.th, { width: COL.status }]}>
-                      Payment / Status
-                    </Text>
-                    {modifyMode && (
-                      <Text style={[styles.th, { width: COL.comments }]}>
-                        Comments
-                      </Text>
-                    )}
                   </View>
-                  {filtered.map((vp, i) => {
-                    const paid = isPaid(vp);
-                    const mark = getMark(vp);
-                    const comments = getComments(vp);
-                    return (
-                      <View
-                        key={vp.gidNo}
-                        style={[
-                          styles.tableRow,
-                          i % 2 === 0 && styles.tableRowAlt,
-                          !paid && styles.tableRowUnpaid,
-                        ]}
-                      >
-                        {modifyMode && (
-                          <View style={{ width: COL.mark }}>
-                            <MarkPicker
-                              value={mark}
-                              onChange={(next) => setRowMark(vp, next)}
-                            />
-                          </View>
-                        )}
-                        <View style={{ width: COL.vendorName }}>
-                          <Text style={[styles.td, styles.tdName]} numberOfLines={2}>
-                            {vp.vendorName}
-                          </Text>
-                          {!modifyMode && mark && <MarkBadge mark={mark} />}
-                          {!modifyMode && comments.length > 0 && (
-                            <Text
-                              style={styles.commentInline}
-                              numberOfLines={2}
-                            >
-                              {comments}
-                            </Text>
-                          )}
-                        </View>
-                        <Text
-                          style={[styles.td, { width: COL.invoiceDate }]}
-                          numberOfLines={1}
-                        >
-                          {vp.invoiceDate || "—"}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: COL.invoiceNo }]}
-                          numberOfLines={1}
-                        >
-                          {vp.invoiceNo}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.td,
-                            {
-                              width: COL.supplierPayment,
-                              textAlign: "right",
-                              fontWeight: "700",
-                            },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {fmtAmount(vp.supplierPayment)}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: COL.grnDate }]}
-                          numberOfLines={1}
-                        >
-                          {vp.grnDate || "—"}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: COL.vendorCode }]}
-                          numberOfLines={1}
-                        >
-                          {vp.vendorCode}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: COL.gidNo }]}
-                          numberOfLines={1}
-                        >
-                          {vp.gidNo}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: COL.tranNo }]}
-                          numberOfLines={1}
-                        >
-                          {vp.tranNo || "—"}
-                        </Text>
-                        <View style={{ width: COL.status }}>
-                          {paid ? (
-                            <Text
-                              style={[styles.td, { color: Colors.success }]}
-                              numberOfLines={1}
-                            >
-                              {vp.paymentDate || "—"}
-                            </Text>
-                          ) : (
-                            <View style={styles.unpaidBadge}>
-                              <Feather
-                                name="alert-circle"
-                                size={11}
-                                color={Colors.warning}
-                              />
-                              <Text style={styles.unpaidBadgeText}>Unpaid</Text>
-                            </View>
-                          )}
-                        </View>
-                        {modifyMode && (
-                          <View style={{ width: COL.comments }}>
-                            <TextInput
-                              style={styles.commentInput}
-                              value={comments}
-                              onChangeText={(t) => setRowComment(vp, t)}
-                              placeholder="Add a note…"
-                              placeholderTextColor={Colors.textMuted}
-                              multiline
-                            />
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                  {filtered.length === 0 && (
-                    <View style={styles.tableEmpty}>
-                      <Text style={styles.tableEmptyText}>
-                        No rows match your filters.
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </ScrollView>
-            </View>
-          </>
-        )}
-      </ScrollView>
+                ) : (
+                  filtered.map((vp, i) => (
+                    <View key={vp.gidNo}>{renderRow({ item: vp, index: i })}</View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </ScrollView>
+      )}
 
       {/* ---- Vendor multi-select modal ---- */}
       <Modal
@@ -1159,6 +1220,25 @@ export default function VendorPaymentsScreen() {
 
 // ---------- Reusable bits ----------
 
+function StatPill({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color: string;
+}) {
+  return (
+    <View style={styles.statPill}>
+      <Text style={[styles.statPillValue, { color }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.statPillLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function MarkPicker({
   value,
   onChange,
@@ -1176,7 +1256,7 @@ function MarkPicker({
         <Text
           style={[
             styles.markBtnText,
-            value === null && styles.markBtnOffActiveText,
+            { color: value === null ? Colors.text : Colors.textMuted },
           ]}
         >
           —
@@ -1193,8 +1273,10 @@ function MarkPicker({
         <Text
           style={[
             styles.markBtnText,
-            value === "Normal" && styles.markBtnFilledText,
-            value !== "Normal" && { color: Colors.primary },
+            {
+              color:
+                value === "Normal" ? Colors.textInverse : Colors.primaryLight,
+            },
           ]}
         >
           Normal
@@ -1211,8 +1293,9 @@ function MarkPicker({
         <Text
           style={[
             styles.markBtnText,
-            value === "Urgent" && styles.markBtnFilledText,
-            value !== "Urgent" && { color: Colors.danger },
+            {
+              color: value === "Urgent" ? Colors.textInverse : Colors.danger,
+            },
           ]}
         >
           Urgent
@@ -1231,7 +1314,7 @@ function MarkBadge({ mark }: { mark: Exclude<Mark, null> }) {
         isUrgent ? styles.markBadgeUrgent : styles.markBadgeNormal,
       ]}
     >
-      <Text style={styles.markBadgeText}>{mark}</Text>
+      <Text style={styles.markBadgeText}>{mark.toUpperCase()}</Text>
     </View>
   );
 }
@@ -1258,7 +1341,7 @@ function FilterChip({
     >
       <Feather
         name={icon}
-        size={14}
+        size={13}
         color={active ? Colors.textInverse : Colors.textSecondary}
       />
       <Text
@@ -1275,10 +1358,10 @@ function FilterChip({
           }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Feather name="x-circle" size={15} color={Colors.textInverse} />
+          <Feather name="x-circle" size={14} color={Colors.textInverse} />
         </TouchableOpacity>
       ) : (
-        <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+        <Feather name="chevron-down" size={13} color={Colors.textMuted} />
       )}
     </TouchableOpacity>
   );
@@ -1388,54 +1471,318 @@ function DateRangeModal({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { paddingHorizontal: 16, gap: 14 },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
+  // Single dense card holding title + stats + filters + actions +
+  // search. Sits at the top of the FlatList so vertical scroll
+  // moves it out of the way and gives the table the full screen.
+  headerCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 10,
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 10,
   },
-  headerActions: { flexDirection: "row", gap: 8 },
-  greeting: { fontSize: 13, color: Colors.textMuted, marginBottom: 2 },
-  title: { fontSize: 26, fontWeight: "800", color: Colors.text },
-  iconBtn: {
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.primary + "12",
-    borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    justifyContent: "space-between",
+    gap: 8,
   },
-  iconBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
-  iconBtnDanger: {
-    backgroundColor: Colors.dangerLight,
-    borderColor: Colors.danger + "30",
+  title: {
+    flex: 1,
+    fontSize: 19,
+    fontWeight: "800",
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  actionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
   },
-  iconBtnDisabled: {
+  actionPillExcel: {
+    backgroundColor: Colors.successLight,
+    borderColor: Colors.success + "40",
+  },
+  actionPillCsv: {
+    backgroundColor: Colors.infoLight,
+    borderColor: Colors.info + "40",
+  },
+  actionPillText: { fontSize: 12, fontWeight: "700" },
+  iconSquare: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  iconSquareDanger: {
+    backgroundColor: Colors.dangerLight,
+    borderColor: Colors.danger + "40",
+  },
+  iconSquareDisabled: {
     backgroundColor: Colors.background,
     borderColor: Colors.border,
   },
-  statsRow: { flexDirection: "row", gap: 8 },
-  statCard: {
+
+  // Compact horizontally-scrolling stats
+  statRow: { gap: 6, paddingVertical: 2 },
+  statPill: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    minWidth: 70,
+    alignItems: "center",
+  },
+  statPillValue: { fontSize: 14, fontWeight: "800", marginBottom: 1 },
+  statPillLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+
+  // Paid/Unpaid segmented control
+  segWrap: {
+    flexDirection: "row",
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  segBtn: {
     flex: 1,
+    paddingVertical: 7,
+    borderRadius: 7,
+    alignItems: "center",
+    backgroundColor: "transparent",
+  },
+  segBtnActive: { backgroundColor: Colors.primary },
+  segBtnText: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary },
+  segBtnTextActive: { color: Colors.textInverse },
+
+  // 3 filter chips in a single dense row
+  chipRow: { flexDirection: "row", gap: 6 },
+  filterBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 0,
+  },
+  filterBarActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterBarText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  filterBarTextActive: { color: Colors.textInverse },
+
+  // Modify / Save / Process Pay
+  actionRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  actionBtn: {
+    flex: 1,
+    minWidth: 110,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  actionBtnText: { fontSize: 12, fontWeight: "700" },
+  actionBtnModify: {
+    backgroundColor: Colors.primaryMuted,
+    borderColor: Colors.primary + "30",
+  },
+  actionBtnModifyOn: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  actionBtnSaveOn: {
+    backgroundColor: Colors.success,
+    borderColor: Colors.success,
+  },
+  actionBtnExportOn: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  actionBtnDisabled: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderColor: Colors.border,
+  },
+
+  // Search bar
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  searchWrapActive: { borderColor: Colors.primary },
+  searchInput: { flex: 1, fontSize: 12, color: Colors.text, padding: 0 },
+  resultCount: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: "600",
+    paddingHorizontal: 2,
+  },
+  resultCountStrong: { color: Colors.text, fontWeight: "800" },
+
+  // Table card wraps the wide column header and rows so the inner
+  // horizontal scroller has a clean rounded border to live inside.
+  tableCard: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    overflow: "hidden",
+  },
+  tableHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceSecondary,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  tableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.surface,
+    gap: 8,
+  },
+  tableRowAlt: { backgroundColor: Colors.surfaceSecondary },
+  tableRowUnpaid: { backgroundColor: Colors.warningLight },
+  tableRowNormal: { backgroundColor: Colors.infoLight },
+  tableRowUrgent: { backgroundColor: Colors.dangerLight },
+  th: { fontSize: 10, fontWeight: "800", color: Colors.textMuted, letterSpacing: 0.3, textTransform: "uppercase" },
+  td: { fontSize: 12, color: Colors.text },
+  tdName: { fontWeight: "700", fontSize: 12, color: Colors.text },
+  tableEmpty: {
+    padding: 24,
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderTopWidth: 0,
+  },
+  tableEmptyText: { fontSize: 13, color: Colors.textMuted },
+  unpaidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.warning + "22",
+    borderColor: Colors.warning,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+  },
+  unpaidBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: Colors.warning,
+    letterSpacing: 0.3,
+  },
+
+  // Mark-to-Pay picker in Modify mode
+  markPicker: { flexDirection: "row", gap: 3 },
+  markBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 28,
     alignItems: "center",
   },
-  statValue: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: Colors.text,
-    marginBottom: 2,
+  markBtnText: { fontSize: 10, fontWeight: "800" },
+  markBtnOffActive: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderColor: Colors.textMuted,
   },
-  statLabel: { fontSize: 10, color: Colors.textMuted, fontWeight: "600" },
+  markBtnNormalActive: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primaryLight,
+  },
+  markBtnUrgentActive: {
+    backgroundColor: Colors.danger,
+    borderColor: Colors.danger,
+  },
+  markBadge: {
+    alignSelf: "flex-start",
+    marginTop: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  markBadgeNormal: { backgroundColor: Colors.primaryLight },
+  markBadgeUrgent: { backgroundColor: Colors.danger },
+  markBadgeText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: Colors.textInverse,
+    letterSpacing: 0.5,
+  },
+  commentInline: {
+    marginTop: 3,
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontStyle: "italic",
+  },
+  commentInput: {
+    fontSize: 11,
+    color: Colors.text,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    minHeight: 30,
+    textAlignVertical: "top",
+  },
+
+  // Empty state (no imports yet)
   emptyCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -1444,7 +1791,6 @@ const styles = StyleSheet.create({
     padding: 28,
     alignItems: "center",
     gap: 10,
-    marginTop: 8,
   },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
   emptyHint: {
@@ -1475,212 +1821,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: Colors.primary + "12",
+    backgroundColor: Colors.infoLight,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: Colors.info + "30",
   },
-  secondaryBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.primary,
-  },
-  segWrap: {
-    flexDirection: "row",
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 4,
-    gap: 4,
-  },
-  segBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 9,
-    alignItems: "center",
-    backgroundColor: "transparent",
-  },
-  segBtnActive: { backgroundColor: Colors.primary },
-  segBtnText: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
-  segBtnTextActive: { color: Colors.textInverse },
-  filterGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  filterBar: {
-    flex: 1,
-    minWidth: "47%",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  filterBarActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  filterBarText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  filterBarTextActive: { color: Colors.textInverse },
-  actionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: Colors.primary + "12",
-    borderWidth: 1,
-    borderColor: Colors.primary + "30",
-  },
-  actionBtnActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  actionBtnSave: {
-    backgroundColor: Colors.success,
-    borderColor: Colors.success,
-  },
-  actionBtnExport: {
-    backgroundColor: Colors.warning,
-    borderColor: Colors.warning,
-  },
-  actionBtnDisabled: {
-    backgroundColor: Colors.surface,
-    borderColor: Colors.border,
-  },
-  actionBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
-  actionBtnTextActive: { color: Colors.textInverse },
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  searchInput: { flex: 1, fontSize: 13, color: Colors.text, padding: 0 },
-  resultCount: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
-  tableCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: "hidden",
-  },
-  tableHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surfaceSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    gap: 8,
-  },
-  tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-    gap: 8,
-  },
-  tableRowAlt: { backgroundColor: Colors.background },
-  tableRowUnpaid: { backgroundColor: Colors.warningLight },
-  th: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
-  td: { fontSize: 12, color: Colors.text },
-  tdName: { fontWeight: "600" },
-  tableEmpty: { padding: 24, alignItems: "center" },
-  tableEmptyText: { fontSize: 13, color: Colors.textMuted },
-  unpaidBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.warning + "22",
-    borderColor: Colors.warning,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    alignSelf: "flex-start",
-  },
-  unpaidBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: Colors.warning,
-    letterSpacing: 0.3,
-  },
-  markPicker: { flexDirection: "row", gap: 4 },
-  markBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    minWidth: 32,
-    alignItems: "center",
-  },
-  markBtnText: { fontSize: 10, fontWeight: "800", color: Colors.textMuted },
-  markBtnFilledText: { color: Colors.textInverse },
-  markBtnOffActive: {
-    backgroundColor: Colors.surfaceSecondary,
-    borderColor: Colors.textMuted,
-  },
-  markBtnOffActiveText: { color: Colors.text },
-  markBtnNormalActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  markBtnUrgentActive: {
-    backgroundColor: Colors.danger,
-    borderColor: Colors.danger,
-  },
-  markBadge: {
-    alignSelf: "flex-start",
-    marginTop: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  markBadgeNormal: { backgroundColor: Colors.primary },
-  markBadgeUrgent: { backgroundColor: Colors.danger },
-  markBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: Colors.textInverse,
-    letterSpacing: 0.3,
-  },
-  commentInline: {
-    marginTop: 4,
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontStyle: "italic",
-  },
-  commentInput: {
-    fontSize: 12,
-    color: Colors.text,
-    backgroundColor: Colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    minHeight: 36,
-    textAlignVertical: "top",
-  },
+  secondaryBtnText: { fontSize: 14, fontWeight: "700", color: Colors.info },
+
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: {
     backgroundColor: Colors.surface,
