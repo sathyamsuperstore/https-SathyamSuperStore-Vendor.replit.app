@@ -16,6 +16,9 @@ import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as XLSX from "xlsx-js-style";
 import { Colors } from "@/constants/colors";
 import { useApp, type VendorPayment } from "@/context/AppContext";
 
@@ -32,8 +35,7 @@ function formatDDMMYYYY(d: Date): string {
 }
 
 // Parse the canonical "DD/MM/YYYY" we store on rows; also accepts ISO
-// shapes for forward-compatibility. Returns local-midnight Date or
-// null. Empty/blank → null.
+// shapes for forward-compatibility. Returns local-midnight Date or null.
 function parseStoredDate(s: string | undefined | null): Date | null {
   if (!s) return null;
   const trimmed = String(s).trim();
@@ -69,31 +71,44 @@ function fmtAmount(n: number | null | undefined): string {
   });
 }
 
-// "Paid" means TranNo is non-empty per user spec. Empty TranNo = Unpaid.
 function isPaid(vp: VendorPayment): boolean {
   return !!(vp.tranNo && vp.tranNo.trim().length > 0);
 }
 
 type PaidFilter = "all" | "paid" | "unpaid";
+type Mark = "Normal" | "Urgent" | null;
+type Draft = { mark: Mark; comments: string };
+
+// Column widths kept in one place so the header and rows stay aligned.
+const COL = {
+  vendorName: 220,
+  invoiceDate: 100,
+  invoiceNo: 130,
+  supplierPayment: 120,
+  grnDate: 100,
+  vendorCode: 100,
+  gidNo: 100,
+  tranNo: 110,
+  status: 120,
+  mark: 150, // shown only in Modify mode
+  comments: 180, // shown only in Modify mode
+};
 
 // ---------- Screen ----------
 
 export default function VendorPaymentsScreen() {
-  const { vendorPayments, clearVendorPayments } = useApp();
+  const { vendorPayments, saveVendorPaymentsBatch, clearVendorPayments } =
+    useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [search, setSearch] = useState("");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
 
-  // VendorName multi-select filter. Stored as a Set of exact
-  // vendor-name strings (case-sensitive — matches the values in the
-  // imported sheet). Empty = no vendor restriction.
   const [activeVendors, setActiveVendors] = useState<string[]>([]);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
 
-  // Inclusive InvoiceDate range filter — same UX as Promo CR Date.
   const [invFrom, setInvFrom] = useState<Date | null>(null);
   const [invTo, setInvTo] = useState<Date | null>(null);
   const [showInvModal, setShowInvModal] = useState(false);
@@ -107,7 +122,6 @@ export default function VendorPaymentsScreen() {
   const [showInvToPicker, setShowInvToPicker] = useState(false);
   const [invError, setInvError] = useState<string | null>(null);
 
-  // Inclusive PaymentDate range filter.
   const [payFrom, setPayFrom] = useState<Date | null>(null);
   const [payTo, setPayTo] = useState<Date | null>(null);
   const [showPayModal, setShowPayModal] = useState(false);
@@ -121,10 +135,15 @@ export default function VendorPaymentsScreen() {
   const [showPayToPicker, setShowPayToPicker] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
+  // Modify mode: enables per-row Mark-to-Pay buttons + Comments input.
+  // Drafts hold pending edits keyed by GidNo; committed via Save.
+  const [modifyMode, setModifyMode] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
 
-  // Unique vendor name list — alphabetical, derived from the full
-  // dataset (not filtered) so the picker always shows every option.
   const allVendors = useMemo(() => {
     const set = new Set<string>();
     for (const vp of vendorPayments) {
@@ -141,9 +160,12 @@ export default function VendorPaymentsScreen() {
     return allVendors.filter((v) => v.toLowerCase().includes(q));
   }, [allVendors, vendorSearch]);
 
-  // Main filtered + sorted list. Sort spec: Unpaid rows on top, then
-  // by InvoiceDate descending; rows missing an InvoiceDate fall to
-  // the bottom of their respective paid/unpaid group.
+  // Effective mark/comments for a row — draft if present, else stored.
+  const getMark = (vp: VendorPayment): Mark =>
+    drafts[vp.gidNo]?.mark ?? vp.markToPay ?? null;
+  const getComments = (vp: VendorPayment): string =>
+    drafts[vp.gidNo]?.comments ?? vp.comments ?? "";
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const invFromMs = invFrom ? startOfDay(invFrom).getTime() : null;
@@ -172,8 +194,6 @@ export default function VendorPaymentsScreen() {
         if (invToMs !== null && t > invToMs) return false;
       }
       if (payFromMs !== null || payToMs !== null) {
-        // Unpaid rows have no payment date — exclude them when a
-        // PaymentDate range filter is active.
         const d = parseStoredDate(vp.paymentDate);
         if (!d) return false;
         const t = d.getTime();
@@ -186,10 +206,10 @@ export default function VendorPaymentsScreen() {
     out.sort((a, b) => {
       const aPaid = isPaid(a);
       const bPaid = isPaid(b);
-      if (aPaid !== bPaid) return aPaid ? 1 : -1; // unpaid first
+      if (aPaid !== bPaid) return aPaid ? 1 : -1;
       const ad = parseStoredDate(a.invoiceDate)?.getTime() ?? -Infinity;
       const bd = parseStoredDate(b.invoiceDate)?.getTime() ?? -Infinity;
-      return bd - ad; // invoice date desc
+      return bd - ad;
     });
     return out;
   }, [
@@ -216,10 +236,183 @@ export default function VendorPaymentsScreen() {
     [vendorPayments],
   );
 
+  // Count of rows currently classified Normal or Urgent (considering
+  // unsaved drafts) — drives the "Process Pay" button's disabled state.
+  const markedCount = useMemo(() => {
+    let n = 0;
+    for (const vp of vendorPayments) {
+      if (getMark(vp)) n += 1;
+    }
+    return n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorPayments, drafts]);
+
+  const hasUnsavedDrafts = Object.keys(drafts).length > 0;
+
   function toggleVendor(v: string) {
     setActiveVendors((cur) =>
       cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v],
     );
+  }
+
+  // Update a row's draft. Mark-to-pay cycles None → Normal → Urgent → None.
+  function setRowMark(vp: VendorPayment, next: Mark) {
+    setDrafts((cur) => {
+      const existing: Draft =
+        cur[vp.gidNo] ?? {
+          mark: vp.markToPay ?? null,
+          comments: vp.comments ?? "",
+        };
+      const updated: Draft = { ...existing, mark: next };
+      // If draft now matches the stored value, drop it to keep the
+      // "unsaved" set tight.
+      const storedMark = vp.markToPay ?? null;
+      const storedComments = vp.comments ?? "";
+      if (updated.mark === storedMark && updated.comments === storedComments) {
+        const { [vp.gidNo]: _, ...rest } = cur;
+        return rest;
+      }
+      return { ...cur, [vp.gidNo]: updated };
+    });
+  }
+
+  function setRowComment(vp: VendorPayment, text: string) {
+    setDrafts((cur) => {
+      const existing: Draft =
+        cur[vp.gidNo] ?? {
+          mark: vp.markToPay ?? null,
+          comments: vp.comments ?? "",
+        };
+      const updated: Draft = { ...existing, comments: text };
+      const storedMark = vp.markToPay ?? null;
+      const storedComments = vp.comments ?? "";
+      if (updated.mark === storedMark && updated.comments === storedComments) {
+        const { [vp.gidNo]: _, ...rest } = cur;
+        return rest;
+      }
+      return { ...cur, [vp.gidNo]: updated };
+    });
+  }
+
+  async function handleSaveDrafts() {
+    if (!hasUnsavedDrafts || saving) return;
+    setSaving(true);
+    try {
+      const merged: VendorPayment[] = vendorPayments.map((vp) => {
+        const d = drafts[vp.gidNo];
+        if (!d) return vp;
+        return { ...vp, markToPay: d.mark, comments: d.comments };
+      });
+      await saveVendorPaymentsBatch(merged);
+      setDrafts({});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Couldn't Save", e?.message ?? "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleToggleModify() {
+    if (modifyMode && hasUnsavedDrafts) {
+      const msg = `You have ${Object.keys(drafts).length} unsaved change${Object.keys(drafts).length === 1 ? "" : "s"}. Discard them?`;
+      const run = () => {
+        setDrafts({});
+        setModifyMode(false);
+      };
+      if (Platform.OS === "web") {
+        if (window.confirm(msg)) run();
+      } else {
+        Alert.alert("Discard changes?", msg, [
+          { text: "Keep editing", style: "cancel" },
+          { text: "Discard", style: "destructive", onPress: run },
+        ]);
+      }
+      return;
+    }
+    setModifyMode((v) => !v);
+  }
+
+  async function handleProcessPay() {
+    if (exporting) return;
+    // Build the export from the effective (draft-aware) marks so a
+    // user can preview their classification before saving and still
+    // export — matches the spirit of "everything marked is in scope".
+    const rows = vendorPayments
+      .filter((vp) => !!getMark(vp))
+      .map((vp) => ({
+        VendorName: vp.vendorName,
+        InvoiceDate: vp.invoiceDate,
+        InvoiceNo: vp.invoiceNo,
+        "Supplier Payment": vp.supplierPayment ?? "",
+        GRNDate: vp.grnDate,
+        VendorCode: vp.vendorCode,
+        GidNo: vp.gidNo,
+        TranNo: vp.tranNo,
+        "Payment / Status": isPaid(vp) ? vp.paymentDate || "Paid" : "Unpaid",
+        "Mark to Pay": getMark(vp) ?? "",
+        Comments: getComments(vp),
+      }));
+    if (rows.length === 0) {
+      Alert.alert(
+        "Nothing to export",
+        'Mark at least one row as "Normal" or "Urgent" first.',
+      );
+      return;
+    }
+    setExporting(true);
+    try {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 32 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 12 },
+        { wch: 30 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "PayToVendor");
+      const d = new Date();
+      const ts = `${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${d.getFullYear()} ${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+      const fileName = `SSS Pay to Vendor ${ts}.xls`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "biff8", type: "array" });
+        const blob = new Blob([wbout], { type: "application/vnd.ms-excel" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "biff8", type: "base64" });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, {
+          encoding: "base64" as any,
+        });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.ms-excel",
+            dialogTitle: "Export Pay to Vendor",
+            UTI: "com.microsoft.excel.xls",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setExporting(false);
+    }
   }
 
   function handleClear() {
@@ -228,6 +421,8 @@ export default function VendorPaymentsScreen() {
     const run = async () => {
       try {
         await clearVendorPayments();
+        setDrafts({});
+        setModifyMode(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (e: any) {
         Alert.alert("Couldn't Delete", e?.message ?? "Unknown error");
@@ -252,6 +447,7 @@ export default function VendorPaymentsScreen() {
           { paddingTop: topPt + 16, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerRow}>
           <View>
@@ -355,9 +551,6 @@ export default function VendorPaymentsScreen() {
           </View>
         ) : (
           <>
-            {/* Paid / Unpaid / All segmented toggle. Sits above the
-                filter grid so it reads as the primary axis the user
-                pivots on. */}
             <View style={styles.segWrap}>
               {(
                 [
@@ -393,7 +586,6 @@ export default function VendorPaymentsScreen() {
               })}
             </View>
 
-            {/* Filter chips: VendorName + InvoiceDate range + PaymentDate range */}
             <View style={styles.filterGrid}>
               <FilterChip
                 icon="users"
@@ -457,6 +649,97 @@ export default function VendorPaymentsScreen() {
               />
             </View>
 
+            {/* Modify + Save + Process Pay action row. Modify toggles
+                per-row editors; Save commits drafts; Process Pay
+                exports every marked row regardless of current filters
+                so the user gets the full payable set. */}
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  modifyMode && styles.actionBtnActive,
+                ]}
+                onPress={handleToggleModify}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="edit-3"
+                  size={14}
+                  color={modifyMode ? Colors.textInverse : Colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    modifyMode && styles.actionBtnTextActive,
+                  ]}
+                >
+                  {modifyMode ? "Done" : "Modify"}
+                </Text>
+              </TouchableOpacity>
+              {modifyMode && (
+                <TouchableOpacity
+                  style={[
+                    styles.actionBtn,
+                    styles.actionBtnSave,
+                    !hasUnsavedDrafts && styles.actionBtnDisabled,
+                  ]}
+                  onPress={handleSaveDrafts}
+                  disabled={!hasUnsavedDrafts || saving}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name="save"
+                    size={14}
+                    color={
+                      !hasUnsavedDrafts ? Colors.textMuted : Colors.textInverse
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.actionBtnText,
+                      hasUnsavedDrafts && { color: Colors.textInverse },
+                      !hasUnsavedDrafts && { color: Colors.textMuted },
+                    ]}
+                  >
+                    {saving
+                      ? "Saving…"
+                      : hasUnsavedDrafts
+                        ? `Save · ${Object.keys(drafts).length}`
+                        : "Save"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.actionBtnExport,
+                  (markedCount === 0 || exporting) && styles.actionBtnDisabled,
+                ]}
+                onPress={handleProcessPay}
+                disabled={markedCount === 0 || exporting}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="download"
+                  size={14}
+                  color={
+                    markedCount === 0 ? Colors.textMuted : Colors.textInverse
+                  }
+                />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    markedCount > 0 && { color: Colors.textInverse },
+                    markedCount === 0 && { color: Colors.textMuted },
+                  ]}
+                >
+                  {exporting
+                    ? "Exporting…"
+                    : `Process Pay${markedCount > 0 ? ` · ${markedCount}` : ""}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.searchWrap}>
               <Feather name="search" size={14} color={Colors.textMuted} />
               <TextInput
@@ -478,6 +761,7 @@ export default function VendorPaymentsScreen() {
             <Text style={styles.resultCount}>
               Showing {filtered.length} of {vendorPayments.length}
               {paidFilter !== "all" ? ` · ${paidFilter}` : ""}
+              {markedCount > 0 ? ` · ${markedCount} marked` : ""}
             </Text>
 
             <View style={styles.tableCard}>
@@ -485,86 +769,103 @@ export default function VendorPaymentsScreen() {
                 horizontal
                 showsHorizontalScrollIndicator
                 contentContainerStyle={{ minWidth: "100%" }}
+                keyboardShouldPersistTaps="handled"
               >
                 <View>
                   <View style={styles.tableHeader}>
-                    <Text style={[styles.th, { width: 100 }]}>GidNo</Text>
-                    <Text style={[styles.th, { width: 100 }]}>VendorCode</Text>
-                    <Text style={[styles.th, { width: 220 }]}>VendorName</Text>
-                    <Text style={[styles.th, { width: 130 }]}>InvoiceNo</Text>
-                    <Text style={[styles.th, { width: 100 }]}>GRNDate</Text>
-                    <Text style={[styles.th, { width: 100 }]}>InvoiceDate</Text>
-                    <Text style={[styles.th, { width: 110 }]}>TranNo</Text>
+                    {modifyMode && (
+                      <Text style={[styles.th, { width: COL.mark }]}>
+                        Mark to Pay
+                      </Text>
+                    )}
+                    <Text style={[styles.th, { width: COL.vendorName }]}>
+                      VendorName
+                    </Text>
+                    <Text style={[styles.th, { width: COL.invoiceDate }]}>
+                      InvoiceDate
+                    </Text>
+                    <Text style={[styles.th, { width: COL.invoiceNo }]}>
+                      InvoiceNo
+                    </Text>
                     <Text
                       style={[
                         styles.th,
-                        { width: 110, textAlign: "right" },
+                        { width: COL.supplierPayment, textAlign: "right" },
                       ]}
                     >
                       Supplier Payment
                     </Text>
-                    <Text style={[styles.th, { width: 120 }]}>
+                    <Text style={[styles.th, { width: COL.grnDate }]}>
+                      GRNDate
+                    </Text>
+                    <Text style={[styles.th, { width: COL.vendorCode }]}>
+                      VendorCode
+                    </Text>
+                    <Text style={[styles.th, { width: COL.gidNo }]}>GidNo</Text>
+                    <Text style={[styles.th, { width: COL.tranNo }]}>
+                      TranNo
+                    </Text>
+                    <Text style={[styles.th, { width: COL.status }]}>
                       Payment / Status
                     </Text>
+                    {modifyMode && (
+                      <Text style={[styles.th, { width: COL.comments }]}>
+                        Comments
+                      </Text>
+                    )}
                   </View>
                   {filtered.map((vp, i) => {
                     const paid = isPaid(vp);
+                    const mark = getMark(vp);
+                    const comments = getComments(vp);
                     return (
                       <View
-                        key={`${vp.gidNo}-${i}`}
+                        key={vp.gidNo}
                         style={[
                           styles.tableRow,
                           i % 2 === 0 && styles.tableRowAlt,
                           !paid && styles.tableRowUnpaid,
                         ]}
                       >
+                        {modifyMode && (
+                          <View style={{ width: COL.mark }}>
+                            <MarkPicker
+                              value={mark}
+                              onChange={(next) => setRowMark(vp, next)}
+                            />
+                          </View>
+                        )}
+                        <View style={{ width: COL.vendorName }}>
+                          <Text style={[styles.td, styles.tdName]} numberOfLines={2}>
+                            {vp.vendorName}
+                          </Text>
+                          {!modifyMode && mark && <MarkBadge mark={mark} />}
+                          {!modifyMode && comments.length > 0 && (
+                            <Text
+                              style={styles.commentInline}
+                              numberOfLines={2}
+                            >
+                              {comments}
+                            </Text>
+                          )}
+                        </View>
                         <Text
-                          style={[styles.td, { width: 100 }]}
-                          numberOfLines={1}
-                        >
-                          {vp.gidNo}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: 100 }]}
-                          numberOfLines={1}
-                        >
-                          {vp.vendorCode}
-                        </Text>
-                        <Text
-                          style={[styles.td, styles.tdName, { width: 220 }]}
-                          numberOfLines={2}
-                        >
-                          {vp.vendorName}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: 130 }]}
-                          numberOfLines={1}
-                        >
-                          {vp.invoiceNo}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: 100 }]}
-                          numberOfLines={1}
-                        >
-                          {vp.grnDate || "—"}
-                        </Text>
-                        <Text
-                          style={[styles.td, { width: 100 }]}
+                          style={[styles.td, { width: COL.invoiceDate }]}
                           numberOfLines={1}
                         >
                           {vp.invoiceDate || "—"}
                         </Text>
                         <Text
-                          style={[styles.td, { width: 110 }]}
+                          style={[styles.td, { width: COL.invoiceNo }]}
                           numberOfLines={1}
                         >
-                          {vp.tranNo || "—"}
+                          {vp.invoiceNo}
                         </Text>
                         <Text
                           style={[
                             styles.td,
                             {
-                              width: 110,
+                              width: COL.supplierPayment,
                               textAlign: "right",
                               fontWeight: "700",
                             },
@@ -573,7 +874,31 @@ export default function VendorPaymentsScreen() {
                         >
                           {fmtAmount(vp.supplierPayment)}
                         </Text>
-                        <View style={{ width: 120 }}>
+                        <Text
+                          style={[styles.td, { width: COL.grnDate }]}
+                          numberOfLines={1}
+                        >
+                          {vp.grnDate || "—"}
+                        </Text>
+                        <Text
+                          style={[styles.td, { width: COL.vendorCode }]}
+                          numberOfLines={1}
+                        >
+                          {vp.vendorCode}
+                        </Text>
+                        <Text
+                          style={[styles.td, { width: COL.gidNo }]}
+                          numberOfLines={1}
+                        >
+                          {vp.gidNo}
+                        </Text>
+                        <Text
+                          style={[styles.td, { width: COL.tranNo }]}
+                          numberOfLines={1}
+                        >
+                          {vp.tranNo || "—"}
+                        </Text>
+                        <View style={{ width: COL.status }}>
                           {paid ? (
                             <Text
                               style={[styles.td, { color: Colors.success }]}
@@ -592,6 +917,18 @@ export default function VendorPaymentsScreen() {
                             </View>
                           )}
                         </View>
+                        {modifyMode && (
+                          <View style={{ width: COL.comments }}>
+                            <TextInput
+                              style={styles.commentInput}
+                              value={comments}
+                              onChangeText={(t) => setRowComment(vp, t)}
+                              placeholder="Add a note…"
+                              placeholderTextColor={Colors.textMuted}
+                              multiline
+                            />
+                          </View>
+                        )}
                       </View>
                     );
                   })}
@@ -671,10 +1008,7 @@ export default function VendorPaymentsScreen() {
                   activeOpacity={0.7}
                 >
                   <View
-                    style={[
-                      styles.checkBox,
-                      checked && styles.checkBoxOn,
-                    ]}
+                    style={[styles.checkBox, checked && styles.checkBoxOn]}
                   >
                     {checked && (
                       <Feather
@@ -700,7 +1034,6 @@ export default function VendorPaymentsScreen() {
         </View>
       </Modal>
 
-      {/* ---- InvoiceDate range modal ---- */}
       <DateRangeModal
         visible={showInvModal}
         title="Invoice Date"
@@ -761,7 +1094,6 @@ export default function VendorPaymentsScreen() {
         onClose={() => setShowInvModal(false)}
       />
 
-      {/* ---- PaymentDate range modal ---- */}
       <DateRangeModal
         visible={showPayModal}
         title="Payment Date"
@@ -827,6 +1159,83 @@ export default function VendorPaymentsScreen() {
 
 // ---------- Reusable bits ----------
 
+function MarkPicker({
+  value,
+  onChange,
+}: {
+  value: Mark;
+  onChange: (next: Mark) => void;
+}) {
+  return (
+    <View style={styles.markPicker}>
+      <TouchableOpacity
+        style={[styles.markBtn, value === null && styles.markBtnOffActive]}
+        onPress={() => onChange(null)}
+        activeOpacity={0.8}
+      >
+        <Text
+          style={[
+            styles.markBtnText,
+            value === null && styles.markBtnOffActiveText,
+          ]}
+        >
+          —
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.markBtn,
+          value === "Normal" && styles.markBtnNormalActive,
+        ]}
+        onPress={() => onChange("Normal")}
+        activeOpacity={0.8}
+      >
+        <Text
+          style={[
+            styles.markBtnText,
+            value === "Normal" && styles.markBtnFilledText,
+            value !== "Normal" && { color: Colors.primary },
+          ]}
+        >
+          Normal
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.markBtn,
+          value === "Urgent" && styles.markBtnUrgentActive,
+        ]}
+        onPress={() => onChange("Urgent")}
+        activeOpacity={0.8}
+      >
+        <Text
+          style={[
+            styles.markBtnText,
+            value === "Urgent" && styles.markBtnFilledText,
+            value !== "Urgent" && { color: Colors.danger },
+          ]}
+        >
+          Urgent
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function MarkBadge({ mark }: { mark: Exclude<Mark, null> }) {
+  const isUrgent = mark === "Urgent";
+  return (
+    <View
+      style={[
+        styles.markBadge,
+        isUrgent ? styles.markBadgeUrgent : styles.markBadgeNormal,
+      ]}
+    >
+      <Text style={styles.markBadgeText}>{mark}</Text>
+    </View>
+  );
+}
+
 type FilterChipProps = {
   icon: React.ComponentProps<typeof Feather>["name"];
   label: string;
@@ -853,10 +1262,7 @@ function FilterChip({
         color={active ? Colors.textInverse : Colors.textSecondary}
       />
       <Text
-        style={[
-          styles.filterBarText,
-          active && styles.filterBarTextActive,
-        ]}
+        style={[styles.filterBarText, active && styles.filterBarTextActive]}
         numberOfLines={1}
       >
         {label}
@@ -1078,8 +1484,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
   },
-
-  // Paid/Unpaid segmented control
   segWrap: {
     flexDirection: "row",
     backgroundColor: Colors.surface,
@@ -1099,13 +1503,7 @@ const styles = StyleSheet.create({
   segBtnActive: { backgroundColor: Colors.primary },
   segBtnText: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
   segBtnTextActive: { color: Colors.textInverse },
-
-  // Filter grid (vendor + 2 date chips)
-  filterGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  filterGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   filterBar: {
     flex: 1,
     minWidth: "47%",
@@ -1130,7 +1528,36 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   filterBarTextActive: { color: Colors.textInverse },
-
+  actionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.primary + "12",
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
+  actionBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  actionBtnSave: {
+    backgroundColor: Colors.success,
+    borderColor: Colors.success,
+  },
+  actionBtnExport: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  actionBtnDisabled: {
+    backgroundColor: Colors.surface,
+    borderColor: Colors.border,
+  },
+  actionBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  actionBtnTextActive: { color: Colors.textInverse },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -1195,8 +1622,65 @@ const styles = StyleSheet.create({
     color: Colors.warning,
     letterSpacing: 0.3,
   },
-
-  // Modal bits
+  markPicker: { flexDirection: "row", gap: 4 },
+  markBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 32,
+    alignItems: "center",
+  },
+  markBtnText: { fontSize: 10, fontWeight: "800", color: Colors.textMuted },
+  markBtnFilledText: { color: Colors.textInverse },
+  markBtnOffActive: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderColor: Colors.textMuted,
+  },
+  markBtnOffActiveText: { color: Colors.text },
+  markBtnNormalActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  markBtnUrgentActive: {
+    backgroundColor: Colors.danger,
+    borderColor: Colors.danger,
+  },
+  markBadge: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  markBadgeNormal: { backgroundColor: Colors.primary },
+  markBadgeUrgent: { backgroundColor: Colors.danger },
+  markBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: Colors.textInverse,
+    letterSpacing: 0.3,
+  },
+  commentInline: {
+    marginTop: 4,
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontStyle: "italic",
+  },
+  commentInput: {
+    fontSize: 12,
+    color: Colors.text,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    minHeight: 36,
+    textAlignVertical: "top",
+  },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: {
     backgroundColor: Colors.surface,

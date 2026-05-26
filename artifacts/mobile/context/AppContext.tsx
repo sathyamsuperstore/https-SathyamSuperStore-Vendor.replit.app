@@ -605,6 +605,12 @@ export interface VendorPayment {
   tranNo: string;
   supplierPayment: number | null;
   paymentDate: string;
+  // User-managed classification added on the VendorPayments tab in
+  // Modify mode. Optional / nullable so existing imports (which never
+  // set these) round-trip cleanly. Persisted alongside the row via the
+  // existing saveVendorPaymentsBatch write path.
+  markToPay?: "Normal" | "Urgent" | null;
+  comments?: string;
 }
 
 // One row in the RodeoItems table. Imported from Excel and stored in
