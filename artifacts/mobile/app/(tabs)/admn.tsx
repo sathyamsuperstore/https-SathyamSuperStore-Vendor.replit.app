@@ -37,6 +37,7 @@ export default function AdmnHubScreen() {
     lastSupplyDates,
     rodeoItems,
     rasiItems,
+    vendorPayments,
     clearAllSuppliers,
     clearAllAppUsers,
     clearMrpBatch,
@@ -45,6 +46,7 @@ export default function AdmnHubScreen() {
     clearLastSupplyDates,
     clearRodeoItems,
     clearRasiItems,
+    clearVendorPayments,
     setDataDownloadTimeNow,
   } = useApp();
   const router = useRouter();
@@ -169,6 +171,15 @@ export default function AdmnHubScreen() {
       confirmMessage: (n) =>
         `Remove all ${n} Rasi item${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
+    {
+      key: "vendor-payments",
+      label: "VendorPayments",
+      count: vendorPayments.length,
+      onConfirm: clearVendorPayments,
+      confirmTitle: "Delete All Vendor Payments?",
+      confirmMessage: (n) =>
+        `Remove all ${n} Vendor Payment${n === 1 ? "" : "s"}? This cannot be undone.`,
+    },
   ];
 
   // Stack into 2-column rows. With 7 items the last row has a
@@ -214,6 +225,11 @@ export default function AdmnHubScreen() {
     { key: "promo", label: "Promo", route: "/(tabs)/promo?autoImport=1" },
     { key: "rodeo-items", label: "RodeoItems", route: "/rodeo/import" },
     { key: "rasi-items", label: "Rasi Items", route: "/(tabs)/rasi-items" },
+    {
+      key: "vendor-payments",
+      label: "VendorPayments",
+      route: "/vendor-payments/import",
+    },
     // "DownloadTime" doesn't import a workbook — it just stamps the
     // current wall-clock time as the latest data snapshot, then opens
     // the Data Download Time tab so the user can see the new value.

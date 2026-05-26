@@ -218,6 +218,17 @@ interface AppContextType {
     onProgress?: (done: number, total: number) => void,
   ) => Promise<void>;
   clearRodeoItems: () => Promise<void>;
+  // VendorPayments — flat ledger imported from Excel. Mirrors the
+  // RodeoItems replace-all semantics: every import wipes the previous
+  // snapshot and loads the new one. `onProgress(done, total)` is
+  // called per 200-row batch on web and as 0/1 → 1/1 on native (single
+  // file write) so the importer's progress bar always paints.
+  vendorPayments: VendorPayment[];
+  saveVendorPaymentsBatch: (
+    entries: VendorPayment[],
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<void>;
+  clearVendorPayments: () => Promise<void>;
   // User-entered "New Qty" overrides per Promo row. Map key is
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
   promoNewQty: Record<string, number>;
@@ -577,6 +588,25 @@ export interface LastSupplyDateEntry {
   latestInvoiceDate: string;
 }
 
+// One row in the VendorPayments table. Imported from Excel; mirrors
+// the RodeoItems persistence model (single JSON file on native,
+// chunked AsyncStorage on web). All text fields are normalised to
+// trimmed strings; numeric fields are nullable so blank cells
+// round-trip as `null`. Date fields are stored as "DD/MM/YYYY"
+// strings so they sort/display without further parsing — matches the
+// RodeoItems convention.
+export interface VendorPayment {
+  gidNo: string;
+  vendorCode: string;
+  vendorName: string;
+  invoiceNo: string;
+  grnDate: string;
+  invoiceDate: string;
+  tranNo: string;
+  supplierPayment: number | null;
+  paymentDate: string;
+}
+
 // One row in the RodeoItems table. Imported from Excel and stored in
 // AsyncStorage. Numeric fields are nullable so blank cells round-trip
 // as `null` instead of NaN. Date fields are normalised to "DD/MM/YYYY"
@@ -746,6 +776,71 @@ async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
   // Fall back to (web) chunked AsyncStorage or legacy single blob.
   return await loadRodeoItemsLegacyAsyncStorage();
 }
+// VendorPayments storage — mirrors RodeoItems. On native a single JSON
+// file under the document directory; on web, chunked AsyncStorage
+// under a versioned namespace so a mid-write crash leaves the
+// previous snapshot intact. 200-row chunks match the importer's
+// per-batch progress UI.
+const VENDOR_PAYMENTS_META_KEY = "@vendorPayments:meta";
+const VENDOR_PAYMENTS_VERSIONED_PREFIX = "@vendorPayments:v:"; // <ver>:batch:<i>
+const VENDOR_PAYMENTS_WEB_BATCH_SIZE = 200;
+function vendorPaymentsBatchKey(version: string, i: number): string {
+  return `${VENDOR_PAYMENTS_VERSIONED_PREFIX}${version}:batch:${i}`;
+}
+const VENDOR_PAYMENTS_FILE = "vendorPayments.json";
+function vendorPaymentsFileUri(): string {
+  return (FileSystem.documentDirectory ?? "") + VENDOR_PAYMENTS_FILE;
+}
+
+async function loadVendorPaymentsFromFile(): Promise<VendorPayment[] | null> {
+  if (Platform.OS === "web") return null;
+  const uri = vendorPaymentsFileUri();
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: "utf8" as any,
+    });
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as VendorPayment[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return null;
+  }
+}
+
+async function loadVendorPaymentsChunked(): Promise<VendorPayment[]> {
+  if (Platform.OS !== "web") {
+    const fromFile = await loadVendorPaymentsFromFile();
+    if (fromFile !== null) return fromFile;
+    return [];
+  }
+  try {
+    const metaRaw = await AsyncStorage.getItem(VENDOR_PAYMENTS_META_KEY);
+    if (!metaRaw) return [];
+    const meta = JSON.parse(metaRaw) as { batches?: number; version?: string };
+    const batches = Math.max(0, Math.floor(meta?.batches ?? 0));
+    if (batches === 0 || !meta.version) return [];
+    const keys = Array.from({ length: batches }, (_, i) =>
+      vendorPaymentsBatchKey(String(meta.version), i),
+    );
+    const pairs = await AsyncStorage.multiGet(keys);
+    const all: VendorPayment[] = [];
+    for (const [, val] of pairs) {
+      if (!val) continue;
+      try {
+        const arr = JSON.parse(val) as VendorPayment[];
+        if (Array.isArray(arr)) all.push(...arr);
+      } catch {
+        // skip corrupt batch
+      }
+    }
+    return all;
+  } catch {
+    return [];
+  }
+}
+
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
 // Promo workbook (which replaces every row) doesn't blow away the
@@ -898,6 +993,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [priceTagReviewItems]);
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [rodeoItems, setRodeoItems] = useState<RodeoItem[]>([]);
+  const [vendorPayments, setVendorPayments] = useState<VendorPayment[]>([]);
   const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
   const [companyDetails, setCompanyDetailsState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS);
   const [companyDetailsR, setCompanyDetailsRState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS_R);
@@ -909,7 +1005,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData, companyDetailsRData] = await Promise.all([
+      const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, vendorPaymentsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData, companyDetailsRData] = await Promise.all([
         AsyncStorage.getItem(SUPPLIERS_KEY),
         AsyncStorage.getItem(ORDERS_KEY),
         AsyncStorage.getItem(USERS_KEY),
@@ -922,6 +1018,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
         AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
         loadRodeoItemsChunked(),
+        loadVendorPaymentsChunked(),
         AsyncStorage.getItem(PRICE_TAG_KEY),
         AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
         AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
@@ -972,6 +1069,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? (rodeoItemsData as RodeoItem[])
         : [];
       setRodeoItems(loadedRodeoItems);
+      const loadedVendorPayments: VendorPayment[] = Array.isArray(
+        vendorPaymentsData,
+      )
+        ? (vendorPaymentsData as VendorPayment[])
+        : [];
+      setVendorPayments(loadedVendorPayments);
       const loadedPromoNewQty: Record<string, number> = promoNewQtyData
         ? JSON.parse(promoNewQtyData)
         : {};
@@ -2031,6 +2134,126 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveRodeoItemsBatch([]);
   }
 
+  // VendorPayments write path. Mirrors saveRodeoItemsBatch: atomic
+  // single-file write on native (tmp → move), versioned 200-row
+  // chunked AsyncStorage on web. Replace-all semantics — every import
+  // is a fresh snapshot of the Excel sheet.
+  async function saveVendorPaymentsBatch(
+    entries: VendorPayment[],
+    onProgress?: (done: number, total: number) => void,
+  ) {
+    if (Platform.OS !== "web") {
+      const finalUri = vendorPaymentsFileUri();
+      const tmpUri = finalUri + ".tmp";
+      onProgress?.(0, 1);
+      await new Promise<void>((r) => setTimeout(r, 0));
+      const payload = JSON.stringify(entries);
+      try {
+        try {
+          const tmpInfo = await FileSystem.getInfoAsync(tmpUri);
+          if (tmpInfo.exists) {
+            await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+          }
+        } catch {
+          // ignore
+        }
+        await FileSystem.writeAsStringAsync(tmpUri, payload, {
+          encoding: "utf8" as any,
+        });
+        await FileSystem.moveAsync({ from: tmpUri, to: finalUri });
+      } catch (e: any) {
+        try {
+          await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+        } catch {
+          // ignore
+        }
+        const msg = e?.message ?? String(e);
+        throw new Error(`Failed to write VendorPayments file: ${msg}`);
+      }
+      onProgress?.(1, 1);
+      setVendorPayments(entries);
+      return;
+    }
+
+    // ---- Web: atomic versioned chunked AsyncStorage ----
+    const batchSize = VENDOR_PAYMENTS_WEB_BATCH_SIZE;
+    const batches = Math.max(1, Math.ceil(entries.length / batchSize));
+    const newVersion = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+    let oldMeta: { batches?: number; version?: string } | null = null;
+    try {
+      const oldMetaRaw = await AsyncStorage.getItem(VENDOR_PAYMENTS_META_KEY);
+      if (oldMetaRaw) {
+        oldMeta = JSON.parse(oldMetaRaw) as {
+          batches?: number;
+          version?: string;
+        };
+      }
+    } catch {
+      // ignore
+    }
+
+    onProgress?.(0, batches);
+    const writtenKeys: string[] = [];
+    try {
+      for (let i = 0; i < batches; i++) {
+        const chunk = entries.slice(i * batchSize, (i + 1) * batchSize);
+        const key = vendorPaymentsBatchKey(newVersion, i);
+        try {
+          await AsyncStorage.setItem(key, JSON.stringify(chunk));
+          writtenKeys.push(key);
+        } catch (e: any) {
+          const msg = e?.message ?? String(e);
+          throw new Error(
+            `Failed writing batch ${i + 1} of ${batches} (rows ${i * batchSize + 1}–${Math.min((i + 1) * batchSize, entries.length)}): ${msg}`,
+          );
+        }
+        onProgress?.(i + 1, batches);
+      }
+    } catch (e) {
+      if (writtenKeys.length > 0) {
+        try {
+          await AsyncStorage.multiRemove(writtenKeys);
+        } catch {
+          // ignore
+        }
+      }
+      throw e;
+    }
+
+    await AsyncStorage.setItem(
+      VENDOR_PAYMENTS_META_KEY,
+      JSON.stringify({
+        count: entries.length,
+        batches,
+        batchSize,
+        version: newVersion,
+      }),
+    );
+
+    // Best-effort cleanup of the previous version's keys.
+    if (oldMeta?.version && oldMeta.version !== newVersion) {
+      const oldBatches = Math.max(0, Math.floor(oldMeta?.batches ?? 0));
+      const stale: string[] = [];
+      for (let i = 0; i < oldBatches; i++) {
+        stale.push(vendorPaymentsBatchKey(String(oldMeta.version), i));
+      }
+      if (stale.length > 0) {
+        try {
+          await AsyncStorage.multiRemove(stale);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    setVendorPayments(entries);
+  }
+
+  async function clearVendorPayments() {
+    await saveVendorPaymentsBatch([]);
+  }
+
   async function clearAllAppUsers() {
     await saveAppUsers([]);
   }
@@ -2094,6 +2317,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         rodeoItems,
         saveRodeoItemsBatch,
         clearRodeoItems,
+        vendorPayments,
+        saveVendorPaymentsBatch,
+        clearVendorPayments,
         promoNewQty,
         setPromoNewQtyValue,
         priceTagItems,

@@ -221,6 +221,7 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
       <Tabs.Screen name="data-download-time" options={{ href: null }} />
       <Tabs.Screen name="rodeo-items" options={{ href: null }} />
       <Tabs.Screen name="rasi-items" options={{ href: null }} />
+      <Tabs.Screen name="vendor-payments" options={{ href: null }} />
       <Tabs.Screen name="rpromoprint" options={{ href: null }} />
       <Tabs.Screen name="upcompare" options={{ href: null }} />
     </Tabs>
