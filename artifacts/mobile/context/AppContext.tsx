@@ -41,7 +41,7 @@ export interface Supplier {
   // exporter can embed them inline without a file fetch. Optional so
   // existing suppliers hydrate cleanly without a migration step.
   photos?: string[];
-  // Separate set of up to 3 reference photos used only by the
+  // Separate set of up to 10 reference photos used only by the
   // VendorPayments "Credit Note Needed" PDF export. Kept distinct from
   // `photos` so the StockUpd / My Orders PDF footers continue to show
   // the existing attachment set while the credit-note PDF can pull from
@@ -1573,11 +1573,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Targeted setter for the supplier-level photos array. Same shape as
   // setSupplierGeneralNotes so callers don't need the full Supplier
-  // object. Capped at 3 entries; extras are dropped silently. Reads from
+  // object. Capped at 10 entries; extras are dropped silently. Reads from
   // suppliersRef so a concurrent notes save can't be clobbered by a stale
   // closure of `suppliers`.
   async function setSupplierPhotos(id: string, photos: string[]) {
-    const capped = photos.slice(0, 3);
+    const capped = photos.slice(0, 10);
     await saveSuppliers(
       suppliersRef.current.map((s) => (s.id === id ? { ...s, photos: capped } : s))
     );
@@ -1585,10 +1585,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Targeted setter for the supplier-level Credit Note photos array.
   // Mirrors setSupplierPhotos so the VendorPayments Credit Note PDF
-  // export can attach its own up-to-3 photos without sharing the
-  // StockUpd / My Orders photo pool. Capped at 3; extras dropped.
+  // export can attach its own up-to-10 photos without sharing the
+  // StockUpd / My Orders photo pool. Capped at 10; extras dropped.
   async function setSupplierCrPhotos(id: string, crPhotos: string[]) {
-    const capped = crPhotos.slice(0, 3);
+    const capped = crPhotos.slice(0, 10);
     await saveSuppliers(
       suppliersRef.current.map((s) => (s.id === id ? { ...s, crPhotos: capped } : s))
     );

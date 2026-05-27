@@ -17,9 +17,9 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Colors } from "@/constants/colors";
 import { Supplier, showStorageErrorAlert } from "@/context/AppContext";
 
-const MAX_PHOTOS = 3;
+const MAX_PHOTOS = 10;
 
-// Reusable supplier photos row. Renders up to 3 thumbnails with per-photo
+// Reusable supplier photos row. Renders up to 10 thumbnails with per-photo
 // delete buttons and an "Add Photo" tile that lets the user pick from the
 // library or take a new shot with the camera. Mirrors the visual language
 // of the supplier-level notes box used on StockUpd / My Orders so the two

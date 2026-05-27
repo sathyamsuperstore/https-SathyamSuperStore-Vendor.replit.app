@@ -596,7 +596,7 @@ export default function VendorPaymentsScreen() {
   }
 
   // Build the HTML body for one vendor's Credit Note PDF. Header,
-  // table, and footer (supplier general notes + up-to-3 CR photos +
+  // table, and footer (supplier general notes + up-to-10 CR photos +
   // supplier/date lines) mirror the StockUpd PDF letterhead so the two
   // exports read as siblings. Only the title and the table columns
   // differ — this PDF lists the CR-flagged bills, not the order items.
@@ -1346,7 +1346,7 @@ export default function VendorPaymentsScreen() {
                       !supplier && { color: Colors.textMuted },
                     ]}
                   >
-                    CR Photos · {crPhotoCount}/3
+                    CR Photos · {crPhotoCount}/10
                   </Text>
                 </TouchableOpacity>
               </View>
