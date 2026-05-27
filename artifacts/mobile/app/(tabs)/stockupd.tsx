@@ -1407,6 +1407,16 @@ export default function StockUpdScreen() {
         if (activeCategories.length > 0) {
           exportItems = exportItems.filter((it) => it.category != null && activeCategories.includes(it.category));
         }
+        if (itemSortLevels.length > 0) {
+          exportItems = [...exportItems].sort((a, b) => {
+            for (const c of itemSortLevels) {
+              const def = SORT_FIELD_BY_KEY[c.key];
+              const r = cmpSortVal(getItemSortValue(a, c.key), getItemSortValue(b, c.key), def.type, c.dir);
+              if (r !== 0) return r;
+            }
+            return 0;
+          });
+        }
         for (const item of exportItems) {
           if (item.newStockQty == null) continue;
           const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0] : "";
@@ -1519,6 +1529,16 @@ export default function StockUpdScreen() {
           : order.items;
         if (activeCategories.length > 0) {
           exportItems = exportItems.filter((it) => it.category != null && activeCategories.includes(it.category));
+        }
+        if (itemSortLevels.length > 0) {
+          exportItems = [...exportItems].sort((a, b) => {
+            for (const c of itemSortLevels) {
+              const def = SORT_FIELD_BY_KEY[c.key];
+              const r = cmpSortVal(getItemSortValue(a, c.key), getItemSortValue(b, c.key), def.type, c.dir);
+              if (r !== 0) return r;
+            }
+            return 0;
+          });
         }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;

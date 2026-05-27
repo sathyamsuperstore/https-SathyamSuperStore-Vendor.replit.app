@@ -24,6 +24,16 @@ import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useApp, Order, OrderStatus, showStorageErrorAlert } from "@/context/AppContext";
 import { SupplierPhotosBox } from "@/components/SupplierPhotosBox";
+import {
+  SORT_FIELDS,
+  SORT_FIELD_BY_KEY,
+  EMPTY_SORT_LEVELS,
+  type SortLevel,
+  type SortLevelActive,
+  applyOrderSort,
+  applyItemSort,
+  dirLabelFor,
+} from "@/lib/orderSort";
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; text: string; label: string }> = {
   pending:   { bg: "#FEF3C7", text: "#92400E", label: "Pending" },
@@ -188,6 +198,27 @@ function OrdersView({ topPt }: { topPt: number }) {
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>(EMPTY_SORT_LEVELS);
+  const [sortLevelsDraft, setSortLevelsDraft] = useState<SortLevel[]>(EMPTY_SORT_LEVELS);
+  const [showSortModal, setShowSortModal] = useState(false);
+  const orderSortLevels = useMemo<SortLevelActive[]>(
+    () =>
+      sortLevels.filter((l): l is SortLevelActive => l != null && SORT_FIELD_BY_KEY[l.key].scope === "order"),
+    [sortLevels],
+  );
+  const itemSortLevels = useMemo<SortLevelActive[]>(
+    () =>
+      sortLevels.filter((l): l is SortLevelActive => l != null && SORT_FIELD_BY_KEY[l.key].scope === "item"),
+    [sortLevels],
+  );
+  const sortActive = orderSortLevels.length > 0 || itemSortLevels.length > 0;
+  const sortBarLabel = useMemo(() => {
+    const active = sortLevels.filter((l): l is SortLevelActive => l != null);
+    if (active.length === 0) return "Sort by";
+    return active
+      .map((l) => `${SORT_FIELD_BY_KEY[l.key].label} ${l.dir === "asc" ? "↑" : "↓"}`)
+      .join(" · ");
+  }, [sortLevels]);
   // Local draft for the supplier-level notes box. We seed it from the
   // resolved supplier's saved notes whenever the supplier in view changes
   // (or its saved notes change after a successful save) so the input stays
@@ -266,7 +297,7 @@ function OrdersView({ topPt }: { topPt: number }) {
   }, [vendorOrders, activeFilter]);
 
   const filtered = useMemo(() => {
-    return statusFiltered.filter((o) => {
+    const base = statusFiltered.filter((o) => {
       const brandOk =
         activeBrands.length === 0 ||
         o.items.some((item) => item.brand != null && activeBrands.includes(item.brand));
@@ -276,7 +307,8 @@ function OrdersView({ topPt }: { topPt: number }) {
         o.items.some((item) => item.category != null && activeCategories.includes(item.category));
       return categoryOk;
     });
-  }, [statusFiltered, activeBrands, activeCategories]);
+    return applyOrderSort(base, orderSortLevels);
+  }, [statusFiltered, activeBrands, activeCategories, orderSortLevels]);
 
   function toggleBrand(brand: string) {
     setActiveBrands((prev) =>
@@ -377,6 +409,7 @@ function OrdersView({ topPt }: { topPt: number }) {
         if (activeCategories.length > 0) {
           exportItems = exportItems.filter((item) => item.category != null && activeCategories.includes(item.category));
         }
+        exportItems = applyItemSort(exportItems, itemSortLevels);
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           if (showStock) {
@@ -481,6 +514,7 @@ function OrdersView({ topPt }: { topPt: number }) {
         if (activeCategories.length > 0) {
           exportItems = exportItems.filter((item) => item.category != null && activeCategories.includes(item.category));
         }
+        exportItems = applyItemSort(exportItems, itemSortLevels);
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
@@ -822,49 +856,72 @@ function OrdersView({ topPt }: { topPt: number }) {
       )}
 
       {vendorOrders.length > 0 && (
-        <TouchableOpacity
-          style={[styles.brandBar, brandActive && styles.brandBarActive]}
-          onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
-          activeOpacity={0.75}
-        >
-          <Feather name="tag" size={14} color={brandActive ? Colors.textInverse : Colors.textSecondary} />
-          <Text style={[styles.brandBarText, brandActive && styles.brandBarTextActive]} numberOfLines={1}>
-            {activeBrands.length === 0
-              ? "All Brands"
-              : activeBrands.length === 1
-              ? "1 Brand"
-              : `${activeBrands.length} Brands`}
-          </Text>
-          {brandActive ? (
-            <TouchableOpacity
-              onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Feather name="x-circle" size={15} color={Colors.textInverse} />
-            </TouchableOpacity>
-          ) : (
-            <Feather name="chevron-down" size={14} color={Colors.textMuted} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.brandBar, styles.brandBarHalf, brandActive && styles.brandBarActive]}
+            onPress={() => { setBrandSearch(""); setShowBrandModal(true); }}
+            activeOpacity={0.75}
+          >
+            <Feather name="tag" size={14} color={brandActive ? Colors.textInverse : Colors.textSecondary} />
+            <Text style={[styles.brandBarText, brandActive && styles.brandBarTextActive]} numberOfLines={1}>
+              {activeBrands.length === 0
+                ? "All Brands"
+                : activeBrands.length === 1
+                ? "1 Brand"
+                : `${activeBrands.length} Brands`}
+            </Text>
+            {brandActive ? (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation?.(); setActiveBrands([]); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x-circle" size={15} color={Colors.textInverse} />
+              </TouchableOpacity>
+            ) : (
+              <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.brandBar, styles.brandBarHalf, categoryActive && styles.brandBarActive]}
+            onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+            activeOpacity={0.75}
+          >
+            <Feather name="folder" size={14} color={categoryActive ? Colors.textInverse : Colors.textSecondary} />
+            <Text style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]} numberOfLines={1}>
+              {activeCategories.length === 0
+                ? "All Categories"
+                : activeCategories.length === 1
+                ? "1 Category"
+                : `${activeCategories.length} Categories`}
+            </Text>
+            {categoryActive ? (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x-circle" size={15} color={Colors.textInverse} />
+              </TouchableOpacity>
+            ) : (
+              <Feather name="chevron-down" size={14} color={Colors.textMuted} />
+            )}
+          </TouchableOpacity>
+        </View>
       )}
 
       {vendorOrders.length > 0 && (
         <TouchableOpacity
-          style={[styles.brandBar, categoryActive && styles.brandBarActive]}
-          onPress={() => { setCategorySearch(""); setShowCategoryModal(true); }}
+          style={[styles.brandBar, sortActive && styles.brandBarActive]}
+          onPress={() => { setSortLevelsDraft(sortLevels); setShowSortModal(true); }}
           activeOpacity={0.75}
         >
-          <Feather name="folder" size={14} color={categoryActive ? Colors.textInverse : Colors.textSecondary} />
-          <Text style={[styles.brandBarText, categoryActive && styles.brandBarTextActive]} numberOfLines={1}>
-            {activeCategories.length === 0
-              ? "All Categories"
-              : activeCategories.length === 1
-              ? "1 Category"
-              : `${activeCategories.length} Categories`}
+          <Feather name="bar-chart-2" size={14} color={sortActive ? Colors.textInverse : Colors.textSecondary} />
+          <Text style={[styles.brandBarText, sortActive && styles.brandBarTextActive]} numberOfLines={1}>
+            {sortBarLabel}
           </Text>
-          {categoryActive ? (
+          {sortActive ? (
             <TouchableOpacity
-              onPress={(e) => { e.stopPropagation?.(); setActiveCategories([]); }}
+              onPress={(e) => { e.stopPropagation?.(); setSortLevels(EMPTY_SORT_LEVELS); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Feather name="x-circle" size={15} color={Colors.textInverse} />
@@ -902,6 +959,7 @@ function OrdersView({ topPt }: { topPt: number }) {
               onToggleHideZero={() => setHideZero((v) => !v)}
               activeBrands={activeBrands}
               activeCategories={activeCategories}
+              itemSortLevels={itemSortLevels}
             />
           )}
           ListEmptyComponent={
@@ -1142,6 +1200,146 @@ function OrdersView({ topPt }: { topPt: number }) {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Multi-level Sort by modal — mirrors StockUpd's three-slot picker */}
+      <Modal
+        visible={showSortModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSortModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowSortModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16, maxHeight: "85%" }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Sort by</Text>
+            {sortLevelsDraft.some((l) => l != null) && (
+              <TouchableOpacity onPress={() => setSortLevelsDraft(EMPTY_SORT_LEVELS)}>
+                <Text style={styles.modalClear}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView
+            style={{ paddingHorizontal: 20 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.sortHint}>
+              Pick up to 3 columns. Levels are applied in order — the first
+              level groups orders (e.g. Vendor), then the next levels order
+              the items inside each order.
+            </Text>
+            {[0, 1, 2].map((idx) => {
+              const lvl = sortLevelsDraft[idx];
+              const def = lvl ? SORT_FIELD_BY_KEY[lvl.key] : null;
+              return (
+                <View key={idx} style={styles.sortLevelBlock}>
+                  <View style={styles.sortLevelHeader}>
+                    <Text style={styles.sortLevelLabel}>
+                      {idx === 0 ? "First by" : "Then by"}
+                    </Text>
+                    {lvl && def ? (
+                      <TouchableOpacity
+                        style={styles.sortDirBtn}
+                        onPress={() =>
+                          setSortLevelsDraft((prev) => {
+                            const next = [...prev];
+                            const cur = next[idx];
+                            if (cur) next[idx] = { ...cur, dir: cur.dir === "asc" ? "desc" : "asc" };
+                            return next;
+                          })
+                        }
+                        activeOpacity={0.75}
+                      >
+                        <Feather
+                          name={lvl.dir === "asc" ? "arrow-up" : "arrow-down"}
+                          size={13}
+                          color={Colors.primary}
+                        />
+                        <Text style={styles.sortDirBtnText}>{dirLabelFor(def.type, lvl.dir)}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.sortLevelEmpty}>Not set</Text>
+                    )}
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.sortChipsRow}
+                  >
+                    <TouchableOpacity
+                      style={[styles.sortChip, !lvl && styles.sortChipActive]}
+                      onPress={() =>
+                        setSortLevelsDraft((prev) => {
+                          const next = [...prev];
+                          next[idx] = null;
+                          return next;
+                        })
+                      }
+                    >
+                      <Text style={[styles.sortChipText, !lvl && styles.sortChipTextActive]}>None</Text>
+                    </TouchableOpacity>
+                    {SORT_FIELDS.map((f) => {
+                      const isActive = lvl?.key === f.key;
+                      const usedElsewhere = sortLevelsDraft.some(
+                        (l, i) => i !== idx && l?.key === f.key,
+                      );
+                      return (
+                        <TouchableOpacity
+                          key={f.key}
+                          style={[
+                            styles.sortChip,
+                            isActive && styles.sortChipActive,
+                            usedElsewhere && styles.sortChipDisabled,
+                          ]}
+                          disabled={usedElsewhere}
+                          onPress={() =>
+                            setSortLevelsDraft((prev) => {
+                              const next = [...prev];
+                              next[idx] = { key: f.key, dir: "asc" };
+                              return next;
+                            })
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.sortChipText,
+                              isActive && styles.sortChipTextActive,
+                              usedElsewhere && styles.sortChipTextDisabled,
+                            ]}
+                          >
+                            {f.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              );
+            })}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              const compact = sortLevelsDraft.filter((l): l is SortLevelActive => l != null);
+              const padded: SortLevel[] = [
+                compact[0] ?? null,
+                compact[1] ?? null,
+                compact[2] ?? null,
+              ];
+              setSortLevels(padded);
+              setSortLevelsDraft(padded);
+              setShowSortModal(false);
+            }}
+          >
+            <Text style={styles.modalDoneBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1156,6 +1354,7 @@ function VendorOrderCard({
   onToggleHideZero,
   activeBrands,
   activeCategories,
+  itemSortLevels,
 }: {
   order: Order;
   showStock: boolean;
@@ -1164,6 +1363,7 @@ function VendorOrderCard({
   onToggleHideZero: () => void;
   activeBrands: string[];
   activeCategories: string[];
+  itemSortLevels: SortLevelActive[];
 }) {
   const { updateOrderStatus, updateOrder } = useApp();
   const [expanded, setExpanded] = useState(false);
@@ -1183,8 +1383,9 @@ function VendorOrderCard({
     if (hideZero) {
       items = items.filter((it) => Number(it.quantity) > 0);
     }
+    items = applyItemSort(items, itemSortLevels);
     return items;
-  }, [order.items, activeBrands, activeCategories, hideZero]);
+  }, [order.items, activeBrands, activeCategories, hideZero, itemSortLevels]);
 
   function handleStatusChange(newStatus: OrderStatus) {
     if (newStatus === order.status) return;
@@ -1585,6 +1786,10 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.text, textAlign: "center" },
   emptySubtitle: { fontSize: 14, color: Colors.textMuted, textAlign: "center", lineHeight: 20 },
+  toggleRow: {
+    flexDirection: "row", gap: 8,
+    marginHorizontal: 20, marginBottom: 8,
+  },
   brandBar: {
     flexDirection: "row", alignItems: "center", gap: 8,
     marginHorizontal: 20, marginBottom: 8,
@@ -1592,9 +1797,40 @@ const styles = StyleSheet.create({
     borderRadius: 12, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border,
   },
+  brandBarHalf: { flex: 1, marginHorizontal: 0, marginBottom: 0 },
   brandBarActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   brandBarText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
   brandBarTextActive: { color: Colors.textInverse },
+  sortHint: {
+    fontSize: 12, color: Colors.textMuted, marginBottom: 10, lineHeight: 17,
+  },
+  sortLevelBlock: {
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  sortLevelHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sortLevelLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  sortLevelEmpty: { fontSize: 12, color: Colors.textMuted, fontStyle: "italic" },
+  sortDirBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 8, backgroundColor: Colors.primaryMuted,
+    borderWidth: 1, borderColor: Colors.primary + "40",
+  },
+  sortDirBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  sortChipsRow: { gap: 6, paddingRight: 12 },
+  sortChip: {
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 16,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  sortChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  sortChipDisabled: { opacity: 0.35 },
+  sortChipText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  sortChipTextActive: { color: Colors.textInverse },
+  sortChipTextDisabled: { color: Colors.textMuted },
   notesBox: {
     marginHorizontal: 20, marginBottom: 12,
     padding: 12, borderRadius: 12,
