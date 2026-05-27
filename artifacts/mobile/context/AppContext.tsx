@@ -41,6 +41,13 @@ export interface Supplier {
   // exporter can embed them inline without a file fetch. Optional so
   // existing suppliers hydrate cleanly without a migration step.
   photos?: string[];
+  // Separate set of up to 3 reference photos used only by the
+  // VendorPayments "Credit Note Needed" PDF export. Kept distinct from
+  // `photos` so the StockUpd / My Orders PDF footers continue to show
+  // the existing attachment set while the credit-note PDF can pull from
+  // its own pool (e.g. payment proof, debit-note copy). Same encoding
+  // and cap as `photos`. Optional so existing suppliers hydrate cleanly.
+  crPhotos?: string[];
   createdAt: string;
 }
 
@@ -153,6 +160,7 @@ interface AppContextType {
   updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
   setSupplierGeneralNotes: (id: string, generalNotes: string) => Promise<void>;
   setSupplierPhotos: (id: string, photos: string[]) => Promise<void>;
+  setSupplierCrPhotos: (id: string, crPhotos: string[]) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   addOrder: (order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">) => Promise<void>;
   addOrdersBatch: (orders: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt" | "totalAmount">[]) => Promise<void>;
@@ -611,6 +619,16 @@ export interface VendorPayment {
   // existing saveVendorPaymentsBatch write path.
   markToPay?: "Normal" | "Urgent" | null;
   comments?: string;
+  // Per-bill flag used by the VendorPayments tab to flag rows that need
+  // a Credit Note from the supplier. Editable in Modify mode (expanded
+  // vendor row) and the dedicated "Credit Note Needed" PDF export picks
+  // up only rows where this is true. Optional/false-y so existing
+  // imports round-trip cleanly.
+  crFlag?: boolean;
+  // Per-bill free-text note paired with `crFlag` — surfaced on the
+  // Credit Note PDF export. Editable in Modify mode. Optional so
+  // existing rows hydrate without a default value.
+  crNotes?: string;
 }
 
 // One row in the RodeoItems table. Imported from Excel and stored in
@@ -1565,6 +1583,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // Targeted setter for the supplier-level Credit Note photos array.
+  // Mirrors setSupplierPhotos so the VendorPayments Credit Note PDF
+  // export can attach its own up-to-3 photos without sharing the
+  // StockUpd / My Orders photo pool. Capped at 3; extras dropped.
+  async function setSupplierCrPhotos(id: string, crPhotos: string[]) {
+    const capped = crPhotos.slice(0, 3);
+    await saveSuppliers(
+      suppliersRef.current.map((s) => (s.id === id ? { ...s, crPhotos: capped } : s))
+    );
+  }
+
   async function deleteSupplier(id: string) {
     await saveSuppliers(suppliers.filter((s) => s.id !== id));
   }
@@ -2285,6 +2314,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateSupplier,
         setSupplierGeneralNotes,
         setSupplierPhotos,
+        setSupplierCrPhotos,
         deleteSupplier,
         addOrder,
         addOrdersBatch,
