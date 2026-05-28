@@ -315,8 +315,12 @@ function StockUpdCard({
     }
   }
   // Used by the tappable "Item No: …" link to deep-link into the
-  // Promo tab pre-filtered to that item.
+  // Promo tab pre-filtered to that item, and by the admin-only red
+  // "₹" pill in this card's header that jumps to VendorPayments
+  // pre-filtered to this supplier.
   const router = useRouter();
+  const { currentUser } = useApp();
+  const isAdmin = currentUser?.userType === "Admin";
 
   const sortedItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -430,7 +434,29 @@ function StockUpdCard({
         activeOpacity={0.75}
       >
         <View style={{ flex: 1 }}>
-          <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
+          <View style={cardSt.supplierRow}>
+            <Text style={cardSt.supplier} numberOfLines={1}>{order.supplierName}</Text>
+            {isAdmin && order.supplierName ? (
+              // Admin-only shortcut: jumps to the VendorPayments tab
+              // pre-filtered to this supplier so the user can eyeball
+              // outstanding bills without losing their place here.
+              <TouchableOpacity
+                style={cardSt.payJumpBtn}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  router.push({
+                    pathname: "/vendor-payments",
+                    params: { vendor: order.supplierName },
+                  });
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.8}
+              >
+                <Feather name="credit-card" size={11} color="#fff" />
+                <Text style={cardSt.payJumpBtnText}>Pay</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
           <Text style={cardSt.orderNo}>
             {vendorCode ? `${vendorCode}  ·  ` : ""}{order.orderNumber}  ·  {sortedItems.length}{(activeBrands.length > 0 || activeCategories.length > 0) ? ` of ${order.items.length}` : ""} items
           </Text>
@@ -712,7 +738,32 @@ const cardSt = StyleSheet.create({
     alignItems: "center",
     padding: 14,
   },
-  supplier: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  supplierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  supplier: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  payJumpBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: Colors.danger,
+  },
+  payJumpBtnText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.4,
+  },
   orderNo: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   body: { borderTopWidth: 1, borderTopColor: Colors.border },
   tableHeader: {

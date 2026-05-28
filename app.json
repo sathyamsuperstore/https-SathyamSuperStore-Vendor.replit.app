@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "96270b6f-4ae0-4eee-ac64-e673fb1cae4d"
+      }
+    },
+    "android": {
+      "package": "com.sathyamsuperstore.workspace"
+    }
+  }
+}

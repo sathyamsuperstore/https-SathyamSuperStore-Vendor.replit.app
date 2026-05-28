@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
@@ -158,6 +158,10 @@ export default function VendorPaymentsScreen() {
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Deep-link entry point: when the user taps the admin-only "Pay"
+  // pill on a StockUpd order card, we land here with `?vendor=<name>`
+  // and apply the multi-vendor filter on arrival.
+  const params = useLocalSearchParams<{ vendor?: string | string[] }>();
 
   const [search, setSearch] = useState("");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
@@ -167,6 +171,20 @@ export default function VendorPaymentsScreen() {
   const [activeVendors, setActiveVendors] = useState<string[]>([]);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
+
+  // Apply the `?vendor=<name>` deep-link param once per arrival.
+  // We strip the param from the URL with `router.setParams` after
+  // applying so navigating away + back doesn't keep re-pinning the
+  // same vendor — and so the user can freely clear/change the filter
+  // from the chip without it snapping back.
+  useEffect(() => {
+    const raw = params.vendor;
+    const name =
+      Array.isArray(raw) ? raw[0] : typeof raw === "string" ? raw : "";
+    if (!name) return;
+    setActiveVendors((cur) => (cur.includes(name) ? cur : [name]));
+    router.setParams({ vendor: undefined });
+  }, [params.vendor, router]);
 
   const [invFrom, setInvFrom] = useState<Date | null>(null);
   const [invTo, setInvTo] = useState<Date | null>(null);
