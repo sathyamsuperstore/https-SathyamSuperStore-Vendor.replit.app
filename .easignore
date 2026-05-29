@@ -1,0 +1,71 @@
+# EAS Build ignore file.
+#
+# IMPORTANT: When a .easignore exists, EAS Build uses it INSTEAD of
+# .gitignore. So this file must re-list every pattern we'd normally rely
+# on .gitignore for (node_modules, build output, etc.) PLUS the large
+# Replit/tooling directories that are only excluded by the machine-level
+# global gitignore (/etc/.gitignore) — which EAS Build does NOT read.
+# Those globally-ignored dirs (notably .config, ~270MB .cache and ~830MB
+# .local) were the bulk of the 277MB upload.
+#
+# Do NOT ignore other workspace packages (lib/*, scripts, artifacts/*):
+# pnpm needs them present for a frozen-lockfile install on the build
+# server. They are tiny (a few MB total) anyway.
+
+# --- Dependencies (reinstalled on the EAS build server) ---
+node_modules/
+**/node_modules/
+
+# --- Replit / tooling caches & state (huge, build-irrelevant) ---
+.cache/
+.local/
+.config/
+.upm/
+.replit
+replit.nix
+
+# --- Version control ---
+.git/
+
+# --- Build / compiled output ---
+dist/
+**/dist/
+out-tsc/
+web-build/
+**/web-build/
+*.tsbuildinfo
+tmp/
+
+# --- Expo / Metro (regenerated during the build) ---
+.expo/
+**/.expo/
+.expo-shared/
+expo-env.d.ts
+.metro-health-check*
+
+# --- Native build dirs (managed workflow regenerates these) ---
+artifacts/mobile/ios/
+artifacts/mobile/android/
+*.orig.*
+
+# --- Secrets / signing material (never upload) ---
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+.env*.local
+
+# --- Agent / editor / OS cruft, docs & non-build assets ---
+.agents/
+.cursor/
+.idea/
+.vscode/
+.settings/
+attached_assets/
+screenshots/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
