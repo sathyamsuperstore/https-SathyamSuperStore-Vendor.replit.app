@@ -1009,6 +1009,121 @@ async function loadVendorPaymentsChunked(): Promise<VendorPayment[]> {
   }
 }
 
+// ---- LatestPurchases storage ----
+// A "Latest Purchase" import can carry thousands of rows. Persisting the
+// whole array as one AsyncStorage value blew past Android's SQLite limits:
+// the single oversized row could crash the app NATIVELY during the save at
+// ~95% (an uncatchable native error, not a JS exception), and made the
+// subsequent read throw "Row too big to fit into CursorWindow" on launch.
+// Devices crashed inconsistently depending on row count + free memory,
+// which is exactly what the field reports showed (two phones crashed, a
+// third imported the same files fine). So on native we now keep the data
+// in a single JSON file under the document directory (no per-row/per-DB
+// size cap), mirroring Suppliers/VendorPayments/RodeoItems. Web keeps
+// using the AsyncStorage blob. Legacy AsyncStorage installs migrate on
+// first launch.
+const LATEST_PURCHASES_FILE = "latestPurchases.json";
+function latestPurchasesFileUri(): string {
+  return (FileSystem.documentDirectory ?? "") + LATEST_PURCHASES_FILE;
+}
+
+// Same missing-vs-error distinction as suppliers: a genuinely absent file
+// is a safe first-launch migration trigger, while a present-but-unreadable
+// file must NOT migrate (that would clobber a recoverable file with [] ).
+type LatestPurchasesFileResult =
+  | { status: "ok"; list: LatestPurchaseEntry[] }
+  | { status: "missing" }
+  | { status: "error" };
+
+async function loadLatestPurchasesFromFile(): Promise<LatestPurchasesFileResult> {
+  if (Platform.OS === "web") return { status: "missing" };
+  const uri = latestPurchasesFileUri();
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return { status: "missing" };
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: "utf8" as any,
+    });
+    if (!raw) return { status: "ok", list: [] };
+    const parsed = JSON.parse(raw) as LatestPurchaseEntry[];
+    return { status: "ok", list: Array.isArray(parsed) ? parsed : [] };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+// Atomic native write (tmp + rename) so a mid-write crash leaves the
+// previous snapshot intact. Web falls back to the AsyncStorage blob.
+async function writeLatestPurchasesToStorage(
+  data: LatestPurchaseEntry[],
+): Promise<void> {
+  if (Platform.OS === "web") {
+    await AsyncStorage.setItem(LATEST_PURCHASES_KEY, JSON.stringify(data));
+    return;
+  }
+  const finalUri = latestPurchasesFileUri();
+  const tmpUri = finalUri + ".tmp";
+  const payload = JSON.stringify(data);
+  try {
+    try {
+      const tmpInfo = await FileSystem.getInfoAsync(tmpUri);
+      if (tmpInfo.exists) {
+        await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+      }
+    } catch {
+      // ignore
+    }
+    await FileSystem.writeAsStringAsync(tmpUri, payload, {
+      encoding: "utf8" as any,
+    });
+    await FileSystem.moveAsync({ from: tmpUri, to: finalUri });
+  } catch (e: any) {
+    try {
+      await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+    } catch {
+      // ignore
+    }
+    const msg = e?.message ?? String(e);
+    throw new Error(`Failed to write LatestPurchases file: ${msg}`);
+  }
+}
+
+// Resolve latest purchases at launch. Native prefers the JSON file; if it's
+// absent (legacy install) we fall back to the old AsyncStorage blob and flag
+// it for one-time migration into the file. `migrate` is returned so loadData
+// can write the file + drop the legacy key after hydration.
+async function loadLatestPurchasesResolved(): Promise<{
+  list: LatestPurchaseEntry[];
+  migrate: boolean;
+}> {
+  if (Platform.OS !== "web") {
+    const fromFile = await loadLatestPurchasesFromFile();
+    if (fromFile.status === "ok") {
+      return { list: fromFile.list, migrate: false };
+    }
+    if (fromFile.status === "error") {
+      // File present but unreadable: surface the legacy blob read-only if it
+      // still exists, but NEVER migrate (writing would clobber the file).
+      const legacy = safeParseArray<LatestPurchaseEntry>(
+        await safeGetItem(LATEST_PURCHASES_KEY),
+      );
+      return { list: legacy, migrate: false };
+    }
+    // status === "missing": genuine first launch on the file path. Migrate the
+    // legacy AsyncStorage blob into the file, but only if it holds data.
+    const legacy = safeParseArray<LatestPurchaseEntry>(
+      await safeGetItem(LATEST_PURCHASES_KEY),
+    );
+    return { list: legacy, migrate: legacy.length > 0 };
+  }
+  return {
+    list: safeParseArray<LatestPurchaseEntry>(
+      await safeGetItem(LATEST_PURCHASES_KEY),
+    ),
+    migrate: false,
+  };
+}
+
 // User-entered "New Qty" overrides per Promo row, keyed by
 // `${itemNo}|${batchNo}`. Stored as a separate map so importing a fresh
 // Promo workbook (which replaces every row) doesn't blow away the
@@ -1179,7 +1294,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         safeGetItem(USERS_KEY),
         safeGetItem(SESSION_KEY),
         safeGetItem(MRP_KEY),
-        safeGetItem(LATEST_PURCHASES_KEY),
+        loadLatestPurchasesResolved(),
         safeGetItem(PROMO_KEY),
         safeGetItem(PROMO_PREV_KEY),
         safeGetItem(PROMO_PREV_AT_KEY),
@@ -1212,7 +1327,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const loadedMrp: MrpEntry[] = safeParseArray<MrpEntry>(mrpData);
       const loadedRasiItems: RasiItem[] = safeParseArray<RasiItem>(rasiItemsData);
       const loadedLatestPurchases: LatestPurchaseEntry[] =
-        safeParseArray<LatestPurchaseEntry>(latestPurchasesData);
+        latestPurchasesData.list;
       const loadedPromo: PromoEntry[] = safeParseArray<PromoEntry>(promoData);
       const loadedPromoPrev: PromoEntry[] = safeParseArray<PromoEntry>(promoPrevData);
       const loadedPromoPrevAt: number | null = promoPrevAtData
@@ -1228,6 +1343,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           await writeSuppliersToStorage(loadedSuppliers);
           await AsyncStorage.removeItem(SUPPLIERS_KEY);
+        } catch {
+          // Non-fatal: legacy key stays put for a future retry.
+        }
+      }
+
+      // One-time migration of the legacy AsyncStorage latest-purchases blob
+      // into the native JSON file. Best-effort: if the write fails we keep
+      // the legacy key so the next launch can retry.
+      if (latestPurchasesData.migrate) {
+        try {
+          await writeLatestPurchasesToStorage(loadedLatestPurchases);
+          await AsyncStorage.removeItem(LATEST_PURCHASES_KEY);
         } catch {
           // Non-fatal: legacy key stays put for a future retry.
         }
@@ -1526,16 +1653,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRasiItems([]);
   }
 
-  // Latest Purchases helpers mirror the MRP write-first pattern: persist to
-  // AsyncStorage first so the on-screen state never shows a "save" that
-  // wasn't actually written (matches the rest of the data layer).
+  // Latest Purchases helpers mirror the VendorPayments/Suppliers write-first
+  // pattern: persist to the native JSON file (or web blob) first so the
+  // on-screen state never shows a "save" that wasn't actually written
+  // (matches the rest of the data layer).
   async function saveLatestPurchasesBatch(entries: LatestPurchaseEntry[]) {
-    await AsyncStorage.setItem(LATEST_PURCHASES_KEY, JSON.stringify(entries));
+    // Write-first: persist to the native JSON file (or web blob) before
+    // updating React state, so a failed write surfaces as a thrown error
+    // (handled by the importer's storage-error alert) instead of leaving
+    // the in-memory list out of sync with disk.
+    await writeLatestPurchasesToStorage(entries);
     setLatestPurchases(entries);
   }
 
   async function clearLatestPurchases() {
-    await AsyncStorage.removeItem(LATEST_PURCHASES_KEY);
+    await writeLatestPurchasesToStorage([]);
+    // Best-effort: also drop any stale legacy blob so it can't resurrect.
+    try {
+      await AsyncStorage.removeItem(LATEST_PURCHASES_KEY);
+    } catch {
+      // ignore
+    }
     setLatestPurchases([]);
   }
 
