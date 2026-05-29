@@ -753,7 +753,9 @@ async function loadRodeoItemsLegacyAsyncStorage(): Promise<RodeoItem[]> {
   } catch {
     // Fall through to legacy single-key read.
   }
-  const legacy = await AsyncStorage.getItem(RODEO_ITEMS_KEY);
+  // safeGetItem (hoisted) swallows read errors so a throwing legacy blob
+  // can't reject the loadData Promise.all and skip all hydration.
+  const legacy = await safeGetItem(RODEO_ITEMS_KEY);
   if (legacy) {
     try {
       const arr = JSON.parse(legacy) as RodeoItem[];
@@ -799,6 +801,138 @@ async function loadRodeoItemsChunked(): Promise<RodeoItem[]> {
   }
   // Fall back to (web) chunked AsyncStorage or legacy single blob.
   return await loadRodeoItemsLegacyAsyncStorage();
+}
+
+// ---- Resilient AsyncStorage read/parse helpers ----
+// On Android, a single oversized value (e.g. a suppliers blob carrying
+// many base64 photos) can exceed SQLite's CursorWindow (~2MB) and make
+// `getItem` THROW "Row too big to fit into CursorWindow". When such a
+// read happened inside the one big `Promise.all` in loadData, the whole
+// batch rejected and every other (perfectly fine) dataset — orders, MRP,
+// promos, the Excel imports — was wiped from memory and could then be
+// overwritten on disk. These wrappers isolate each read/parse so one bad
+// key can never take down the rest of the hydration.
+async function safeGetItem(key: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function safeParseArray<T>(raw: string | null | undefined): T[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// ---- Suppliers storage ----
+// Suppliers carry up to 10 `photos` + 10 `crPhotos` base64 images each.
+// Stored as one AsyncStorage row (the whole array), a handful of suppliers
+// with photos easily blows past Android's ~2MB CursorWindow read limit,
+// which made `getItem(SUPPLIERS_KEY)` throw on launch. So on native we now
+// keep suppliers in a single JSON file under the document directory (no
+// per-row/per-DB size cap), mirroring RodeoItems/VendorPayments. Web keeps
+// using AsyncStorage. Legacy AsyncStorage installs migrate on first launch.
+const SUPPLIERS_FILE = "suppliers.json";
+function suppliersFileUri(): string {
+  return (FileSystem.documentDirectory ?? "") + SUPPLIERS_FILE;
+}
+
+// Distinguishes "file genuinely absent" (first launch → safe to migrate)
+// from "file present but unreadable" (transient/corrupt → must NOT migrate
+// or we'd overwrite a recoverable file with an empty array). Conflating the
+// two is the classic way a transient read error becomes permanent loss.
+type SuppliersFileResult =
+  | { status: "ok"; list: Supplier[] }
+  | { status: "missing" }
+  | { status: "error" };
+
+async function loadSuppliersFromFile(): Promise<SuppliersFileResult> {
+  if (Platform.OS === "web") return { status: "missing" };
+  const uri = suppliersFileUri();
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return { status: "missing" };
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: "utf8" as any,
+    });
+    if (!raw) return { status: "ok", list: [] };
+    const parsed = JSON.parse(raw) as Supplier[];
+    return { status: "ok", list: Array.isArray(parsed) ? parsed : [] };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+// Atomic native write (tmp + rename) so a mid-write crash leaves the
+// previous snapshot intact. Web falls back to AsyncStorage.
+async function writeSuppliersToStorage(data: Supplier[]): Promise<void> {
+  if (Platform.OS === "web") {
+    await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(data));
+    return;
+  }
+  const finalUri = suppliersFileUri();
+  const tmpUri = finalUri + ".tmp";
+  const payload = JSON.stringify(data);
+  try {
+    try {
+      const tmpInfo = await FileSystem.getInfoAsync(tmpUri);
+      if (tmpInfo.exists) {
+        await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+      }
+    } catch {
+      // ignore
+    }
+    await FileSystem.writeAsStringAsync(tmpUri, payload, {
+      encoding: "utf8" as any,
+    });
+    await FileSystem.moveAsync({ from: tmpUri, to: finalUri });
+  } catch (e: any) {
+    try {
+      await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+    } catch {
+      // ignore
+    }
+    const msg = e?.message ?? String(e);
+    throw new Error(`Failed to write suppliers file: ${msg}`);
+  }
+}
+
+// Resolve suppliers at launch. Native prefers the JSON file; if it's
+// absent (legacy install) we fall back to the old AsyncStorage blob and
+// flag it for one-time migration into the file. `migrate` is returned so
+// loadData can write the file + drop the legacy key after hydration.
+async function loadSuppliersResolved(): Promise<{
+  list: Supplier[];
+  migrate: boolean;
+}> {
+  if (Platform.OS !== "web") {
+    const fromFile = await loadSuppliersFromFile();
+    if (fromFile.status === "ok") {
+      return { list: fromFile.list, migrate: false };
+    }
+    if (fromFile.status === "error") {
+      // File present but unreadable. Surface the legacy blob read-only if it
+      // happens to still exist, but NEVER migrate — writing here would clobber
+      // the (possibly recoverable) file with whatever we managed to read.
+      const legacy = safeParseArray<Supplier>(await safeGetItem(SUPPLIERS_KEY));
+      return { list: legacy, migrate: false };
+    }
+    // status === "missing": genuine first launch on the file path. Migrate the
+    // legacy AsyncStorage blob into the file, but only if it actually holds
+    // data — a fresh install has nothing to move and shouldn't write an
+    // empty file or churn the legacy key.
+    const legacy = safeParseArray<Supplier>(await safeGetItem(SUPPLIERS_KEY));
+    return { list: legacy, migrate: legacy.length > 0 };
+  }
+  return {
+    list: safeParseArray<Supplier>(await safeGetItem(SUPPLIERS_KEY)),
+    migrate: false,
+  };
 }
 // VendorPayments storage — mirrors RodeoItems. On native a single JSON
 // file under the document directory; on web, chunked AsyncStorage
@@ -1030,54 +1164,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
   async function loadData() {
     try {
       const [suppliersData, ordersData, usersData, sessionData, mrpData, latestPurchasesData, promoData, promoPrevData, promoPrevAtData, promoNewQtyData, lastSupplyDateData, rodeoItemsData, vendorPaymentsData, priceTagData, priceTagStyleData, priceTagShowLogoData, priceTagTitleData, priceTagReviewData, priceTagReviewStyleData, priceTagReviewShowLogoData, priceTagReviewTitleData, tagColorsData, customTagPresetsData, titleListData, titleListSeededData, dataDownloadTimeData, companyDetailsData, priceTagSquareVariantData, rasiItemsData, companyDetailsRData] = await Promise.all([
-        AsyncStorage.getItem(SUPPLIERS_KEY),
-        AsyncStorage.getItem(ORDERS_KEY),
-        AsyncStorage.getItem(USERS_KEY),
-        AsyncStorage.getItem(SESSION_KEY),
-        AsyncStorage.getItem(MRP_KEY),
-        AsyncStorage.getItem(LATEST_PURCHASES_KEY),
-        AsyncStorage.getItem(PROMO_KEY),
-        AsyncStorage.getItem(PROMO_PREV_KEY),
-        AsyncStorage.getItem(PROMO_PREV_AT_KEY),
-        AsyncStorage.getItem(PROMO_NEW_QTY_KEY),
-        AsyncStorage.getItem(LAST_SUPPLY_DATE_KEY),
+        loadSuppliersResolved(),
+        safeGetItem(ORDERS_KEY),
+        safeGetItem(USERS_KEY),
+        safeGetItem(SESSION_KEY),
+        safeGetItem(MRP_KEY),
+        safeGetItem(LATEST_PURCHASES_KEY),
+        safeGetItem(PROMO_KEY),
+        safeGetItem(PROMO_PREV_KEY),
+        safeGetItem(PROMO_PREV_AT_KEY),
+        safeGetItem(PROMO_NEW_QTY_KEY),
+        safeGetItem(LAST_SUPPLY_DATE_KEY),
         loadRodeoItemsChunked(),
         loadVendorPaymentsChunked(),
-        AsyncStorage.getItem(PRICE_TAG_KEY),
-        AsyncStorage.getItem(PRICE_TAG_STYLE_KEY),
-        AsyncStorage.getItem(PRICE_TAG_SHOW_LOGO_KEY),
-        AsyncStorage.getItem(PRICE_TAG_TITLE_KEY),
-        AsyncStorage.getItem(PRICE_TAG_REVIEW_KEY),
-        AsyncStorage.getItem(PRICE_TAG_REVIEW_STYLE_KEY),
-        AsyncStorage.getItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
-        AsyncStorage.getItem(PRICE_TAG_REVIEW_TITLE_KEY),
-        AsyncStorage.getItem(TAG_COLORS_KEY),
-        AsyncStorage.getItem(CUSTOM_TAG_PRESETS_KEY),
-        AsyncStorage.getItem(TITLE_LIST_KEY),
-        AsyncStorage.getItem(TITLE_LIST_SEEDED_KEY),
-        AsyncStorage.getItem(DATA_DOWNLOAD_TIME_KEY),
-        AsyncStorage.getItem(COMPANY_DETAILS_KEY),
-        AsyncStorage.getItem(PRICE_TAG_SQUARE_VARIANT_KEY),
-        AsyncStorage.getItem(RASI_ITEMS_KEY),
-        AsyncStorage.getItem(COMPANY_DETAILS_R_KEY),
+        safeGetItem(PRICE_TAG_KEY),
+        safeGetItem(PRICE_TAG_STYLE_KEY),
+        safeGetItem(PRICE_TAG_SHOW_LOGO_KEY),
+        safeGetItem(PRICE_TAG_TITLE_KEY),
+        safeGetItem(PRICE_TAG_REVIEW_KEY),
+        safeGetItem(PRICE_TAG_REVIEW_STYLE_KEY),
+        safeGetItem(PRICE_TAG_REVIEW_SHOW_LOGO_KEY),
+        safeGetItem(PRICE_TAG_REVIEW_TITLE_KEY),
+        safeGetItem(TAG_COLORS_KEY),
+        safeGetItem(CUSTOM_TAG_PRESETS_KEY),
+        safeGetItem(TITLE_LIST_KEY),
+        safeGetItem(TITLE_LIST_SEEDED_KEY),
+        safeGetItem(DATA_DOWNLOAD_TIME_KEY),
+        safeGetItem(COMPANY_DETAILS_KEY),
+        safeGetItem(PRICE_TAG_SQUARE_VARIANT_KEY),
+        safeGetItem(RASI_ITEMS_KEY),
+        safeGetItem(COMPANY_DETAILS_R_KEY),
       ]);
 
-      const loadedSuppliers = suppliersData ? JSON.parse(suppliersData) : [];
-      const loadedOrders = ordersData ? JSON.parse(ordersData) : [];
-      const loadedUsers: AppUser[] = usersData ? JSON.parse(usersData) : [];
-      const loadedMrp: MrpEntry[] = mrpData ? JSON.parse(mrpData) : [];
-      const loadedRasiItems: RasiItem[] = rasiItemsData ? JSON.parse(rasiItemsData) : [];
-      const loadedLatestPurchases: LatestPurchaseEntry[] = latestPurchasesData
-        ? JSON.parse(latestPurchasesData)
-        : [];
-      const loadedPromo: PromoEntry[] = promoData ? JSON.parse(promoData) : [];
-      const loadedPromoPrev: PromoEntry[] = promoPrevData ? JSON.parse(promoPrevData) : [];
+      const loadedSuppliers: Supplier[] = suppliersData.list;
+      const loadedOrders = safeParseArray<Order>(ordersData);
+      const loadedUsers: AppUser[] = safeParseArray<AppUser>(usersData);
+      const loadedMrp: MrpEntry[] = safeParseArray<MrpEntry>(mrpData);
+      const loadedRasiItems: RasiItem[] = safeParseArray<RasiItem>(rasiItemsData);
+      const loadedLatestPurchases: LatestPurchaseEntry[] =
+        safeParseArray<LatestPurchaseEntry>(latestPurchasesData);
+      const loadedPromo: PromoEntry[] = safeParseArray<PromoEntry>(promoData);
+      const loadedPromoPrev: PromoEntry[] = safeParseArray<PromoEntry>(promoPrevData);
       const loadedPromoPrevAt: number | null = promoPrevAtData
         ? Number(promoPrevAtData) || null
         : null;
-      const loadedLastSupplyDates: LastSupplyDateEntry[] = lastSupplyDateData
-        ? JSON.parse(lastSupplyDateData)
-        : [];
+      const loadedLastSupplyDates: LastSupplyDateEntry[] =
+        safeParseArray<LastSupplyDateEntry>(lastSupplyDateData);
+
+      // One-time migration of the legacy AsyncStorage suppliers blob into
+      // the native JSON file. Best-effort: if the write fails we keep the
+      // legacy key so the next launch can retry.
+      if (suppliersData.migrate) {
+        try {
+          await writeSuppliersToStorage(loadedSuppliers);
+          await AsyncStorage.removeItem(SUPPLIERS_KEY);
+        } catch {
+          // Non-fatal: legacy key stays put for a future retry.
+        }
+      }
 
       setSuppliers(loadedSuppliers);
       setOrders(loadedOrders);
@@ -1099,14 +1243,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? (vendorPaymentsData as VendorPayment[])
         : [];
       setVendorPayments(loadedVendorPayments);
-      const loadedPromoNewQty: Record<string, number> = promoNewQtyData
-        ? JSON.parse(promoNewQtyData)
-        : {};
+      let loadedPromoNewQty: Record<string, number> = {};
+      if (promoNewQtyData) {
+        try {
+          const parsed = JSON.parse(promoNewQtyData);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            loadedPromoNewQty = parsed as Record<string, number>;
+          }
+        } catch {
+          // Non-fatal: keep empty map.
+        }
+      }
       setPromoNewQty(loadedPromoNewQty);
 
-      const loadedPriceTagItems: PriceTagItem[] = priceTagData
-        ? JSON.parse(priceTagData)
-        : [];
+      const loadedPriceTagItems: PriceTagItem[] =
+        safeParseArray<PriceTagItem>(priceTagData);
       setPriceTagItems(loadedPriceTagItems);
 
       // Style is a tiny enum; reject anything that doesn't match the
@@ -1152,9 +1303,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // ----- PriceTag Review (clone) hydration -----
-      const loadedPriceTagReviewItems: PriceTagItem[] = priceTagReviewData
-        ? JSON.parse(priceTagReviewData)
-        : [];
+      const loadedPriceTagReviewItems: PriceTagItem[] =
+        safeParseArray<PriceTagItem>(priceTagReviewData);
       setPriceTagReviewItems(loadedPriceTagReviewItems);
       if (
         priceTagReviewStyleData === "A" ||
@@ -1326,9 +1476,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const savedUser = loadedUsers.find((u) => u.id === sessionData);
         if (savedUser) setCurrentUser(savedUser);
       }
-    } catch (e) {
-      setSuppliers([]);
-      setOrders([]);
+    } catch {
+      // Each read/parse above is now individually fault-isolated
+      // (safeGetItem / safeParseArray), so a single oversized or corrupt
+      // key can no longer reject the whole hydration. We deliberately do
+      // NOT blank suppliers/orders here: clearing in-memory state could be
+      // flushed back to disk by the next save and turn a transient read
+      // hiccup into permanent data loss. Leaving state as-is preserves
+      // whatever was already hydrated.
     } finally {
       // Mark hydration complete in both success and failure paths so screens
       // never get stuck in a "still loading" state if AsyncStorage throws.
@@ -1473,7 +1628,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   async function saveSuppliers(data: Supplier[]) {
-    await AsyncStorage.setItem(SUPPLIERS_KEY, JSON.stringify(data));
+    // Native: atomic JSON file (no AsyncStorage size cap). Web: AsyncStorage.
+    await writeSuppliersToStorage(data);
     setSuppliers(data);
   }
 
