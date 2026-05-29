@@ -519,9 +519,6 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
               file — your current Promo will be saved automatically before
               the next import.
             </Text>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-              <Text style={styles.backBtnText}>Back to Promo</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           <>
@@ -566,6 +563,32 @@ ${tableHtml("Changed", changedRows, changedHeaders)}
             </ScrollView>
           </>
         )}
+
+        {/* Persistent navigation footer. This screen is reached via
+            router.replace after an import, so there is no back stack —
+            the OS back button would otherwise close the app, and on
+            relaunch expo-router restores this route, trapping the user
+            with no way out (especially when there are no changes and no
+            other buttons). These buttons always navigate via
+            router.replace so they work regardless of stack state. */}
+        <View style={[styles.navFooter, { paddingBottom: insets.bottom + 12 }]}>
+          <TouchableOpacity
+            style={styles.navBtnPrimary}
+            onPress={() => router.replace("/(tabs)/promo")}
+            activeOpacity={0.85}
+          >
+            <Feather name="arrow-left" size={16} color={Colors.textInverse} />
+            <Text style={styles.navBtnPrimaryText}>Back to Promo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navBtnSecondary}
+            onPress={() => router.replace("/(tabs)")}
+            activeOpacity={0.85}
+          >
+            <Feather name="home" size={16} color={Colors.primary} />
+            <Text style={styles.navBtnSecondaryText}>Home</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </>
   );
@@ -682,14 +705,47 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
-  backBtn: {
-    marginTop: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+  navFooter: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  navBtnPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 13,
     backgroundColor: Colors.primary,
     borderRadius: 10,
   },
-  backBtnText: { color: Colors.textInverse, fontWeight: "700" },
+  navBtnPrimaryText: {
+    color: Colors.textInverse,
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  navBtnSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  navBtnSecondaryText: {
+    color: Colors.primary,
+    fontWeight: "800",
+    fontSize: 14,
+  },
   noDiff: {
     flexDirection: "row",
     alignItems: "center",
