@@ -31,10 +31,11 @@ const ALL_COLS = [
   "TranNo",
   "SupplierPayment",
   "PaymentDate",
+  "ChequeNo",
 ] as const;
 
 // Per user spec: GidNo is the unique primary key (and required).
-// TranNo and PaymentDate are the only optional fields.
+// TranNo, PaymentDate and ChequeNo are the only optional fields.
 const REQUIRED_COLS = [
   "GidNo",
   "VendorCode",
@@ -297,6 +298,7 @@ export default function ImportVendorPaymentsScreen() {
           tranNo: parseText(getCell(row, headerMap, "TranNo")),
           supplierPayment,
           paymentDate: parseDate(getCell(row, headerMap, "PaymentDate")),
+          chequeNo: parseText(getCell(row, headerMap, "ChequeNo")),
         });
       });
 

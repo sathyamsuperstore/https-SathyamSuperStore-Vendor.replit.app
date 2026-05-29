@@ -85,6 +85,8 @@ type Draft = {
   comments: string;
   crFlag: boolean;
   crNotes: string;
+  chequeNo: string;
+  paidFlag: boolean;
 };
 
 // Preset chips for the Unpaid Bills Count filter on the vendor-summary
@@ -219,6 +221,7 @@ export default function VendorPaymentsScreen() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingStatus, setExportingStatus] = useState(false);
 
   const topPt = Platform.OS === "web" ? insets.top + 67 : insets.top;
 
@@ -273,6 +276,16 @@ export default function VendorPaymentsScreen() {
   const getCrNotes = useCallback(
     (vp: VendorPayment): string =>
       drafts[vp.gidNo]?.crNotes ?? vp.crNotes ?? "",
+    [drafts],
+  );
+  const getChequeNo = useCallback(
+    (vp: VendorPayment): string =>
+      drafts[vp.gidNo]?.chequeNo ?? vp.chequeNo ?? "",
+    [drafts],
+  );
+  const getPaidFlag = useCallback(
+    (vp: VendorPayment): boolean =>
+      drafts[vp.gidNo]?.paidFlag ?? !!vp.paidFlag,
     [drafts],
   );
 
@@ -425,6 +438,18 @@ export default function VendorPaymentsScreen() {
 
   const hasUnsavedDrafts = Object.keys(drafts).length > 0;
 
+  // Drives the "Clear" filter-reset button's enabled state — true when
+  // any row-level filter is narrowing the ledger.
+  const hasActiveFilters =
+    search.trim().length > 0 ||
+    activeVendors.length > 0 ||
+    invFrom !== null ||
+    invTo !== null ||
+    payFrom !== null ||
+    payTo !== null ||
+    paidFilter !== "all" ||
+    unpaidCountFilter !== "all";
+
   function toggleVendor(v: string) {
     setActiveVendors((cur) =>
       cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v],
@@ -447,17 +472,23 @@ export default function VendorPaymentsScreen() {
           comments: vp.comments ?? "",
           crFlag: !!vp.crFlag,
           crNotes: vp.crNotes ?? "",
+          chequeNo: vp.chequeNo ?? "",
+          paidFlag: !!vp.paidFlag,
         };
         const updated: Draft = { ...existing, ...patch };
         const storedMark = vp.markToPay ?? null;
         const storedComments = vp.comments ?? "";
         const storedCrFlag = !!vp.crFlag;
         const storedCrNotes = vp.crNotes ?? "";
+        const storedChequeNo = vp.chequeNo ?? "";
+        const storedPaidFlag = !!vp.paidFlag;
         if (
           updated.mark === storedMark &&
           updated.comments === storedComments &&
           updated.crFlag === storedCrFlag &&
-          updated.crNotes === storedCrNotes
+          updated.crNotes === storedCrNotes &&
+          updated.chequeNo === storedChequeNo &&
+          updated.paidFlag === storedPaidFlag
         ) {
           const { [vp.gidNo]: _, ...rest } = cur;
           return rest;
@@ -484,6 +515,14 @@ export default function VendorPaymentsScreen() {
     (vp: VendorPayment, text: string) => writeDraft(vp, { crNotes: text }),
     [writeDraft],
   );
+  const setRowChequeNo = useCallback(
+    (vp: VendorPayment, text: string) => writeDraft(vp, { chequeNo: text }),
+    [writeDraft],
+  );
+  const setRowPaidFlag = useCallback(
+    (vp: VendorPayment, next: boolean) => writeDraft(vp, { paidFlag: next }),
+    [writeDraft],
+  );
 
   async function handleSaveDrafts() {
     if (!hasUnsavedDrafts || saving) return;
@@ -498,6 +537,8 @@ export default function VendorPaymentsScreen() {
           comments: d.comments,
           crFlag: d.crFlag,
           crNotes: d.crNotes,
+          chequeNo: d.chequeNo,
+          paidFlag: d.paidFlag,
         };
       });
       await saveVendorPaymentsBatch(merged);
@@ -532,7 +573,10 @@ export default function VendorPaymentsScreen() {
 
   async function handleProcessPay() {
     if (exporting) return;
-    const rows = vendorPayments
+    // Respect the active filters (vendor, invoice/payment date, paid
+    // status) by exporting from `filteredBills` rather than the whole
+    // ledger, then keep only the rows the user marked to pay.
+    const rows = filteredBills
       .filter((vp) => !!getMark(vp))
       .map((vp) => ({
         VendorName: vp.vendorName,
@@ -543,7 +587,9 @@ export default function VendorPaymentsScreen() {
         VendorCode: vp.vendorCode,
         GidNo: vp.gidNo,
         TranNo: vp.tranNo,
+        ChequeNo: getChequeNo(vp),
         "Payment / Status": isPaid(vp) ? vp.paymentDate || "Paid" : "Unpaid",
+        "Paid Flag": getPaidFlag(vp) ? "ON" : "OFF",
         "Mark to Pay": getMark(vp) ?? "",
         Comments: getComments(vp),
         "CR Flag": getCrFlag(vp) ? "ON" : "OFF",
@@ -552,7 +598,7 @@ export default function VendorPaymentsScreen() {
     if (rows.length === 0) {
       Alert.alert(
         "Nothing to export",
-        'Mark at least one row as "Normal" or "Urgent" first.',
+        'Mark at least one row (matching the current filters) as "Normal" or "Urgent" first.',
       );
       return;
     }
@@ -568,7 +614,9 @@ export default function VendorPaymentsScreen() {
         { wch: 12 },
         { wch: 12 },
         { wch: 14 },
+        { wch: 14 },
         { wch: 16 },
+        { wch: 10 },
         { wch: 12 },
         { wch: 30 },
         { wch: 8 },
@@ -611,6 +659,104 @@ export default function VendorPaymentsScreen() {
     } finally {
       setExporting(false);
     }
+  }
+
+  // "Payment Status" export — sends a vendor their payment details for
+  // the current filter window. Exports every bill in `filteredBills`
+  // (so it honours the vendor, invoice/payment date and All/Paid/Unpaid
+  // filters) with its cheque number and Paid Flag, no Mark-to-Pay
+  // requirement.
+  async function handlePaymentStatusExport() {
+    if (exportingStatus) return;
+    const rows = filteredBills.map((vp) => ({
+      VendorName: vp.vendorName,
+      VendorCode: vp.vendorCode,
+      GidNo: vp.gidNo,
+      InvoiceNo: vp.invoiceNo,
+      InvoiceDate: vp.invoiceDate,
+      GRNDate: vp.grnDate,
+      "Supplier Payment": vp.supplierPayment ?? "",
+      TranNo: vp.tranNo,
+      PaymentDate: vp.paymentDate,
+      ChequeNo: getChequeNo(vp),
+      "Paid Flag": getPaidFlag(vp) ? "ON" : "OFF",
+      "Payment / Status": isPaid(vp) ? vp.paymentDate || "Paid" : "Unpaid",
+    }));
+    if (rows.length === 0) {
+      Alert.alert(
+        "Nothing to export",
+        "No bills match the current filters. Adjust the filters and try again.",
+      );
+      return;
+    }
+    setExportingStatus(true);
+    try {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 32 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 10 },
+        { wch: 16 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "PaymentStatus");
+      const d = new Date();
+      const ts = `${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${d.getFullYear()} ${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+      const fileName = `SSS Payment Status ${ts}.xls`;
+      if (Platform.OS === "web") {
+        const wbout = XLSX.write(wb, { bookType: "biff8", type: "array" });
+        const blob = new Blob([wbout], { type: "application/vnd.ms-excel" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const base64 = XLSX.write(wb, { bookType: "biff8", type: "base64" });
+        const fileUri = (FileSystem.cacheDirectory ?? "") + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, base64, {
+          encoding: "base64" as any,
+        });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.ms-excel",
+            dialogTitle: "Export Payment Status",
+            UTI: "com.microsoft.excel.xls",
+          });
+        } else {
+          Alert.alert("Export saved", `File saved to: ${fileUri}`);
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Export Failed", e?.message ?? "Unknown error");
+    } finally {
+      setExportingStatus(false);
+    }
+  }
+
+  // Reset every row-level filter back to its default (no vendor, no
+  // date ranges, paid status "All", search cleared, unpaid-count "All").
+  // Distinct from `handleClear`, which deletes the whole ledger.
+  function handleClearFilters() {
+    setSearch("");
+    setActiveVendors([]);
+    setInvFrom(null);
+    setInvTo(null);
+    setPayFrom(null);
+    setPayTo(null);
+    setPaidFilter("all");
+    setUnpaidCountFilter("all");
   }
 
   // Build the HTML body for one vendor's Credit Note PDF. Header,
@@ -1041,6 +1187,29 @@ export default function VendorPaymentsScreen() {
                 setPayTo(null);
               }}
             />
+            <TouchableOpacity
+              style={[
+                styles.clearFiltersBtn,
+                hasActiveFilters && styles.clearFiltersBtnActive,
+              ]}
+              onPress={handleClearFilters}
+              disabled={!hasActiveFilters}
+              activeOpacity={0.85}
+            >
+              <Feather
+                name="x-circle"
+                size={13}
+                color={hasActiveFilters ? Colors.danger : Colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.clearFiltersText,
+                  hasActiveFilters && styles.clearFiltersTextActive,
+                ]}
+              >
+                Clear
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Unpaid Bills Count chip strip — preset buckets that drive
@@ -1174,6 +1343,46 @@ export default function VendorPaymentsScreen() {
                 ]}
               >
                 {markedCount > 0 ? `Process Pay · ${markedCount}` : "Process Pay"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                filteredBills.length > 0
+                  ? styles.actionBtnStatusOn
+                  : styles.actionBtnDisabled,
+              ]}
+              onPress={handlePaymentStatusExport}
+              disabled={filteredBills.length === 0 || exportingStatus}
+              activeOpacity={0.85}
+            >
+              {exportingStatus ? (
+                <ActivityIndicator size="small" color={Colors.textInverse} />
+              ) : (
+                <Feather
+                  name="file-plus"
+                  size={14}
+                  color={
+                    filteredBills.length > 0
+                      ? Colors.textInverse
+                      : Colors.textMuted
+                  }
+                />
+              )}
+              <Text
+                style={[
+                  styles.actionBtnText,
+                  {
+                    color:
+                      filteredBills.length > 0
+                        ? Colors.textInverse
+                        : Colors.textMuted,
+                  },
+                ]}
+              >
+                {filteredBills.length > 0
+                  ? `Payment Status · ${filteredBills.length}`
+                  : "Payment Status"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1375,6 +1584,8 @@ export default function VendorPaymentsScreen() {
                 const crFlag = getCrFlag(vp);
                 const crNotes = getCrNotes(vp);
                 const comments = getComments(vp);
+                const paidFlag = getPaidFlag(vp);
+                const chequeNo = getChequeNo(vp);
                 return (
                   <View
                     key={vp.gidNo}
@@ -1433,32 +1644,78 @@ export default function VendorPaymentsScreen() {
                           />
                         </View>
                         <View style={styles.billEditRow}>
-                          <Text style={styles.billEditLabel}>CR Flag</Text>
-                          <TouchableOpacity
-                            style={[
-                              styles.crToggle,
-                              crFlag
-                                ? styles.crToggleOn
-                                : styles.crToggleOff,
-                            ]}
-                            onPress={() => setRowCrFlag(vp, !crFlag)}
-                            activeOpacity={0.8}
-                          >
-                            <View
-                              style={[
-                                styles.crToggleKnob,
-                                crFlag && styles.crToggleKnobOn,
-                              ]}
-                            />
-                            <Text
-                              style={[
-                                styles.crToggleText,
-                                crFlag && styles.crToggleTextOn,
-                              ]}
-                            >
-                              {crFlag ? "ON" : "OFF"}
+                          <View style={styles.flagGroup}>
+                            <Text style={styles.billEditLabelInline}>
+                              CR Flag
                             </Text>
-                          </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.crToggle,
+                                crFlag
+                                  ? styles.crToggleOn
+                                  : styles.crToggleOff,
+                              ]}
+                              onPress={() => setRowCrFlag(vp, !crFlag)}
+                              activeOpacity={0.8}
+                            >
+                              <View
+                                style={[
+                                  styles.crToggleKnob,
+                                  crFlag && styles.crToggleKnobOn,
+                                ]}
+                              />
+                              <Text
+                                style={[
+                                  styles.crToggleText,
+                                  crFlag && styles.crToggleTextOn,
+                                ]}
+                              >
+                                {crFlag ? "ON" : "OFF"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.flagGroup}>
+                            <Text style={styles.billEditLabelInline}>
+                              Paid Flag
+                            </Text>
+                            <TouchableOpacity
+                              style={[
+                                styles.crToggle,
+                                paidFlag
+                                  ? styles.paidToggleOn
+                                  : styles.crToggleOff,
+                              ]}
+                              onPress={() => setRowPaidFlag(vp, !paidFlag)}
+                              activeOpacity={0.8}
+                            >
+                              <View
+                                style={[
+                                  styles.crToggleKnob,
+                                  paidFlag && styles.crToggleKnobOn,
+                                ]}
+                              />
+                              <Text
+                                style={[
+                                  styles.crToggleText,
+                                  paidFlag && styles.crToggleTextOn,
+                                ]}
+                              >
+                                {paidFlag ? "ON" : "OFF"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        <View style={styles.billEditRow}>
+                          <Text style={styles.billEditLabel}>Cheque No</Text>
+                          <TextInput
+                            style={styles.chequeInput}
+                            value={chequeNo}
+                            onChangeText={(t) => setRowChequeNo(vp, t)}
+                            placeholder="Cheque number…"
+                            placeholderTextColor={Colors.textMuted}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                          />
                         </View>
                         <View style={styles.billEditCol}>
                           <Text style={styles.billEditLabel}>Comments</Text>
@@ -1498,6 +1755,21 @@ export default function VendorPaymentsScreen() {
                             <Text style={styles.crBadgeText}>CR</Text>
                           </View>
                         )}
+                        {paidFlag && (
+                          <View style={styles.paidFlagBadge}>
+                            <Feather
+                              name="check"
+                              size={9}
+                              color={Colors.textInverse}
+                            />
+                            <Text style={styles.crBadgeText}>PAID</Text>
+                          </View>
+                        )}
+                        {chequeNo.length > 0 && (
+                          <Text style={styles.chequeInline} numberOfLines={1}>
+                            Cheque: {chequeNo}
+                          </Text>
+                        )}
                         {comments.length > 0 && (
                           <Text style={styles.commentInline} numberOfLines={2}>
                             {comments}
@@ -1526,10 +1798,14 @@ export default function VendorPaymentsScreen() {
       getCrFlag,
       getCrNotes,
       getComments,
+      getPaidFlag,
+      getChequeNo,
       setRowMark,
       setRowComment,
       setRowCrFlag,
       setRowCrNotes,
+      setRowPaidFlag,
+      setRowChequeNo,
     ],
   );
 
@@ -2216,7 +2492,28 @@ const styles = StyleSheet.create({
   segBtnTextActive: { color: Colors.textInverse },
 
   // 3 filter chips in a single dense row
-  chipRow: { flexDirection: "row", gap: 6 },
+  chipRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  clearFiltersBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: Colors.surfaceSecondary,
+    borderColor: Colors.border,
+  },
+  clearFiltersBtnActive: {
+    backgroundColor: Colors.danger + "12",
+    borderColor: Colors.danger,
+  },
+  clearFiltersText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+  },
+  clearFiltersTextActive: { color: Colors.danger },
   filterBar: {
     flex: 1,
     flexDirection: "row",
@@ -2272,6 +2569,10 @@ const styles = StyleSheet.create({
   actionBtnExportOn: {
     backgroundColor: Colors.warning,
     borderColor: Colors.warning,
+  },
+  actionBtnStatusOn: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
   },
   actionBtnDisabled: {
     backgroundColor: Colors.surfaceSecondary,
@@ -2814,6 +3115,49 @@ const styles = StyleSheet.create({
   crToggleOn: {
     backgroundColor: Colors.info,
     borderColor: Colors.info,
+  },
+  paidToggleOn: {
+    backgroundColor: Colors.success,
+    borderColor: Colors.success,
+  },
+  flagGroup: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  billEditLabelInline: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  chequeInput: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.text,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  paidFlagBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: Colors.success,
+  },
+  chequeInline: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: "600",
   },
   crToggleKnob: {
     width: 12,

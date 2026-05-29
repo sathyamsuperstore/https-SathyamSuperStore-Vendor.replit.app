@@ -629,6 +629,16 @@ export interface VendorPayment {
   // Credit Note PDF export. Editable in Modify mode. Optional so
   // existing rows hydrate without a default value.
   crNotes?: string;
+  // Optional cheque number for the bill. Importable from Excel and
+  // editable in Modify mode on the VendorPayments tab. Optional so
+  // existing imports round-trip cleanly.
+  chequeNo?: string;
+  // User-managed "Paid" flag, independent of the computed `isPaid`
+  // (which derives from TranNo). Used when sending payment status
+  // details to a vendor for a given period. Editable in Modify mode
+  // and exported by the "Payment Status" export. Optional/false-y so
+  // existing imports round-trip cleanly.
+  paidFlag?: boolean;
 }
 
 // One row in the RodeoItems table. Imported from Excel and stored in
