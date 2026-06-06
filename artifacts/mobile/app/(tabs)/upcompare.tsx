@@ -731,6 +731,22 @@ export default function UniproRodeoCompareScreen() {
         "Rodeo Selling Price",
         "Rodeo Offer Price",
         "Rodeo Offer End Date",
+        // Full RodeoItems master columns appended from the 16th column on.
+        // Prefixed with "ZZZ-" so the names stay unique against the
+        // existing "Rodeo ..." columns above. Blank when no Rodeo match.
+        "ZZZ-Product Id",
+        "ZZZ-SKU Id",
+        "ZZZ-Product Name",
+        "ZZZ-BAR CODE",
+        "ZZZ-ITEM CODE",
+        "ZZZ-GST",
+        "ZZZ-MRP",
+        "ZZZ-Purchase Price",
+        "ZZZ-Selling Price",
+        "ZZZ-Offer Price",
+        "ZZZ-Offer Start Date",
+        "ZZZ-Offer End Date",
+        "ZZZ-Active",
       ];
       const data: (string | number)[][] = [headers];
       for (const r of exportableRows) {
@@ -752,6 +768,20 @@ export default function UniproRodeoCompareScreen() {
           rd?.sellingPrice ?? "",
           rd?.offerPrice ?? "",
           fmtText(rd?.offerEndDate),
+          // ZZZ-prefixed full RodeoItems master columns (blank if no match).
+          rd?.productId ?? "",
+          rd?.skuId ?? "",
+          fmtText(rd?.productName),
+          fmtText(rd?.barCode),
+          fmtText(rd?.itemCode),
+          rd?.gst ?? "",
+          rd?.mrp ?? "",
+          rd?.purchasePrice ?? "",
+          rd?.sellingPrice ?? "",
+          rd?.offerPrice ?? "",
+          fmtText(rd?.offerStartDate),
+          fmtText(rd?.offerEndDate),
+          rd ? (rd.active ? "TRUE" : "FALSE") : "",
         ]);
       }
       const ws = XLSX.utils.aoa_to_sheet(data);
