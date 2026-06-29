@@ -1,3 +1,3 @@
 # Memory Index
 
-- [Latest Purchases large import](latest-purchases-large-import.md) — preview table caps rendered rows (non-virtualized ScrollView); save/export/orders must stay full-dataset.
+- [Large datasets: render vs data](latest-purchases-large-import.md) — cap on-screen render only (never save/export); keep picker-scope filters semantically identical to the main row filter.

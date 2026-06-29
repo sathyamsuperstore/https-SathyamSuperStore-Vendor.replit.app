@@ -1,35 +1,30 @@
 ---
-name: Latest Purchases large-import render cap
-description: Why the Latest Purchases preview table caps rendered rows, and which paths must stay full-dataset.
+name: Large promo/purchase datasets — render vs. data
+description: Durable rules for handling very large imported datasets in the mobile app's list/preview screens.
 ---
 
-# Latest Purchases large GRN import
+# Large datasets in the mobile app
 
-Large GRN sheets are routinely huge (a real one was ~12,858 rows). Two distinct
-scale failures have hit this flow historically:
+Imported sheets (GRN / promo / purchases) can be very large (tens of
+thousands of rows). Parsing and atomic file-based storage handle this fine;
+the recurring failure mode is **rendering**, not data volume.
 
-1. **Save step** (older bug): persisting the whole batch as one AsyncStorage blob
-   crashed at ~95%. Fixed by migrating to atomic file-based storage in AppContext
-   (tmp write + move), mirroring Suppliers/VendorPayments/RodeoItems.
-2. **Render step** (this fix): the on-screen preview table in
-   `app/(tabs)/latest-purchases.tsx` renders rows with nested `.map()` inside a
-   non-virtualized `ScrollView` (synchronized horizontal scroll between header and
-   body), NOT a FlatList. Rendering ~12k rows freezes/crashes the JS thread.
+**Rule 1 — never render an unbounded dataset in a non-virtualized
+`ScrollView`.** Some preview tables build rows with nested `.map()` inside a
+synchronized horizontal `ScrollView` (not a FlatList); rendering all rows
+freezes the JS thread on-device. Cap what is *displayed* (e.g. a preview
+limit) while keeping import/save/export/downstream using the full set. Never
+route the capped subset into save, export, navigation, or filter-backing data.
 
-**Rule:** the preview table is capped to `PREVIEW_ROW_LIMIT` rows via a
-`previewRows = filtered.slice(0, limit)` memo that feeds ONLY the `grouped` memo
-(the table render). Everything else must keep using the full set:
-- import/parse + `saveLatestPurchasesBatch(parsed)` (full array)
-- the Excel export (`latestPurchases.map(...)`)
-- stats counts (`filtered.length` / `latestPurchases.length`)
-- the downstream Place Orders screen `app/order/import.tsx` (already a virtualized
-  FlatList with its own PREVIEW_LIMIT — handles full data fine).
+**Why:** users need the entire sheet for ordering/exports; only on-device
+display of every row is the bottleneck.
 
-**Why:** users need to import the entire sheet for ordering; only on-device
-*display* of every row is the problem. Never route `previewRows` into save/export/
-navigation/filter-backing data.
+**Rule 2 — keep "option source" filters semantically identical to the main
+row filter.** When picker lists (vendor/brand/category) are cross-scoped by
+other active filters, they must apply the same predicates in the same order
+as the main filtered-rows memo (e.g. multi-MRP before missing-promo before
+has-sort-code), or option lists drift out of sync with visible rows.
 
-**How to apply:** if you add deep inspection beyond the cap, prefer pagination or
-virtualizing the preview table rather than rendering all rows. The simulated parse
-of 12,858 rows is fast (~1.2s) and ~6.3 MB JSON — parsing/storage are not the
-bottleneck; rendering is.
+**How to apply:** if you add a new toggle/filter, update both the row filter
+and the picker-scope function together, and watch for temporal-dead-zone
+ordering when one memo references another.
