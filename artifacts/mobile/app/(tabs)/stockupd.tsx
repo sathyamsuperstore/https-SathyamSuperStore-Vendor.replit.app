@@ -1021,6 +1021,7 @@ export default function StockUpdScreen() {
   const [lastPurchError, setLastPurchError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingPdfi, setDownloadingPdfi] = useState(false);
   // Multi-level "Sort by" — committed value drives the list, draft is
   // edited inside the modal and only commits on Apply so users can
   // back out of changes by tapping the backdrop.
@@ -1564,14 +1565,20 @@ export default function StockUpdScreen() {
     }
   }
 
-  async function handlePdfExport() {
+  async function handlePdfExport(includeItemNo: boolean = false) {
     if (filtered.length === 0) {
       Alert.alert("No Orders", "There are no orders to export.");
       return;
     }
-    setDownloadingPdf(true);
+    if (includeItemNo) {
+      setDownloadingPdfi(true);
+    } else {
+      setDownloadingPdf(true);
+    }
     try {
-      const cols = ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
+      const cols = includeItemNo
+        ? ["Item No", "Item Description", "MRP", "UOM", "Order Qty", "Notes"]
+        : ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
       const rows: string[][] = [];
       const suppliersWithData = new Set<string>();
       for (const order of filtered) {
@@ -1593,13 +1600,19 @@ export default function StockUpdScreen() {
         }
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
+          const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0].trim() : "";
+          const base = [desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""];
+          rows.push(includeItemNo ? [itemNo, ...base] : base);
           suppliersWithData.add(order.supplierName);
         }
       }
       if (rows.length === 0) {
         Alert.alert("Nothing to Export", "There are no items to export.");
-        setDownloadingPdf(false);
+        if (includeItemNo) {
+          setDownloadingPdfi(false);
+        } else {
+          setDownloadingPdf(false);
+        }
         return;
       }
       const supplierName = [...suppliersWithData].sort().join(", ");
@@ -1662,7 +1675,9 @@ export default function StockUpdScreen() {
   th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
   th { text-align: center; }
   td { text-align: left; }
-  td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
+  ${includeItemNo
+    ? "td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align: right; }"
+    : "td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }"}
   .footer { margin-top: 10px; font-size: 8.5pt; }
   .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
   .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
@@ -1781,7 +1796,11 @@ export default function StockUpdScreen() {
     } catch (e: any) {
       Alert.alert("PDF Export Failed", e?.message ?? "Unknown error");
     } finally {
-      setDownloadingPdf(false);
+      if (includeItemNo) {
+        setDownloadingPdfi(false);
+      } else {
+        setDownloadingPdf(false);
+      }
     }
   }
 
@@ -1884,9 +1903,9 @@ export default function StockUpdScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pdfBtn, (downloadingPdf || filtered.length === 0) && { opacity: 0.5 }]}
-            onPress={handlePdfExport}
-            disabled={downloadingPdf || filtered.length === 0}
+            style={[styles.pdfBtn, (downloadingPdf || downloadingPdfi || filtered.length === 0) && { opacity: 0.5 }]}
+            onPress={() => handlePdfExport(false)}
+            disabled={downloadingPdf || downloadingPdfi || filtered.length === 0}
           >
             {downloadingPdf ? (
               <ActivityIndicator size="small" color="#dc2626" />
@@ -1894,6 +1913,18 @@ export default function StockUpdScreen() {
               <Feather name="file-text" size={16} color="#dc2626" />
             )}
             <Text style={styles.pdfBtnText}>{downloadingPdf ? "..." : "PDF"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pdfiBtn, (downloadingPdf || downloadingPdfi || filtered.length === 0) && { opacity: 0.5 }]}
+            onPress={() => handlePdfExport(true)}
+            disabled={downloadingPdf || downloadingPdfi || filtered.length === 0}
+          >
+            {downloadingPdfi ? (
+              <ActivityIndicator size="small" color="#1d4ed8" />
+            ) : (
+              <Feather name="file-text" size={16} color="#1d4ed8" />
+            )}
+            <Text style={styles.pdfiBtnText}>{downloadingPdfi ? "..." : "PDFi"}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.importBtn}
@@ -3059,6 +3090,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca",
   },
   pdfBtnText: { fontSize: 13, fontWeight: "700", color: "#dc2626" },
+  pdfiBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: "#eff6ff", borderWidth: 1, borderColor: "#bfdbfe",
+  },
+  pdfiBtnText: { fontSize: 13, fontWeight: "700", color: "#1d4ed8" },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
