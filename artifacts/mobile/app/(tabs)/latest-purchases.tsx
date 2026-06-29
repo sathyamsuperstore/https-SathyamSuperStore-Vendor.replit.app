@@ -47,6 +47,15 @@ const NUMERIC_FIELDS = new Set<string>([
 // usefully if we just String()-stringify them. Normalised to "DD/MM/YYYY".
 const DATE_FIELDS = new Set<string>(["GidDate", "DODate", "CreatedDate"]);
 
+// The on-screen preview table is a non-virtualized ScrollView (rows are
+// rendered with .map, not a FlatList), so rendering tens of thousands of
+// rows freezes/crashes the JS thread. Large GRN sheets routinely exceed
+// 12k rows. We therefore render only the first PREVIEW_ROW_LIMIT rows here
+// for the preview — ALL rows are still imported, saved, exported, and fed
+// to the Place Orders screen (which uses a virtualized FlatList). A banner
+// tells the operator the preview is capped.
+const PREVIEW_ROW_LIMIT = 500;
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -472,6 +481,15 @@ export default function LatestPurchasesScreen() {
     });
   }, [latestPurchases, search, vendorNameByCode, activeVendorCodes, activeCategories, doDateFrom, doDateTo]);
 
+  // Cap the rows fed into the (non-virtualized) preview table so a large
+  // import doesn't freeze/crash the render. The full `filtered` set is
+  // still used for stats and exports; only the table render is limited.
+  const isPreviewCapped = filtered.length > PREVIEW_ROW_LIMIT;
+  const previewRows = useMemo(
+    () => (isPreviewCapped ? filtered.slice(0, PREVIEW_ROW_LIMIT) : filtered),
+    [filtered, isPreviewCapped],
+  );
+
   // Group filtered rows by Vendor Name → Brand → Category for the
   // table render. Vendor name comes from the suppliers lookup (same
   // resolver used by the synthetic column); Brand and Category are
@@ -483,7 +501,7 @@ export default function LatestPurchasesScreen() {
       string,
       Map<string, Map<string, typeof filtered>>
     >();
-    for (const r of filtered) {
+    for (const r of previewRows) {
       const vendor = vendorNameFor(r["VendorCode"]);
       const brand = String(r["Brand"] ?? "").trim() || "(No Brand)";
       const category = String(r["Category"] ?? "").trim() || "(No Category)";
@@ -524,7 +542,7 @@ export default function LatestPurchasesScreen() {
       });
       return { vendor, count: vendorCount, brands: brandGroups };
     });
-  }, [filtered, vendorNameByCode]);
+  }, [previewRows, vendorNameByCode]);
 
   // Total pixel width of one fully-rendered table row. Group headers
   // need an explicit width so they span the full table inside the
@@ -1221,6 +1239,17 @@ export default function LatestPurchasesScreen() {
               <Text style={styles.statText}>
                 {filtered.length} of {latestPurchases.length} entr
                 {latestPurchases.length !== 1 ? "ies" : "y"}
+                {isPreviewCapped
+                  ? ` · previewing first ${PREVIEW_ROW_LIMIT}`
+                  : ""}
+              </Text>
+            </View>
+          )}
+          {isPreviewCapped && (
+            <View style={styles.statsRow}>
+              <Text style={[styles.statText, { color: Colors.textMuted }]}>
+                All {filtered.length} rows are imported and used for orders —
+                only the preview below is limited for speed.
               </Text>
             </View>
           )}
