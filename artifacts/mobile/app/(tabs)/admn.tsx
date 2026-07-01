@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import { reloadAppAsync } from "expo";
 import Constants from "expo-constants";
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
@@ -420,6 +421,34 @@ export default function AdmnHubScreen() {
           {"  ·  Build "}
           {Constants.nativeBuildVersion ?? "1"}
         </Text>
+      </View>
+
+      <View style={[styles.section, { marginTop: 8 }]}>
+        <Text style={styles.sectionTitle}>Refresh</Text>
+        <Text style={styles.sectionSub}>
+          Pull the latest code from the server and restart the app
+          immediately.
+        </Text>
+        <TouchableOpacity
+          style={styles.importBtn}
+          onPress={async () => {
+            Haptics.selectionAsync();
+            try {
+              await reloadAppAsync();
+            } catch (e: any) {
+              Alert.alert(
+                "Refresh failed",
+                e?.message ?? "Could not reload the app.",
+              );
+            }
+          }}
+          activeOpacity={0.85}
+        >
+          <Feather name="refresh-cw" size={16} color={Colors.primary} />
+          <Text style={styles.importBtnText} numberOfLines={1}>
+            Refresh App
+          </Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
