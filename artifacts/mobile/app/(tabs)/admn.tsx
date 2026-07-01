@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import Constants from "expo-constants";
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 
@@ -411,6 +412,15 @@ export default function AdmnHubScreen() {
           ))}
         </View>
       </View>
+
+      <View style={styles.versionRow}>
+        <Text style={styles.versionText}>
+          Version{" "}
+          {Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? "1.0.0"}
+          {"  ·  Build "}
+          {Constants.nativeBuildVersion ?? "1"}
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -494,5 +504,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
     flexShrink: 1,
+  },
+  versionRow: {
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  versionText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textMuted,
   },
 });
