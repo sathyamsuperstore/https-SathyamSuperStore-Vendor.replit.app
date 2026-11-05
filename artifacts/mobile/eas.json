@@ -10,10 +10,15 @@
     },
     "preview": {
       "developmentClient": false,
+      "node": "24.22.1",
+      "pnpm": "10.26.1",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "SathyamSuperStore-Vendor.replit.app"
       },
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk",
+        "image": "ubuntu-26.04-jdk-17-ndk-r27b-sdk-58"
+      },
       "distribution": "internal"
     },
     "production": {
