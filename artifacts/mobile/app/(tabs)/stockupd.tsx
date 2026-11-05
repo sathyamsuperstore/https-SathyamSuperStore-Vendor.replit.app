@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as XLSX from "xlsx-js-style";
 import * as FileSystem from "expo-file-system/legacy";
@@ -54,13 +54,17 @@ type SortFieldKey =
   | "brand"
   | "category"
   | "name"
+  | "internalNotes"
   | "unit"
   | "unitPrice"
   | "quantity"
   | "newStockQty"
   | "stock"
   | "min"
-  | "sortNo";
+  | "sortNo"
+  | "nbc"
+  | "addImg"
+  | "imgFilename";
 type SortFieldDef = {
   key: SortFieldKey;
   label: string;
@@ -75,6 +79,7 @@ const SORT_FIELDS: SortFieldDef[] = [
   { key: "brand", label: "Brand", type: "string", scope: "item" },
   { key: "category", label: "Category", type: "string", scope: "item" },
   { key: "name", label: "Item Desc.", type: "string", scope: "item" },
+  { key: "internalNotes", label: "Order Internal Notes", type: "string", scope: "item" },
   { key: "unit", label: "UOM", type: "string", scope: "item" },
   { key: "unitPrice", label: "MRP", type: "number", scope: "item" },
   { key: "quantity", label: "Ord Qty", type: "number", scope: "item" },
@@ -82,6 +87,9 @@ const SORT_FIELDS: SortFieldDef[] = [
   { key: "stock", label: "Stock", type: "number", scope: "item" },
   { key: "min", label: "Min", type: "number", scope: "item" },
   { key: "sortNo", label: "Sort No", type: "number", scope: "item" },
+  { key: "nbc", label: "NBC", type: "string", scope: "item" },
+  { key: "addImg", label: "AddIMG", type: "string", scope: "item" },
+  { key: "imgFilename", label: "IMG_Filename", type: "string", scope: "item" },
 ];
 const SORT_FIELD_BY_KEY: Record<SortFieldKey, SortFieldDef> = SORT_FIELDS.reduce(
   (acc, f) => {
@@ -120,6 +128,8 @@ function getItemSortValue(it: OrderItem, key: SortFieldKey): string | number | n
       return it.name.includes(" - ")
         ? it.name.split(" - ").slice(1).join(" - ")
         : it.name;
+    case "internalNotes":
+      return (it.internalNotes ?? "").trim();
     case "unit":
       return it.unit ?? "";
     case "unitPrice":
@@ -134,6 +144,12 @@ function getItemSortValue(it: OrderItem, key: SortFieldKey): string | number | n
       return it.min ?? null;
     case "sortNo":
       return it.sortNo ?? null;
+    case "nbc":
+      return it.nbc ?? "";
+    case "addImg":
+      return it.addImg ?? "";
+    case "imgFilename":
+      return it.imgFilename ?? "";
     default:
       return null;
   }
@@ -1022,6 +1038,14 @@ export default function StockUpdScreen() {
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [downloadingPdfi, setDownloadingPdfi] = useState(false);
+  // Deep-link from LastSupplyDate "Stk" button: pre-select vendor filter
+  const params = useLocalSearchParams<{ vendor?: string }>();
+  useEffect(() => {
+    const name = params.vendor;
+    if (!name || typeof name !== "string") return;
+    setActiveVendors((cur) => (cur.includes(name) ? cur : [name]));
+    router.setParams({ vendor: undefined });
+  }, [params.vendor, router]);
   // Multi-level "Sort by" — committed value drives the list, draft is
   // edited inside the modal and only commits on Apply so users can
   // back out of changes by tapping the backdrop.
@@ -1577,10 +1601,11 @@ export default function StockUpdScreen() {
     }
     try {
       const cols = includeItemNo
-        ? ["Item No", "Item Description", "MRP", "UOM", "Order Qty", "Notes"]
-        : ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
+        ? ["S.No", "Item No", "Item Description", "MRP", "UOM", "Order Qty", "Notes"]
+        : ["S.No", "Item Description", "MRP", "UOM", "Order Qty", "Notes"];
       const rows: string[][] = [];
       const suppliersWithData = new Set<string>();
+      let serialNo = 1;
       for (const order of filtered) {
         let exportItems = activeBrands.length > 0
           ? order.items.filter((it) => it.brand != null && activeBrands.includes(it.brand))
@@ -1602,7 +1627,10 @@ export default function StockUpdScreen() {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
           const itemNo = item.name.includes(" - ") ? item.name.split(" - ")[0].trim() : "";
           const base = [desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""];
-          rows.push(includeItemNo ? [itemNo, ...base] : base);
+          rows.push(includeItemNo
+            ? [String(serialNo), itemNo, ...base]
+            : [String(serialNo), ...base]);
+          serialNo++;
           suppliersWithData.add(order.supplierName);
         }
       }
@@ -1676,8 +1704,8 @@ export default function StockUpdScreen() {
   th { text-align: center; }
   td { text-align: left; }
   ${includeItemNo
-    ? "td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align: right; }"
-    : "td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }"}
+    ? "td:nth-child(1) { width: 30px; text-align: center; } td:nth-child(4), td:nth-child(5), td:nth-child(6) { text-align: right; }"
+    : "td:nth-child(1) { width: 30px; text-align: center; } td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align: right; }"}
   .footer { margin-top: 10px; font-size: 8.5pt; }
   .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
   .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
@@ -1882,7 +1910,12 @@ export default function StockUpdScreen() {
     <View style={[styles.container, { paddingTop: topPt }]}>
       <View style={styles.header}>
         <Text style={styles.title}>StockUpd</Text>
-        <View style={styles.headerActions}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.headerActions}
+          style={styles.headerActionsScroll}
+        >
           {orders.length > 0 && (
             <TouchableOpacity style={styles.clearAllBtn} onPress={handleClearAll}>
               <Feather name="trash-2" size={16} color={Colors.danger} />
@@ -1898,9 +1931,7 @@ export default function StockUpdScreen() {
             ) : (
               <Feather name="download" size={17} color={Colors.primary} />
             )}
-            <Text style={styles.exportBtnText}>
-              Export
-            </Text>
+            <Text style={styles.exportBtnText}>Export</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.pdfBtn, (downloadingPdf || downloadingPdfi || filtered.length === 0) && { opacity: 0.5 }]}
@@ -1946,7 +1977,7 @@ export default function StockUpdScreen() {
           >
             <Feather name="plus" size={20} color={Colors.textInverse} />
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
 
       {/* Status + Brand filter pills */}
@@ -3060,7 +3091,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontWeight: "800", color: Colors.text },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerActionsScroll: { maxHeight: 44 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
   clearAllBtn: {
     width: 38,
     height: 38,

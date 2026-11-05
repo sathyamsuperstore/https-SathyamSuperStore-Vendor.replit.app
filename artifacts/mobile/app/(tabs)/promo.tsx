@@ -528,8 +528,8 @@ export default function PromoScreen({
   // table header and the rows below it. Without the guard each
   // scrollTo would re-fire its sibling's onScroll handler and create
   // a feedback loop.
-  const headerScrollRef = useRef<ScrollView>(null);
-  const rowsScrollRef = useRef<ScrollView>(null);
+  const headerScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const rowsScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const isSyncingScroll = useRef(false);
 
   const onHeaderScroll = (e: any) => {
@@ -2350,7 +2350,7 @@ export default function PromoScreen({
         keyExtractor={(r) => r.key}
         renderItem={renderRow}
         ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
+        ListEmptyComponent={listEmpty ?? undefined}
         contentContainerStyle={[
           styles.body,
           { paddingBottom: insets.bottom + 100 },

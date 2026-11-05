@@ -27,7 +27,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import { captureRef } from "react-native-view-shot";
 import { Colors } from "@/constants/colors";
 import { LOGO_BASE64 } from "@/constants/LogoBase64";
@@ -368,7 +368,7 @@ export default function PriceTagReviewScreen() {
   >("default");
   const [pngExportItem, setPngExportItem] = useState<PriceTagItem | null>(null);
   const [pngBusy, setPngBusy] = useState<null | "phone" | "drive">(null);
-  const pngCaptureRef = useRef<View>(null);
+  const pngCaptureRef = useRef<React.ComponentRef<typeof View>>(null);
 
   const [driveOpenForKey, setDriveOpenForKey] = useState<string | null>(null);
   const [driveUrl, setDriveUrl] = useState("");
@@ -4667,7 +4667,7 @@ const imgs = StyleSheet.create({
   },
   actionText: { color: Colors.text, fontSize: 9, fontWeight: "700" },
   busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center", justifyContent: "center",
     borderRadius: 6,

@@ -163,7 +163,7 @@ export default function OrdersScreen() {
     }
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes"];
+      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty", "Notes", "NBC", "AddIMG", "IMG_Filename"];
       const dataRows: (string | number)[][] = [];
       for (const order of filtered) {
         let exportItems = order.items;
@@ -193,6 +193,9 @@ export default function OrdersScreen() {
             item.min ?? "",
             item.quantity,
             item.notes ?? "",
+            item.nbc ?? "",
+            item.addImg ?? "",
+            item.imgFilename ?? "",
           ]);
         }
       }
@@ -213,33 +216,33 @@ export default function OrdersScreen() {
         fileCreatedDates.length === 0
           ? []
           : fileCreatedDates.length === 1
-            ? [[`File Created Date : ${fileCreatedDates[0]}`, "", "", "", "", "", "", "", ""]]
+            ? [[`File Created Date : ${fileCreatedDates[0]}`, "", "", "", "", "", "", "", "", "", "", ""]]
             : [
                 [
                   `File Created Dates : ${fileCreatedDates.join(", ")}`,
-                  "", "", "", "", "", "", "", "",
+                  "", "", "", "", "", "", "", "", "", "", "",
                 ],
               ];
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", "", ""],
-        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", "", ""],
-        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", "", ""],
-        ["98431-44868",                                                          "", "",            "", "", "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", "", ""],
-        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", "", "", "", "", "", "", "", ""],
-        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "", "", ""],
+        ["Sathyam Super Store",                                                  "", "ORDER FORM",  "", "", "", "", "", "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                                   "", "",            "", "", "", "", "", "", "", "", ""],
+        ["Coimbatore-641029",                                                    "", "",            "", "", "", "", "", "", "", "", ""],
+        ["98431-44868",                                                          "", "",            "", "", "", "", "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                                "", "",            "", "", "", "", "", "", "", "", ""],
+        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", "", "", "", "", "", "", "", "", "", "", ""],
+        ["GST# : 33ADFFS5244N1ZR",                                               "", "",            "", "", "", "", "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",      "", "",            "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", "", "", "", ""],
-        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", "", ""],
-        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", "", "", ""],
+        [`Supplier : ${uniqueSuppliers}`,  "", "", "", "", "", "", "", "", "", "", ""],
+        [`Order Date : ${exportDate}`,     "", "", "", "", "", "", "", "", "", "", ""],
         ...fileCreatedFooter,
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 32 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 },
+        { wch: 32 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 24 },
       ];
       // wrapText on Column A (Item Description) — data starts at row 11 (9 header + 1 colHeader)
       const dataStartRow = 11;

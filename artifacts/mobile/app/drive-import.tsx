@@ -180,6 +180,9 @@ export default function DriveImportScreen() {
           stock: parseFloat(String(row["Stock"] ?? "")) || undefined,
           min: row["Min"] !== undefined && row["Min"] !== "" ? parseFloat(String(row["Min"])) || undefined : undefined,
           sortNo: row["SortNo"] !== undefined && row["SortNo"] !== "" ? parseFloat(String(row["SortNo"])) : undefined,
+          nbc: String(row["NBC"] ?? "").trim() || undefined,
+          addImg: String(row["AddIMG"] ?? "").trim() || undefined,
+          imgFilename: String(row["IMG_Filename"] ?? "").trim() || undefined,
         }));
         return {
           supplierId: matchedSupplier?.id ?? "",

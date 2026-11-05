@@ -40,6 +40,7 @@ export default function AdmnHubScreen() {
     rodeoItems,
     rasiItems,
     vendorPayments,
+    dailyStockItems,
     clearAllSuppliers,
     clearAllAppUsers,
     clearMrpBatch,
@@ -49,6 +50,7 @@ export default function AdmnHubScreen() {
     clearRodeoItems,
     clearRasiItems,
     clearVendorPayments,
+    clearDailyStock,
     setDataDownloadTimeNow,
   } = useApp();
   const router = useRouter();
@@ -182,6 +184,15 @@ export default function AdmnHubScreen() {
       confirmMessage: (n) =>
         `Remove all ${n} Vendor Payment${n === 1 ? "" : "s"}? This cannot be undone.`,
     },
+    {
+      key: "daily-stock",
+      label: "DailyStock",
+      count: dailyStockItems.length,
+      onConfirm: clearDailyStock,
+      confirmTitle: "Delete All DailyStock?",
+      confirmMessage: (n) =>
+        `Remove all ${n} DailyStock row${n === 1 ? "" : "s"}? This cannot be undone.`,
+    },
   ];
 
   // Stack into 2-column rows. With 7 items the last row has a
@@ -231,6 +242,11 @@ export default function AdmnHubScreen() {
       key: "vendor-payments",
       label: "VendorPayments",
       route: "/vendor-payments/import",
+    },
+    {
+      key: "daily-stock",
+      label: "DailyStock",
+      route: "/daily-stock/import",
     },
     // "DownloadTime" doesn't import a workbook — it just stamps the
     // current wall-clock time as the latest data snapshot, then opens
@@ -418,8 +434,16 @@ export default function AdmnHubScreen() {
         <Text style={styles.versionText}>
           Version{" "}
           {Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? "1.0.0"}
-          {"  ·  Build "}
+          {"  \u00b7  Build "}
           {Constants.nativeBuildVersion ?? "1"}
+          {"  \u00b7  vCode "}
+          {Constants.expoConfig?.android?.versionCode ??
+            Constants.expoConfig?.ios?.buildNumber ??
+            Constants.nativeBuildVersion ??
+            "1"}
+        </Text>
+        <Text style={styles.versionSubText}>
+          Build auto-increments on EAS production profile only
         </Text>
       </View>
 
@@ -543,5 +567,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: Colors.textMuted,
+  },
+  versionSubText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: Colors.textMuted + "aa",
+    marginTop: 2,
   },
 });

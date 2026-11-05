@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+/generated-artifacts/
 tmp
 out-tsc
 *.tsbuildinfo

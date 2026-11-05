@@ -2,7 +2,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  InteractionManager,
   Platform,
   ScrollView,
   StyleSheet,
@@ -110,11 +109,13 @@ export function HubTab({ views, defaultView, chipLayout = "scroll" }: Props) {
     // Defer the actual nav so the spinner paints first; otherwise the
     // heavy sub-screen's mount blocks the JS thread before React has a
     // chance to commit our pending state.
-    InteractionManager.runAfterInteractions(() => {
+    requestAnimationFrame(() => {
+      setTimeout(() => {
       // setParams merges, so other params the sub-screen reads (e.g.
       // `q` seeded from a Stock Update item-no link into Promo)
       // survive chip switches.
-      router.setParams({ view: next });
+        router.setParams({ view: next });
+      }, 0);
     });
     // Hard timeout: if the new screen never commits (e.g. the user
     // taps a different chip first), drop the pending state after 6s

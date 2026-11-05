@@ -7,15 +7,10 @@
     "icon": "./assets/images/icon.png",
     "scheme": "coimbatoresathyamsuperstorevendorportal",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.coimbatoresathyamsuperstorevendorportal.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSPhotoLibraryAddUsageDescription": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
         "NSPhotoLibraryUsageDescription": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos."
@@ -23,8 +18,8 @@
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
-      "edgeToEdgeEnabled": false,
       "package": "com.coimbatoresathyamsuperstorevendorportal.app",
+      "versionCode": 10,
       "permissions": [
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -36,6 +31,7 @@
       }
     },
     "web": {
+      "output": "single",
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
@@ -43,6 +39,15 @@
         "expo-router",
         {
           "origin": "https://replit.com/"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
         }
       ],
       "expo-font",
@@ -53,9 +58,16 @@
           "photosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
           "savePhotosPermission": "Allow Sathyam Vendor Portal to save price tag PNGs to your Photos.",
           "isAccessMediaLocationEnabled": false,
-          "granularPermissions": ["photo"]
+          "granularPermissions": [
+            "photo"
+          ]
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -60,6 +60,9 @@ interface ParsedRow {
   SortNo: number;
   Notes: string;
   "Order Internal Notes": string;
+  NBC: string;
+  AddIMG: string;
+  IMG_Filename: string;
 }
 
 interface VendorGroup {
@@ -393,8 +396,10 @@ export default function ImportOrderScreen() {
               encoding: "base64" as any,
             });
             if (!b64) throw new Error("Could not read file content.");
-            const bin = globalThis.atob ? globalThis.atob(b64) : Buffer.from(b64, "base64").toString("binary");
-            text = bin;
+            if (typeof globalThis.atob !== "function") {
+              throw new Error("This device does not support base64 decoding.");
+            }
+            text = globalThis.atob(b64);
           }
         }
         if (!text || text.trim() === "") {
@@ -579,6 +584,9 @@ export default function ImportOrderScreen() {
           SortNo: parseFloat(String(row["SortNo"] ?? "")) || 0,
           Notes: String(row["Notes"] ?? "").trim(),
           "Order Internal Notes": String(row["Order Internal Notes"] ?? "").trim(),
+          NBC: String(row["NBC"] ?? "").trim(),
+          AddIMG: String(row["AddIMG"] ?? "").trim(),
+          IMG_Filename: String(row["IMG_Filename"] ?? "").trim(),
         };
         if (i > 0 && i % CHUNK === 0) {
           setProgress(`Processing ${i} / ${rows.length} rows...`);
@@ -941,6 +949,9 @@ export default function ImportOrderScreen() {
           sortNo: row["SortNo"] !== 0 ? row["SortNo"] : undefined,
           notes: row["Notes"] || undefined,
           internalNotes: row["Order Internal Notes"] || undefined,
+          nbc: row.NBC || undefined,
+          addImg: row.AddIMG || undefined,
+          imgFilename: row.IMG_Filename || undefined,
         }));
         return {
           supplierId: supplier.id,
@@ -1669,6 +1680,15 @@ const VendorGroupCard = React.memo(function VendorGroupCard({
               <View style={[groupStyles.tableCellWrap, groupStyles.cellDesc]}>
                 {item["Item No"] ? <Text style={groupStyles.itemNo}>{item["Item No"]}</Text> : null}
                 <Text style={groupStyles.tableCell}>{item["Item Description"]}</Text>
+                {(item.NBC || item.AddIMG || item.IMG_Filename) ? (
+                  <Text style={groupStyles.itemExtra}>
+                    {[
+                      item.NBC ? `NBC: ${item.NBC}` : "",
+                      item.AddIMG ? `AddIMG: ${item.AddIMG}` : "",
+                      item.IMG_Filename ? `IMG_Filename: ${item.IMG_Filename}` : "",
+                    ].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
               </View>
               <Text style={[groupStyles.tableCell, groupStyles.cellNum]}>{item["Order Qty"]}</Text>
               <Text style={[groupStyles.tableCell, groupStyles.cellNum]}>{item["UOM"]}</Text>
@@ -1835,6 +1855,7 @@ const groupStyles = StyleSheet.create({
   tableCellWrap: { justifyContent: "center" },
   tableCell: { fontSize: 12, color: Colors.text },
   itemNo: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
+  itemExtra: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
   cellDesc: { flex: 3 },
   cellNum: { flex: 1, textAlign: "right" },
   cellPrice: { color: Colors.primary, fontWeight: "700" },

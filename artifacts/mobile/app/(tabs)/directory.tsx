@@ -8,6 +8,7 @@ import LatestPurchasesScreen from "./latest-purchases";
 import RodeoItemsScreen from "./rodeo-items";
 import RasiItemsScreen from "./rasi-items";
 import VendorPaymentsScreen from "./vendor-payments";
+import DailyStockScreen from "./daily-stock";
 
 export default function DirectoryHubScreen() {
   return (
@@ -57,6 +58,11 @@ export default function DirectoryHubScreen() {
           key: "vendor-payments",
           label: "VendorPayments",
           render: () => <VendorPaymentsScreen />,
+        },
+        {
+          key: "daily-stock",
+          label: "DailyStock",
+          render: () => <DailyStockScreen />,
         },
       ]}
     />

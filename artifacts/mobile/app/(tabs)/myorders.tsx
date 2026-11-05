@@ -504,9 +504,10 @@ function OrdersView({ topPt }: { topPt: number }) {
     }
     setDownloadingPdf(true);
     try {
-      const cols = ["Item Description", "MRP", "UOM", "Order Qty", "Notes"];
+      const cols = ["S.No", "Item Description", "MRP", "UOM", "Order Qty", "Notes"];
 
       const rows: string[][] = [];
+      let serialNo = 1;
       for (const order of filtered) {
         let exportItems = activeBrands.length > 0
           ? order.items.filter((item) => item.brand != null && activeBrands.includes(item.brand))
@@ -517,7 +518,8 @@ function OrdersView({ topPt }: { topPt: number }) {
         exportItems = applyItemSort(exportItems, itemSortLevels);
         for (const item of exportItems) {
           const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
-          rows.push([desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
+          rows.push([String(serialNo), desc, String(item.unitPrice), item.unit, String(item.quantity), item.notes ?? ""]);
+          serialNo++;
         }
       }
 
@@ -596,7 +598,8 @@ function OrdersView({ topPt }: { topPt: number }) {
   th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 8.5pt; }
   th { text-align: center; }
   td { text-align: left; }
-  td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }
+  td:nth-child(1) { width: 30px; text-align: center; }
+  td:nth-child(3), td:nth-child(4), td:nth-child(5) { text-align: right; }
   .footer { margin-top: 10px; font-size: 8.5pt; }
   .footer-notes { margin-bottom: 4px; word-wrap: break-word; }
   .photos { margin: 6px 0 8px; display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
@@ -665,12 +668,7 @@ function OrdersView({ topPt }: { topPt: number }) {
           win.addEventListener("load", () => setTimeout(triggerPrint, 300));
         }
       } else {
-        const now = new Date();
-        const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
-        const _pad2 = (n: number) => String(n).padStart(2, "0");
-        const _ts2 = `${_pad2(now.getDate())}${_pad2(now.getMonth() + 1)}${now.getFullYear()} ${_pad2(now.getHours())}${_pad2(now.getMinutes())}`;
-        const pdfFileName = `Sathyam Super Store Order ${_ts2}`;
-        const { uri } = await Print.printToFileAsync({ html, fileName: pdfFileName });
+        const { uri } = await Print.printToFileAsync({ html });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, {
@@ -977,7 +975,7 @@ function OrdersView({ topPt }: { topPt: number }) {
               </Text>
             </View>
           }
-          ListFooterComponent={notesAndPhotosBox}
+          ListFooterComponent={notesAndPhotosBox ?? undefined}
         />
       )}
 

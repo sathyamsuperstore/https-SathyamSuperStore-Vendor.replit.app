@@ -40,6 +40,8 @@ export default function UserDetailScreen() {
     );
   }
 
+  const currentUser = user;
+
   function startEdit() {
     setForm({ ...user });
     setEditing(true);
@@ -70,7 +72,7 @@ export default function UserDetailScreen() {
     }
     setSaving(true);
     try {
-      await updateAppUser(user.id, {
+      await updateAppUser(currentUser.id, {
         ...form,
         userId: form.userId!.trim(),
         vendorCode: form.vendorCode?.trim() ?? "",
@@ -97,7 +99,7 @@ export default function UserDetailScreen() {
         onPress: async () => {
           setDeleting(true);
           try {
-            await deleteAppUser(user.id);
+            await deleteAppUser(currentUser.id);
             router.back();
           } catch {
             showStorageErrorAlert();

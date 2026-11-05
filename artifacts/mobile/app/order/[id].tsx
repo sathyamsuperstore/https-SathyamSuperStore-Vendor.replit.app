@@ -203,11 +203,13 @@ export default function OrderDetailScreen() {
     );
   }
 
+  const currentOrder = order;
+
   async function handleStatusUpdate() {
     if (!nextStatus || updatingStatus) return;
     setUpdatingStatus(true);
     try {
-      await updateOrderStatus(order.id, nextStatus.status);
+      await updateOrderStatus(currentOrder.id, nextStatus.status);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       showStorageErrorAlert();
@@ -226,7 +228,7 @@ export default function OrderDetailScreen() {
         onPress: async () => {
           setCancelling(true);
           try {
-            await updateOrderStatus(order.id, "cancelled");
+            await updateOrderStatus(currentOrder.id, "cancelled");
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           } catch {
             showStorageErrorAlert();
@@ -242,7 +244,7 @@ export default function OrderDetailScreen() {
     if (!order || visibleItems.length === 0) return;
     try {
       setDownloading(true);
-      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty"];
+      const colHeader = ["Item Description", "Brand", "Category", "UOM", "MRP", "Stock", "Min", "Order Qty", "NBC", "AddIMG", "IMG_Filename"];
       const dataRows = visibleItems.map((item) => {
         const desc = item.name.includes(" - ") ? item.name.split(" - ").slice(1).join(" - ") : item.name;
         return [
@@ -254,39 +256,42 @@ export default function OrderDetailScreen() {
           item.stock ?? "",
           item.min ?? "",
           item.quantity,
+          item.nbc ?? "",
+          item.addImg ?? "",
+          item.imgFilename ?? "",
         ];
       });
       const orderDate = new Date(order.createdAt).toLocaleDateString("en-IN");
-      // Per-order sheet uses 8 data columns (see colHeader / !cols below).
+      // Per-order sheet uses 11 data columns (see colHeader / !cols below).
       // Pad the footer row to match so the grid stays aligned in Excel.
       const fileCreatedRow: (string | number)[][] = order.fileCreatedDate
         ? [
             [
               `File Created Date : ${new Date(order.fileCreatedDate).toLocaleDateString("en-IN")}`,
-              "", "", "", "", "", "", "",
+              "", "", "", "", "", "", "", "", "", "",
             ],
           ]
         : [];
       const sheetData: (string | number)[][] = [
-        ["Sathyam Super Store",                                              "", "", "", "", "", "ORDER FORM"],
-        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", "", ""],
-        ["Coimbatore-641029",                                                "", "", "", "", "", ""],
-        ["98431-44868",                                                      "", "", "", "", "", ""],
-        ["Whatsapp: 97881-44868",                                            "", "", "", "", "", ""],
-        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", "", "", "", "", "", ""],
-        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", "", ""],
-        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", "", ""],
-        ["", "", "", "", "", "", ""],
+        ["Sathyam Super Store",                                              "", "", "", "", "", "ORDER FORM", "", "", "", ""],
+        ["2A,Mettupalayam Road, Cheran Nagar",                               "", "", "", "", "", "", "", "", "", ""],
+        ["Coimbatore-641029",                                                "", "", "", "", "", "", "", "", "", ""],
+        ["98431-44868",                                                      "", "", "", "", "", "", "", "", "", ""],
+        ["Whatsapp: 97881-44868",                                            "", "", "", "", "", "", "", "", "", ""],
+        ["Accounts: 97868-64868 For sharing Credit Notes, and Vendor payment enquiry", "", "", "", "", "", "", "", "", "", ""],
+        ["GST# :  33ADFFS5244N1ZR",                                         "", "", "", "", "", "", "", "", "", ""],
+        ["***ORDER FORM MUST BE ATTACHED WITH INVOICE DURING DELIVERY ***",  "", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", "", ""],
         colHeader,
         ...dataRows,
-        ["", "", "", "", "", "", ""],
-        [`Supplier : ${order.supplierName}`, "", "", "", "", "", ""],
-        [`Order Date : ${orderDate}`,        "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", "", ""],
+        [`Supplier : ${order.supplierName}`, "", "", "", "", "", "", "", "", "", ""],
+        [`Order Date : ${orderDate}`,        "", "", "", "", "", "", "", "", "", ""],
         ...fileCreatedRow,
       ];
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws["!cols"] = [
-        { wch: 45 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 45 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 24 },
       ];
       // wrapText on Row 8 (delivery notice)
       if (ws["A8"]) {
@@ -306,7 +311,7 @@ export default function OrderDetailScreen() {
       };
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataStartRow + i;
-        for (const col of ["A", "B", "C", "D", "E", "F", "G", "H"]) {
+        for (const col of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]) {
           const cellRef = `${col}${row}`;
           if (ws[cellRef]) {
             ws[cellRef].s = col === "A"
@@ -324,9 +329,10 @@ export default function OrderDetailScreen() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Order");
       // "Rows to repeat at top" — row 10 (column header row) prints on every page
-      if (!wb.Workbook) wb.Workbook = {} as any;
-      if (!wb.Workbook.Names) wb.Workbook.Names = [];
-      wb.Workbook.Names.push({
+      const workbookMetadata =
+        wb.Workbook ?? (wb.Workbook = {} as NonNullable<typeof wb.Workbook>);
+      const workbookNames = (workbookMetadata.Names ??= []);
+      workbookNames.push({
         Sheet: 0,
         Name: "_xlnm.Print_Titles",
         Ref: "Order!$10:$10",
@@ -465,7 +471,7 @@ export default function OrderDetailScreen() {
         onPress: async () => {
           setDeleting(true);
           try {
-            await deleteOrder(order.id);
+            await deleteOrder(currentOrder.id);
             router.back();
           } catch {
             showStorageErrorAlert();
@@ -481,7 +487,7 @@ export default function OrderDetailScreen() {
     order.status !== "cancelled" &&
     new Date(order.expectedDelivery) < new Date();
 
-  function renderItemRow(item: typeof order.items[number]) {
+  function renderItemRow(item: typeof currentOrder.items[number]) {
     return (
       <View style={styles.itemRow}>
         <View style={styles.itemInfo}>
@@ -501,6 +507,15 @@ export default function OrderDetailScreen() {
           {item.internalNotes ? (
             <Text style={styles.itemInternalNotes}>
               Order Internal Notes: {item.internalNotes}
+            </Text>
+          ) : null}
+          {(item.nbc || item.addImg || item.imgFilename) ? (
+            <Text style={styles.itemSourceFields}>
+              {[
+                item.nbc ? `NBC: ${item.nbc}` : "",
+                item.addImg ? `AddIMG: ${item.addImg}` : "",
+                item.imgFilename ? `IMG_Filename: ${item.imgFilename}` : "",
+              ].filter(Boolean).join(" · ")}
             </Text>
           ) : null}
           {item.notes ? (
@@ -828,20 +843,18 @@ export default function OrderDetailScreen() {
                 )}
               </TouchableOpacity>
             )}
-            {order.status !== "cancelled" && (
-              <TouchableOpacity
-                style={[styles.cancelAction, cancelling && styles.btnDisabled]}
-                onPress={handleCancel}
-                disabled={cancelling}
-                activeOpacity={0.8}
-              >
-                {cancelling ? (
-                  <ActivityIndicator size="small" color={Colors.danger} />
-                ) : (
-                  <Text style={styles.cancelActionText}>Cancel Order</Text>
-                )}
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.cancelAction, cancelling && styles.btnDisabled]}
+              onPress={handleCancel}
+              disabled={cancelling}
+              activeOpacity={0.8}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color={Colors.danger} />
+              ) : (
+                <Text style={styles.cancelActionText}>Cancel Order</Text>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -971,6 +984,11 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  itemSourceFields: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   itemNotesReadOnly: {
     fontSize: 12,

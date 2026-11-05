@@ -1,7 +1,7 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
 import React from "react";
@@ -50,41 +50,41 @@ function NativeTabLayout({ adminVisible }: { adminVisible: boolean }) {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
-        <Label>Dashboard</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <NativeTabs.Trigger.Label>Dashboard</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="orders-hub">
-        <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
-        <Label>Orders</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
+        <NativeTabs.Trigger.Label>Orders</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="stock">
-        <Icon
+        <NativeTabs.Trigger.Icon
           sf={{
             default: "square.and.arrow.up",
             selected: "square.and.arrow.up.fill",
           }}
         />
-        <Label>Stock</Label>
+        <NativeTabs.Trigger.Label>Stock</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="catalog">
-        <Icon
+        <NativeTabs.Trigger.Icon
           sf={{
             default: "indianrupeesign.circle",
             selected: "indianrupeesign.circle.fill",
           }}
         />
-        <Label>Catalog</Label>
+        <NativeTabs.Trigger.Label>Catalog</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="directory">
-        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
-        <Label>Directory</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+        <NativeTabs.Trigger.Label>Directory</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       {adminVisible && (
         <NativeTabs.Trigger name="admn">
-          <Icon
+          <NativeTabs.Trigger.Icon
             sf={{ default: "lock.shield", selected: "lock.shield.fill" }}
           />
-          <Label>Admn</Label>
+          <NativeTabs.Trigger.Label>Admn</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       )}
     </NativeTabs>
@@ -128,11 +128,11 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
         name="index"
         options={{
           title: "Dashboard",
-          tabBarIcon: ({ color }) =>
+          tabBarIcon: ({ focused }) =>
             isIOS ? (
-              <SymbolView name="chart.bar" tintColor={color} size={24} />
+              <SymbolView name="chart.bar" tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive} size={24} />
             ) : (
-              <Feather name="bar-chart-2" size={22} color={color} />
+              <Feather name="bar-chart-2" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
             ),
         }}
       />
@@ -140,11 +140,11 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
         name="orders-hub"
         options={{
           title: "Orders",
-          tabBarIcon: ({ color }) =>
+          tabBarIcon: ({ focused }) =>
             isIOS ? (
-              <SymbolView name="doc.text" tintColor={color} size={24} />
+              <SymbolView name="doc.text" tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive} size={24} />
             ) : (
-              <Feather name="file-text" size={22} color={color} />
+              <Feather name="file-text" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
             ),
         }}
       />
@@ -152,11 +152,11 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
         name="stock"
         options={{
           title: "Stock",
-          tabBarIcon: ({ color }) =>
+          tabBarIcon: ({ focused }) =>
             isIOS ? (
-              <SymbolView name="square.and.arrow.up" tintColor={color} size={24} />
+              <SymbolView name="square.and.arrow.up" tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive} size={24} />
             ) : (
-              <Feather name="upload-cloud" size={22} color={color} />
+              <Feather name="upload-cloud" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
             ),
         }}
       />
@@ -164,11 +164,11 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
         name="catalog"
         options={{
           title: "Catalog",
-          tabBarIcon: ({ color }) =>
+          tabBarIcon: ({ focused }) =>
             isIOS ? (
-              <SymbolView name="indianrupeesign.circle" tintColor={color} size={24} />
+              <SymbolView name="indianrupeesign.circle" tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive} size={24} />
             ) : (
-              <Feather name="dollar-sign" size={22} color={color} />
+              <Feather name="dollar-sign" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
             ),
         }}
       />
@@ -176,11 +176,11 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
         name="directory"
         options={{
           title: "Directory",
-          tabBarIcon: ({ color }) =>
+          tabBarIcon: ({ focused }) =>
             isIOS ? (
-              <SymbolView name="person.2" tintColor={color} size={24} />
+              <SymbolView name="person.2" tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive} size={24} />
             ) : (
-              <Feather name="users" size={22} color={color} />
+              <Feather name="users" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
             ),
         }}
       />
@@ -190,15 +190,15 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
           adminVisible
             ? {
                 title: "Admn",
-                tabBarIcon: ({ color }) =>
+                tabBarIcon: ({ focused }) =>
                   isIOS ? (
                     <SymbolView
                       name="lock.shield"
-                      tintColor={color}
+                      tintColor={focused ? Colors.tabBarActive : Colors.tabBarInactive}
                       size={24}
                     />
                   ) : (
-                    <Feather name="shield" size={22} color={color} />
+                    <Feather name="shield" size={22} color={focused ? Colors.tabBarActive : Colors.tabBarInactive} />
                   ),
               }
             : { href: null }
@@ -222,6 +222,7 @@ function ClassicTabLayout({ adminVisible }: { adminVisible: boolean }) {
       <Tabs.Screen name="rodeo-items" options={{ href: null }} />
       <Tabs.Screen name="rasi-items" options={{ href: null }} />
       <Tabs.Screen name="vendor-payments" options={{ href: null }} />
+      <Tabs.Screen name="daily-stock" options={{ href: null }} />
       <Tabs.Screen name="rpromoprint" options={{ href: null }} />
       <Tabs.Screen name="upcompare" options={{ href: null }} />
     </Tabs>

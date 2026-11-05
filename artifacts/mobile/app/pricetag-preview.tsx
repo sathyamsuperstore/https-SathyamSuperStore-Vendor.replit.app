@@ -3389,7 +3389,7 @@ const imgs = StyleSheet.create({
   },
   actionText: { color: Colors.text, fontSize: 9, fontWeight: "700" },
   busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center", justifyContent: "center",
     borderRadius: 6,

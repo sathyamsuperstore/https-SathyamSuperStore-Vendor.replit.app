@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 18.8.1",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -9,6 +9,10 @@
       "distribution": "internal"
     },
     "preview": {
+      "developmentClient": false,
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "SathyamSuperStore-Vendor.replit.app"
+      },
       "android": { "buildType": "apk" },
       "distribution": "internal"
     },

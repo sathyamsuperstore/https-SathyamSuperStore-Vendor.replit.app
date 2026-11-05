@@ -82,6 +82,11 @@ export interface OrderItem {
   // import row has no value in that column. Never exported to
   // PDF/PNG price tags.
   internalNotes?: string;
+  // Optional columns from the Orders workbook. Kept as strings so values
+  // such as 0/1, Yes/No, and filename text survive imports without coercion.
+  nbc?: string;
+  addImg?: string;
+  imgFilename?: string;
 }
 
 // Brand and Category are free-text fields, so "Acme", "acme", and "Acme " can
@@ -237,6 +242,15 @@ interface AppContextType {
     onProgress?: (done: number, total: number) => void,
   ) => Promise<void>;
   clearVendorPayments: () => Promise<void>;
+  // DailyStock — flat stock snapshot imported from Excel. Mirrors the
+  // VendorPayments replace-all semantics: every import wipes the previous
+  // snapshot and loads the new one.
+  dailyStockItems: DailyStockItem[];
+  saveDailyStockBatch: (
+    entries: DailyStockItem[],
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<void>;
+  clearDailyStock: () => Promise<void>;
   // User-entered "New Qty" overrides per Promo row. Map key is
   // `${itemNo}|${batchNo}`. Setter accepts `undefined` to clear a row.
   promoNewQty: Record<string, number>;
@@ -641,6 +655,25 @@ export interface VendorPayment {
   paidFlag?: boolean;
 }
 
+// One row in the DailyStock table. Imported from Excel (OUT_STOCK sheet).
+// Mirrors VendorPayments persistence model. All text fields trimmed;
+// numeric fields nullable; boolean coerced from common truthy/falsy spellings.
+// LAPVendorC = Last Purchased Vendor Code, LAPVendorN = Last Purchased Vendor Name.
+export interface DailyStockItem {
+  categoryCode: string;
+  subCategoryCode: string;
+  vendorCode: string;
+  brandCode: string;
+  inventoryCode: string;
+  weight: number | null;
+  desc: string;
+  stock: number | null;
+  autoPOAllowed: boolean;
+  lapVendorC: string;
+  lapVendorN: string;
+  physicalStock: number | null;
+}
+
 // One row in the RodeoItems table. Imported from Excel and stored in
 // AsyncStorage. Numeric fields are nullable so blank cells round-trip
 // as `null` instead of NaN. Date fields are normalised to "DD/MM/YYYY"
@@ -944,6 +977,67 @@ async function loadSuppliersResolved(): Promise<{
     migrate: false,
   };
 }
+// DailyStock storage — mirrors VendorPayments exactly.
+const DAILY_STOCK_META_KEY = "@dailyStock:meta";
+const DAILY_STOCK_VERSIONED_PREFIX = "@dailyStock:v:";
+const DAILY_STOCK_WEB_BATCH_SIZE = 200;
+function dailyStockBatchKey(version: string, i: number): string {
+  return `${DAILY_STOCK_VERSIONED_PREFIX}${version}:batch:${i}`;
+}
+const DAILY_STOCK_FILE = "dailyStock.json";
+function dailyStockFileUri(): string {
+  return (FileSystem.documentDirectory ?? "") + DAILY_STOCK_FILE;
+}
+
+async function loadDailyStockFromFile(): Promise<DailyStockItem[] | null> {
+  if (Platform.OS === "web") return null;
+  const uri = dailyStockFileUri();
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: "utf8" as any,
+    });
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as DailyStockItem[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return null;
+  }
+}
+
+async function loadDailyStockChunked(): Promise<DailyStockItem[]> {
+  if (Platform.OS !== "web") {
+    const fromFile = await loadDailyStockFromFile();
+    if (fromFile !== null) return fromFile;
+    return [];
+  }
+  try {
+    const metaRaw = await AsyncStorage.getItem(DAILY_STOCK_META_KEY);
+    if (!metaRaw) return [];
+    const meta = JSON.parse(metaRaw) as { batches?: number; version?: string };
+    const batches = Math.max(0, Math.floor(meta?.batches ?? 0));
+    if (batches === 0 || !meta.version) return [];
+    const keys = Array.from({ length: batches }, (_, i) =>
+      dailyStockBatchKey(String(meta.version), i),
+    );
+    const pairs = await AsyncStorage.multiGet(keys);
+    const all: DailyStockItem[] = [];
+    for (const [, val] of pairs) {
+      if (!val) continue;
+      try {
+        const arr = JSON.parse(val) as DailyStockItem[];
+        if (Array.isArray(arr)) all.push(...arr);
+      } catch {
+        // skip corrupt batch
+      }
+    }
+    return all;
+  } catch {
+    return [];
+  }
+}
+
 // VendorPayments storage — mirrors RodeoItems. On native a single JSON
 // file under the document directory; on web, chunked AsyncStorage
 // under a versioned namespace so a mid-write crash leaves the
@@ -1277,6 +1371,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [lastSupplyDates, setLastSupplyDates] = useState<LastSupplyDateEntry[]>([]);
   const [rodeoItems, setRodeoItems] = useState<RodeoItem[]>([]);
   const [vendorPayments, setVendorPayments] = useState<VendorPayment[]>([]);
+  const [dailyStockItems, setDailyStockItems] = useState<DailyStockItem[]>([]);
   const [dataDownloadTime, setDataDownloadTime] = useState<number | null>(null);
   const [companyDetails, setCompanyDetailsState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS);
   const [companyDetailsR, setCompanyDetailsRState] = useState<CompanyDetails>(DEFAULT_COMPANY_DETAILS_R);
@@ -1380,6 +1475,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? (vendorPaymentsData as VendorPayment[])
         : [];
       setVendorPayments(loadedVendorPayments);
+      // DailyStock — loaded separately to avoid lengthening the already-large
+      // destructuring above. Best-effort: an unreadable file yields [].
+      try {
+        const loadedDailyStock = await loadDailyStockChunked();
+        setDailyStockItems(loadedDailyStock);
+      } catch {
+        setDailyStockItems([]);
+      }
       let loadedPromoNewQty: Record<string, number> = {};
       if (promoNewQtyData) {
         try {
@@ -2593,6 +2696,106 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveVendorPaymentsBatch([]);
   }
 
+  // DailyStock write path — mirrors saveVendorPaymentsBatch exactly.
+  async function saveDailyStockBatch(
+    entries: DailyStockItem[],
+    onProgress?: (done: number, total: number) => void,
+  ) {
+    if (Platform.OS !== "web") {
+      const finalUri = dailyStockFileUri();
+      const tmpUri = finalUri + ".tmp";
+      onProgress?.(0, 1);
+      await new Promise<void>((r) => setTimeout(r, 0));
+      const payload = JSON.stringify(entries);
+      try {
+        try {
+          const tmpInfo = await FileSystem.getInfoAsync(tmpUri);
+          if (tmpInfo.exists) {
+            await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+          }
+        } catch {
+          // ignore
+        }
+        await FileSystem.writeAsStringAsync(tmpUri, payload, {
+          encoding: "utf8" as any,
+        });
+        await FileSystem.moveAsync({ from: tmpUri, to: finalUri });
+      } catch (e: any) {
+        try {
+          await FileSystem.deleteAsync(tmpUri, { idempotent: true });
+        } catch {
+          // ignore
+        }
+        const msg = e?.message ?? String(e);
+        throw new Error(`Failed to write DailyStock file: ${msg}`);
+      }
+      onProgress?.(1, 1);
+      setDailyStockItems(entries);
+      return;
+    }
+
+    // ---- Web: atomic versioned chunked AsyncStorage ----
+    const batchSize = DAILY_STOCK_WEB_BATCH_SIZE;
+    const batches = Math.max(1, Math.ceil(entries.length / batchSize));
+    const newVersion = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+    let oldMeta: { batches?: number; version?: string } | null = null;
+    try {
+      const oldMetaRaw = await AsyncStorage.getItem(DAILY_STOCK_META_KEY);
+      if (oldMetaRaw) {
+        oldMeta = JSON.parse(oldMetaRaw) as { batches?: number; version?: string };
+      }
+    } catch {
+      // ignore
+    }
+
+    onProgress?.(0, batches);
+    const writtenKeys: string[] = [];
+    try {
+      for (let i = 0; i < batches; i++) {
+        const chunk = entries.slice(i * batchSize, (i + 1) * batchSize);
+        const key = dailyStockBatchKey(newVersion, i);
+        try {
+          await AsyncStorage.setItem(key, JSON.stringify(chunk));
+          writtenKeys.push(key);
+        } catch (e: any) {
+          const msg = e?.message ?? String(e);
+          throw new Error(
+            `Failed writing batch ${i + 1} of ${batches} (rows ${i * batchSize + 1}–${Math.min((i + 1) * batchSize, entries.length)}): ${msg}`,
+          );
+        }
+        onProgress?.(i + 1, batches);
+      }
+    } catch (e) {
+      if (writtenKeys.length > 0) {
+        try { await AsyncStorage.multiRemove(writtenKeys); } catch { /* ignore */ }
+      }
+      throw e;
+    }
+
+    await AsyncStorage.setItem(
+      DAILY_STOCK_META_KEY,
+      JSON.stringify({ count: entries.length, batches, batchSize, version: newVersion }),
+    );
+
+    if (oldMeta?.version && oldMeta.version !== newVersion) {
+      const oldBatches = Math.max(0, Math.floor(oldMeta?.batches ?? 0));
+      const stale: string[] = [];
+      for (let i = 0; i < oldBatches; i++) {
+        stale.push(dailyStockBatchKey(String(oldMeta.version), i));
+      }
+      if (stale.length > 0) {
+        try { await AsyncStorage.multiRemove(stale); } catch { /* ignore */ }
+      }
+    }
+
+    setDailyStockItems(entries);
+  }
+
+  async function clearDailyStock() {
+    await saveDailyStockBatch([]);
+  }
+
   async function clearAllAppUsers() {
     await saveAppUsers([]);
   }
@@ -2660,6 +2863,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         vendorPayments,
         saveVendorPaymentsBatch,
         clearVendorPayments,
+        dailyStockItems,
+        saveDailyStockBatch,
+        clearDailyStock,
         promoNewQty,
         setPromoNewQtyValue,
         priceTagItems,

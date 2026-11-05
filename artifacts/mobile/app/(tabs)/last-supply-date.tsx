@@ -9,7 +9,9 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -24,6 +26,8 @@ import {
   showStorageErrorAlert,
 } from "@/context/AppContext";
 
+type SortField = "vendorName" | "vendorCode" | "latestInvoiceDate";
+
 // ---------------------------------------------------------------------------
 // Date helpers (mirrors the coercion logic used in latest-purchases.tsx)
 // ---------------------------------------------------------------------------
@@ -34,6 +38,36 @@ function pad2(n: number): string {
 
 function formatDDMMYYYY(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// Inverse of formatDDMMYYYY — accepts DD/MM/YYYY, DD-MM-YYYY (incl.
+// 2-digit years) and ISO YYYY-MM-DD. Returns null if the string isn't
+// a valid calendar date so the date-range filter can simply skip
+// rows whose stored date is unparseable rather than throwing.
+function ddmmyyyyToDate(s: string): Date | null {
+  const t = s.trim();
+  if (!t) return null;
+  const m1 = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m1) {
+    let y = parseInt(m1[3], 10);
+    if (y < 100) y += y >= 50 ? 1900 : 2000;
+    const d = new Date(y, parseInt(m1[2], 10) - 1, parseInt(m1[1], 10));
+    return d.getFullYear() === y && d.getMonth() === parseInt(m1[2], 10) - 1 && d.getDate() === parseInt(m1[1], 10)
+      ? d
+      : null;
+  }
+  const m2 = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m2) {
+    const d = new Date(parseInt(m2[1], 10), parseInt(m2[2], 10) - 1, parseInt(m2[3], 10));
+    return d.getFullYear() === parseInt(m2[1], 10) && d.getMonth() === parseInt(m2[2], 10) - 1 && d.getDate() === parseInt(m2[3], 10)
+      ? d
+      : null;
+  }
+  return null;
 }
 
 // Coerce whatever Excel hands us for a date cell into a DD/MM/YYYY string.
@@ -106,6 +140,12 @@ const DATE_ALIASES = new Set([
   "date",
 ]);
 
+const SORT_FIELDS: { key: SortField; label: string }[] = [
+  { key: "vendorName", label: "Vendor" },
+  { key: "vendorCode", label: "Code" },
+  { key: "latestInvoiceDate", label: "Date" },
+];
+
 export default function LastSupplyDateScreen() {
   const { lastSupplyDates, saveLastSupplyDateBatch, clearLastSupplyDates } =
     useApp();
@@ -118,17 +158,79 @@ export default function LastSupplyDateScreen() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState<string>("");
+  const [sortField, setSortField] = useState<SortField>("vendorName");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  // Date-range filter (From/To) for Latest Invoice Date
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [dateFromDraft, setDateFromDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [dateToDraft, setDateToDraft] = useState<Date>(() => startOfDay(new Date()));
+  const [showDateFromPicker, setShowDateFromPicker] = useState(false);
+  const [showDateToPicker, setShowDateToPicker] = useState(false);
+  const [dateRangeError, setDateRangeError] = useState<string | null>(null);
+
+  const dateRangeActive = dateFrom != null && dateTo != null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return lastSupplyDates;
-    return lastSupplyDates.filter(
-      (e) =>
-        e.vendorName.toLowerCase().includes(q) ||
-        e.vendorCode.toLowerCase().includes(q) ||
-        e.latestInvoiceDate.includes(q)
-    );
-  }, [lastSupplyDates, search]);
+    let result = q
+      ? lastSupplyDates.filter(
+          (e) =>
+            e.vendorName.toLowerCase().includes(q) ||
+            e.vendorCode.toLowerCase().includes(q) ||
+            e.latestInvoiceDate.includes(q)
+        )
+      : [...lastSupplyDates];
+
+    if (dateRangeActive) {
+      const fromMs = dateFrom!.getTime();
+      const toMs = dateTo!.getTime();
+      result = result.filter((e) => {
+        const d = ddmmyyyyToDate(e.latestInvoiceDate);
+        if (!d) return false;
+        const ms = startOfDay(d).getTime();
+        return ms >= fromMs && ms <= toMs;
+      });
+    }
+
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "vendorName":
+          cmp = a.vendorName.localeCompare(b.vendorName, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "vendorCode":
+          cmp = a.vendorCode.localeCompare(b.vendorCode, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "latestInvoiceDate": {
+          const da = a.latestInvoiceDate
+            ? new Date(
+                parseInt(a.latestInvoiceDate.split("/")[2]),
+                parseInt(a.latestInvoiceDate.split("/")[1]) - 1,
+                parseInt(a.latestInvoiceDate.split("/")[0])
+              ).getTime()
+            : 0;
+          const db = b.latestInvoiceDate
+            ? new Date(
+                parseInt(b.latestInvoiceDate.split("/")[2]),
+                parseInt(b.latestInvoiceDate.split("/")[1]) - 1,
+                parseInt(b.latestInvoiceDate.split("/")[0])
+              ).getTime()
+            : 0;
+          cmp = da - db;
+          break;
+        }
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    return result;
+  }, [lastSupplyDates, search, sortField, sortAsc, dateRangeActive, dateFrom, dateTo]);
 
   // -------------------------------------------------------------------------
   // Excel import
@@ -467,6 +569,73 @@ export default function LastSupplyDateScreen() {
               )}
             </View>
 
+            <View style={styles.sortRow}>
+              <Text style={styles.sortLabel}>Sort by</Text>
+              {SORT_FIELDS.map((f) => (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[
+                    styles.sortChip,
+                    sortField === f.key && styles.sortChipActive,
+                  ]}
+                  onPress={() => {
+                    if (sortField === f.key) {
+                      setSortAsc((v) => !v);
+                    } else {
+                      setSortField(f.key);
+                      setSortAsc(true);
+                    }
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.sortChipText,
+                      sortField === f.key && styles.sortChipTextActive,
+                    ]}
+                  >
+                    {f.label}
+                  </Text>
+                  {sortField === f.key && (
+                    <Feather
+                      name={sortAsc ? "arrow-up" : "arrow-down"}
+                      size={12}
+                      color={sortField === f.key ? Colors.primary : Colors.textMuted}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Date-range filter row */}
+            <View style={styles.dateFilterRow}>
+              <TouchableOpacity
+                style={[styles.dateFilterBtn, dateRangeActive && styles.dateFilterBtnActive]}
+                onPress={() => {
+                  setShowDateModal(true);
+                  setDateRangeError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={dateRangeActive ? Colors.primary : Colors.textSecondary} />
+                <Text style={[styles.dateFilterBtnText, dateRangeActive && styles.dateFilterBtnTextActive]}>
+                  {dateRangeActive
+                    ? `${formatDDMMYYYY(dateFrom!)} – ${formatDDMMYYYY(dateTo!)}`
+                    : "Date Range"}
+                </Text>
+                {dateRangeActive && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setDateFrom(null);
+                      setDateTo(null);
+                      setDateRangeError(null);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="x" size={14} color={Colors.primary} />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.statsRow}>
               <Text style={styles.statText}>
                 {filtered.length} of {lastSupplyDates.length} entr
@@ -477,10 +646,13 @@ export default function LastSupplyDateScreen() {
             <View style={styles.tableCard}>
               {/* Header */}
               <View style={styles.tableHead}>
-                <Text style={[styles.th, { flex: 2.5 }]}>Vendor Name</Text>
+                <Text style={[styles.th, { flex: 4 }]}>Vendor Name</Text>
                 <Text style={[styles.th, { flex: 1.5 }]}>Code</Text>
                 <Text style={[styles.th, { flex: 2, textAlign: "right" }]}>
                   Latest Invoice Date
+                </Text>
+                <Text style={[styles.th, { flex: 1.2, textAlign: "center" }]}>
+                  Action
                 </Text>
               </View>
 
@@ -498,7 +670,7 @@ export default function LastSupplyDateScreen() {
                     style={[styles.tableRow, i % 2 === 1 && styles.rowAlt]}
                   >
                     <Text
-                      style={[styles.td, { flex: 2.5 }]}
+                      style={[styles.td, { flex: 4 }]}
                       numberOfLines={1}
                     >
                       {r.vendorName || "—"}
@@ -515,6 +687,36 @@ export default function LastSupplyDateScreen() {
                     >
                       {r.latestInvoiceDate || "—"}
                     </Text>
+                    <View style={{ flex: 1.2, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 4, paddingVertical: 10 }}>
+                      <TouchableOpacity
+                        style={styles.payBtn}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          router.push({
+                            pathname: "/vendor-payments",
+                            params: { vendor: r.vendorName },
+                          });
+                        }}
+                        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="credit-card" size={10} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.stkBtn}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          router.push({
+                            pathname: "/(tabs)/stockupd",
+                            params: { vendor: r.vendorName },
+                          });
+                        }}
+                        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="box" size={10} color={Colors.primary} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               )}
@@ -531,6 +733,130 @@ export default function LastSupplyDateScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Date-Range Picker Modal */}
+      <Modal
+        visible={showDateModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDateModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowDateModal(false)}
+        />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Date Range</Text>
+            <TouchableOpacity
+              onPress={() => {
+                const today = startOfDay(new Date());
+                setDateFromDraft(today);
+                setDateToDraft(today);
+                setDateFrom(null);
+                setDateTo(null);
+                setShowDateFromPicker(false);
+                setShowDateToPicker(false);
+                setDateRangeError(null);
+              }}
+            >
+              <Text style={styles.modalClear}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.dateRangeWrap}>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>From</Text>
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowDateToPicker(false);
+                  setShowDateFromPicker((v) => !v);
+                  setDateRangeError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(dateFromDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showDateFromPicker && (
+                <DateTimePicker
+                  value={dateFromDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowDateFromPicker(false);
+                    if (selected) {
+                      setDateFromDraft(startOfDay(selected));
+                      setDateRangeError(null);
+                    }
+                  }}
+                />
+              )}
+            </View>
+            <View style={styles.dateRangeField}>
+              <Text style={styles.dateRangeLabel}>To</Text>
+              <TouchableOpacity
+                style={styles.dateRangeButton}
+                onPress={() => {
+                  setShowDateFromPicker(false);
+                  setShowDateToPicker((v) => !v);
+                  setDateRangeError(null);
+                }}
+              >
+                <Feather name="calendar" size={14} color={Colors.primary} />
+                <Text style={styles.dateRangeButtonText}>
+                  {formatDDMMYYYY(dateToDraft)}
+                </Text>
+              </TouchableOpacity>
+              {showDateToPicker && (
+                <DateTimePicker
+                  value={dateToDraft}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(_e, selected) => {
+                    if (Platform.OS !== "ios") setShowDateToPicker(false);
+                    if (selected) {
+                      setDateToDraft(startOfDay(selected));
+                      setDateRangeError(null);
+                    }
+                  }}
+                />
+              )}
+            </View>
+          </View>
+
+          {dateRangeError && (
+            <View style={styles.dateErrorWrap}>
+              <Feather name="alert-circle" size={14} color={Colors.danger} />
+              <Text style={styles.dateErrorText}>{dateRangeError}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.modalDoneBtn}
+            onPress={() => {
+              const from = startOfDay(dateFromDraft);
+              const to = startOfDay(dateToDraft);
+              if (from.getTime() > to.getTime()) {
+                setDateRangeError("From date can't be after To date.");
+                return;
+              }
+              setDateFrom(from);
+              setDateTo(to);
+              setDateRangeError(null);
+              setShowDateModal(false);
+              setShowDateFromPicker(false);
+              setShowDateToPicker(false);
+            }}
+          >
+            <Text style={styles.modalDoneText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -653,8 +979,51 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  sortLabel: { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
+  sortChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: Colors.surface ?? "#fff",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.primaryMuted,
+    borderColor: Colors.primary + "40",
+  },
+  sortChipText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
+  sortChipTextActive: { color: Colors.primary, fontWeight: "700" },
   statsRow: { paddingHorizontal: 4 },
   statText: { fontSize: 12, color: Colors.textMuted },
+  payBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.danger,
+  },
+  stkBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + "30",
+  },
   tableCard: {
     backgroundColor: Colors.surface ?? "#fff",
     borderRadius: 12,
@@ -696,4 +1065,95 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   emptyHintText: { fontSize: 12, color: Colors.textMuted },
+
+  // Date-filter row
+  dateFilterRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, marginBottom: 4 },
+  dateFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface ?? "#fff",
+  },
+  dateFilterBtnActive: {
+    borderColor: Colors.primary + "40",
+    backgroundColor: Colors.primaryMuted,
+  },
+  dateFilterBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  dateFilterBtnTextActive: { color: Colors.primary },
+
+  // Date-range modal (mirrors stockupd.tsx)
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
+  modalSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    maxHeight: "70%",
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginBottom: 8,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  modalClear: { fontSize: 14, fontWeight: "700", color: Colors.danger },
+  dateRangeWrap: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  dateRangeField: { flex: 1 },
+  dateRangeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  dateRangeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.surface ?? "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateRangeButtonText: { fontSize: 15, fontWeight: "600", color: Colors.text },
+  dateErrorWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  dateErrorText: { fontSize: 13, color: Colors.danger, fontWeight: "600" },
+  modalDoneBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalDoneText: { fontSize: 16, fontWeight: "700", color: Colors.textInverse },
 });
